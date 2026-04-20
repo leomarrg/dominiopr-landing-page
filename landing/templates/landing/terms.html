@@ -1,0 +1,138 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terms of Service | DOMINIO</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'landing/css/style.css' %}">
+    <link rel="icon" type="image/png" href="{% static 'landing/images/logo/profile_pic@4x.PNG' %}">
+    <style>
+        .legal-page {
+            padding: 140px 0 80px;
+            min-height: 100vh;
+        }
+        .legal-content {
+            max-width: 780px;
+            margin: 0 auto;
+        }
+        .legal-content h1 {
+            font-size: clamp(2rem, 4vw, 2.8rem);
+            color: var(--white);
+            margin-bottom: 8px;
+        }
+        .legal-content .legal-updated {
+            color: var(--accent);
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-bottom: 40px;
+            display: block;
+        }
+        .legal-content h2 {
+            font-size: 1.25rem;
+            color: var(--white);
+            margin-top: 36px;
+            margin-bottom: 12px;
+        }
+        .legal-content p,
+        .legal-content li {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.95rem;
+            line-height: 1.8;
+            margin-bottom: 12px;
+        }
+        .legal-content ul {
+            padding-left: 20px;
+            margin-bottom: 16px;
+        }
+        .legal-content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .legal-content a:hover {
+            text-decoration: underline;
+        }
+        .legal-back {
+            display: inline-block;
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-bottom: 32px;
+        }
+        .legal-back:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="legal-page">
+        <div class="container">
+            <div class="legal-content">
+                <a href="{% url 'index' %}" class="legal-back">&larr; Back to Home</a>
+                <h1>Terms of Service</h1>
+                <span class="legal-updated">Last updated: March 1, 2026</span>
+
+                <h2>1. Agreement to Terms</h2>
+                <p>By accessing or using the services provided by DOMINIO ("we," "us," or "our"), you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our services.</p>
+
+                <h2>2. Services</h2>
+                <p>DOMINIO provides software development and technology consulting services, including but not limited to:</p>
+                <ul>
+                    <li>Web application development</li>
+                    <li>Artificial intelligence solutions and integrations</li>
+                    <li>IT consulting and infrastructure advisory</li>
+                    <li>Digital product development</li>
+                </ul>
+
+                <h2>3. Client Responsibilities</h2>
+                <p>When engaging our services, you agree to:</p>
+                <ul>
+                    <li>Provide accurate and complete information necessary for the project</li>
+                    <li>Respond to communications and feedback requests in a timely manner</li>
+                    <li>Ensure you have the rights to any content or materials you provide to us</li>
+                    <li>Make payments according to the agreed-upon schedule</li>
+                </ul>
+
+                <h2>4. Intellectual Property</h2>
+                <p>Unless otherwise specified in a separate written agreement, upon full payment all deliverables and custom code developed specifically for your project become your property. Pre-existing tools, frameworks, libraries, and reusable components developed by DOMINIO remain our intellectual property and may be licensed for your use as part of the project.</p>
+
+                <h2>5. Payment Terms</h2>
+                <p>Payment terms, schedules, and amounts will be outlined in individual project proposals or contracts. Late payments may result in project delays or suspension of services. All fees are non-refundable unless otherwise stated in the project agreement.</p>
+
+                <h2>6. Project Timelines</h2>
+                <p>We commit to delivering projects within agreed timelines. However, timelines may be adjusted if scope changes are requested, required information or feedback is delayed by the client, or unforeseen technical challenges arise. Any timeline changes will be communicated promptly.</p>
+
+                <h2>7. Limitation of Liability</h2>
+                <p>DOMINIO shall not be liable for any indirect, incidental, special, or consequential damages arising from the use of our services. Our total liability shall not exceed the total amount paid by you for the specific service in question.</p>
+
+                <h2>8. Confidentiality</h2>
+                <p>We treat all client information, business data, and project details as confidential. We will not disclose your proprietary information to third parties without your prior written consent, except as required by law.</p>
+
+                <h2>9. Termination</h2>
+                <p>Either party may terminate a service engagement with written notice. Upon termination, you are responsible for payment of all work completed up to the termination date. We will provide all completed deliverables upon receipt of final payment.</p>
+
+                <h2>10. Changes to Terms</h2>
+                <p>We reserve the right to update these Terms of Service at any time. Changes will be posted on this page with an updated revision date. Continued use of our services after changes constitutes acceptance of the new terms.</p>
+
+                <h2>11. Contact</h2>
+                <p>If you have questions about these Terms of Service, please contact us through our <a href="{% url 'index' %}#contact">contact form</a>.</p>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <div class="container footer-content">
+            <div class="footer-brand">
+                <p>&copy; 2026 DOMINIO. All rights reserved.</p>
+            </div>
+            <div class="footer-links">
+                <a href="{% url 'index' %}">Home</a>
+                <a href="{% url 'terms' %}">Terms of Service</a>
+                <a href="{% url 'privacy' %}">Privacy Policy</a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

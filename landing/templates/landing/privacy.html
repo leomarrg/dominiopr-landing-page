@@ -1,0 +1,150 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy | DOMINIO</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'landing/css/style.css' %}">
+    <link rel="icon" type="image/png" href="{% static 'landing/images/logo/profile_pic@4x.PNG' %}">
+    <style>
+        .legal-page {
+            padding: 140px 0 80px;
+            min-height: 100vh;
+        }
+        .legal-content {
+            max-width: 780px;
+            margin: 0 auto;
+        }
+        .legal-content h1 {
+            font-size: clamp(2rem, 4vw, 2.8rem);
+            color: var(--white);
+            margin-bottom: 8px;
+        }
+        .legal-content .legal-updated {
+            color: var(--accent);
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-bottom: 40px;
+            display: block;
+        }
+        .legal-content h2 {
+            font-size: 1.25rem;
+            color: var(--white);
+            margin-top: 36px;
+            margin-bottom: 12px;
+        }
+        .legal-content p,
+        .legal-content li {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.95rem;
+            line-height: 1.8;
+            margin-bottom: 12px;
+        }
+        .legal-content ul {
+            padding-left: 20px;
+            margin-bottom: 16px;
+        }
+        .legal-content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .legal-content a:hover {
+            text-decoration: underline;
+        }
+        .legal-back {
+            display: inline-block;
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-bottom: 32px;
+        }
+        .legal-back:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="legal-page">
+        <div class="container">
+            <div class="legal-content">
+                <a href="{% url 'index' %}" class="legal-back">&larr; Back to Home</a>
+                <h1>Privacy Policy</h1>
+                <span class="legal-updated">Last updated: March 1, 2026</span>
+
+                <h2>1. Information We Collect</h2>
+                <p>When you use our website or engage our services, we may collect the following information:</p>
+                <ul>
+                    <li><strong>Contact information:</strong> name, email address, and any details you provide through our contact form</li>
+                    <li><strong>Project information:</strong> business requirements, technical specifications, and materials shared during project engagements</li>
+                    <li><strong>Usage data:</strong> pages visited, time spent on site, browser type, and device information collected automatically through standard web technologies</li>
+                </ul>
+
+                <h2>2. How We Use Your Information</h2>
+                <p>We use the information we collect to:</p>
+                <ul>
+                    <li>Respond to your inquiries and contact form submissions</li>
+                    <li>Deliver and manage our software development and consulting services</li>
+                    <li>Communicate project updates, timelines, and deliverables</li>
+                    <li>Improve our website experience and service offerings</li>
+                    <li>Comply with legal obligations</li>
+                </ul>
+
+                <h2>3. Information Sharing</h2>
+                <p>We do not sell, trade, or rent your personal information to third parties. We may share your information only in the following cases:</p>
+                <ul>
+                    <li><strong>Service providers:</strong> trusted third-party tools we use to operate our business (e.g., hosting, email, project management) under strict confidentiality agreements</li>
+                    <li><strong>Legal requirements:</strong> when required by law, court order, or to protect our legal rights</li>
+                    <li><strong>With your consent:</strong> when you have given us explicit permission to share specific information</li>
+                </ul>
+
+                <h2>4. Data Security</h2>
+                <p>We take reasonable technical and organizational measures to protect your personal information against unauthorized access, alteration, disclosure, or destruction. This includes encrypted communications, secure hosting infrastructure, and access controls limiting data to authorized personnel only.</p>
+
+                <h2>5. Data Retention</h2>
+                <p>We retain your personal information only for as long as necessary to fulfill the purposes outlined in this policy or as required by law. Contact form submissions are retained for up to 12 months. Project-related data is retained for the duration of our business relationship plus a reasonable period for record-keeping.</p>
+
+                <h2>6. Cookies and Tracking</h2>
+                <p>Our website may use essential cookies to ensure proper functionality. We do not use advertising cookies or third-party tracking pixels. Any analytics we collect are anonymized and used solely to improve the user experience.</p>
+
+                <h2>7. Your Rights</h2>
+                <p>You have the right to:</p>
+                <ul>
+                    <li>Request access to the personal data we hold about you</li>
+                    <li>Request correction of inaccurate information</li>
+                    <li>Request deletion of your personal data</li>
+                    <li>Withdraw consent for data processing at any time</li>
+                </ul>
+                <p>To exercise any of these rights, please contact us through our <a href="{% url 'index' %}#contact">contact form</a>.</p>
+
+                <h2>8. Third-Party Links</h2>
+                <p>Our website may contain links to external sites. We are not responsible for the privacy practices or content of those third-party websites. We encourage you to review their privacy policies before providing any personal information.</p>
+
+                <h2>9. Children's Privacy</h2>
+                <p>Our services are not directed to individuals under the age of 18. We do not knowingly collect personal information from children. If we become aware that we have collected data from a minor, we will take steps to delete it promptly.</p>
+
+                <h2>10. Changes to This Policy</h2>
+                <p>We may update this Privacy Policy from time to time. Changes will be posted on this page with an updated revision date. We encourage you to review this policy periodically.</p>
+
+                <h2>11. Contact</h2>
+                <p>If you have questions or concerns about this Privacy Policy, please reach out through our <a href="{% url 'index' %}#contact">contact form</a>.</p>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <div class="container footer-content">
+            <div class="footer-brand">
+                <p>&copy; 2026 DOMINIO. All rights reserved.</p>
+            </div>
+            <div class="footer-links">
+                <a href="{% url 'index' %}">Home</a>
+                <a href="{% url 'terms' %}">Terms of Service</a>
+                <a href="{% url 'privacy' %}">Privacy Policy</a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

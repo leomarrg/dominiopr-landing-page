@@ -1,0 +1,238 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dominio - Software Development</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'landing/css/style.css' %}">
+    <link rel="icon" type="image/png" href="{% static 'landing/images/logo/profile_pic@4x.PNG' %}">
+</head>
+<body>
+
+    <!-- ===== LOADING SCREEN ===== -->
+    <div class="loader-overlay" id="loaderOverlay">
+        <div class="loader-domino">
+            <div class="loader-half">
+                <div class="domino-dot dot-tl"></div>
+                <div class="domino-dot dot-tr"></div>
+                <div class="domino-dot dot-ml"></div>
+                <div class="domino-dot dot-mr"></div>
+                <div class="domino-dot dot-bl"></div>
+                <div class="domino-dot dot-br"></div>
+            </div>
+            <div class="loader-divider"></div>
+            <div class="loader-half">
+                <div class="domino-dot dot-tl"></div>
+                <div class="domino-dot dot-tr"></div>
+                <div class="domino-dot dot-ml"></div>
+                <div class="domino-dot dot-mr"></div>
+                <div class="domino-dot dot-bl"></div>
+                <div class="domino-dot dot-br"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== NAVBAR (Pill) ===== -->
+    <header class="header">
+        <nav class="navbar-pill">
+            <div class="nav-logo">
+                <img src="{% static 'landing/images/logo/logo_home.PNG' %}" alt="Dominio Logo" class="logo-desktop">
+                <img src="{% static 'landing/images/logo/profile_pic@4x.PNG' %}" alt="Dominio" class="logo-mobile">
+            </div>
+            <ul class="nav-links" id="navLinks">
+                <li><a href="#home" class="active">Home</a></li>
+                <li><a href="#services">Services</a></li>
+                <li><a href="#about">About</a></li>
+                <li><a href="#contact">Contact</a></li>
+            </ul>
+            <div class="nav-profile">
+                <img src="{% static 'landing/images/logo/profile_pic@4x.PNG' %}" alt="Profile">
+            </div>
+            <button class="nav-toggle" id="navToggle" aria-label="Open menu">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+        </nav>
+    </header>
+
+    <!-- ===== HERO SECTION ===== -->
+    <section id="home" class="hero">
+        <div class="dominos-container" id="dominosContainer"></div>
+        <div class="container">
+            <div class="hero-content">
+                <p class="hero-tag">Software Development Studio</p>
+                <h1>From idea to production — <span class="text-accent">no shortcuts</span></h1>
+                <p class="hero-desc">We design, develop, and maintain the platforms, dashboards, and internal tools that organizations actually depend on — from first prototype to production.</p>
+                <div class="hero-actions">
+                    <a href="#services" class="btn-primary">Our Services</a>
+                    <a href="#contact" class="btn-outline">Get in Touch</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== SERVICES SECTION ===== -->
+    <section id="services" class="servicios">
+        <div class="container">
+            <p class="section-tag">What we do</p>
+            <h2 class="section-title">Our Services</h2>
+            <div class="bento-grid">
+                <div class="bento-item bento-item--main bento-item--flippable">
+                    <div class="bento-flip-inner">
+                        <div class="bento-flip-front">
+                            <span class="bento-icon">&lt;/&gt;</span>
+                            <h3>Web Development</h3>
+                            <p>Full-stack web applications, dashboards, and production-ready sites — built to handle real workloads, not just demos.</p>
+                        </div>
+                        <div class="bento-flip-back">
+                            <span class="bento-icon">&lt;/&gt;</span>
+                            <h3>Web Development</h3>
+                            <ul class="bento-back-list">
+                                <li>Django &amp; React full-stack applications</li>
+                                <li>Multi-tenant platforms with role-based access</li>
+                                <li>Real-time dashboards with live analytics</li>
+                                <li>Landing pages &amp; campaign sites</li>
+                                <li>REST API design and integration</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-item bento-item--ai bento-item--flippable">
+                    <div class="bento-flip-inner">
+                        <div class="bento-flip-front">
+                            <span class="bento-icon">&#9041;&#xFE0E;</span>
+                            <h3>AI &amp; Automation</h3>
+                            <p>Practical automations that cut manual work — document processing, data pipelines, and intelligent workflows built into the tools you already use.</p>
+                        </div>
+                        <div class="bento-flip-back">
+                            <span class="bento-icon">&#9041;&#xFE0E;</span>
+                            <h3>AI &amp; Automation</h3>
+                            <ul class="bento-back-list">
+                                <li>AI-assisted document processing &amp; data extraction</li>
+                                <li>Workflow automation for internal operations</li>
+                                <li>Automated reporting &amp; data pipelines</li>
+                                <li>Custom integrations between platforms</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-item bento-item--it bento-item--flippable">
+                    <div class="bento-flip-inner">
+                        <div class="bento-flip-front">
+                            <span class="bento-icon">&#9881;&#xFE0E;</span>
+                            <h3>IT Consulting</h3>
+                            <p>Hands-on guidance to get your infrastructure right — from cloud setup to deployment pipelines, we'll make sure your tech decisions hold up long term.</p>
+                        </div>
+                        <div class="bento-flip-back">
+                            <span class="bento-icon">&#9881;&#xFE0E;</span>
+                            <h3>IT Consulting</h3>
+                            <ul class="bento-back-list">
+                                <li>Cloud infrastructure setup &amp; management (AWS)</li>
+                                <li>CI/CD pipelines &amp; deployment workflows</li>
+                                <li>Tech stack audits &amp; migration planning</li>
+                                <li>Database design &amp; performance optimization</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <a href="#" class="bento-item bento-item--product">
+                    <span class="bento-icon">&#9672;&#xFE0E;</span>
+                    <div class="bento-product-content">
+                        <h3>Digital Products</h3>
+                        <p>In-house platforms we've built to solve specific industry problems.</p>
+                    </div>
+                    <span class="bento-product-title">Registrate<span class="text-accent">PR</span></span>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== ABOUT SECTION ===== -->
+    <section id="about" class="nosotros">
+        <div class="container">
+            <div class="nosotros-layout">
+                <div class="nosotros-text">
+                    <p class="section-tag">Who we are</p>
+                    <h2 class="section-title">About Us</h2>
+                    <p>DOMINIO is a software studio based in Puerto Rico. We build the internal platforms,
+                       dashboards, and digital tools that organizations run on every day. Our work sits at the
+                       intersection of solid engineering and practical design — software that's built right,
+                       does what it should, and doesn't need to be rebuilt six months later.</p>
+                </div>
+                <div class="nosotros-visual">
+                    <div class="visual-card">
+                        <div class="visual-flip-inner">
+                            <div class="visual-flip-front">
+                                <div class="visual-icon">&#9878;&#xFE0E;</div>
+                                <h3>Precision</h3>
+                                <p>Engineered to perform, built to last</p>
+                            </div>
+                            <div class="visual-flip-back">
+                                <div class="visual-icon">&#9878;&#xFE0E;</div>
+                                <h3>Precision</h3>
+                                <p>Architecture decisions, database design, deployment — nothing is an afterthought. We write clean, tested code that scales without surprises.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="visual-card">
+                        <div class="visual-flip-inner">
+                            <div class="visual-flip-front">
+                                <div class="visual-icon">&#9733;&#xFE0E;</div>
+                                <h3>Creativity</h3>
+                                <p>Real problems, original solutions</p>
+                            </div>
+                            <div class="visual-flip-back">
+                                <div class="visual-icon">&#9733;&#xFE0E;</div>
+                                <h3>Creativity</h3>
+                                <p>Every project has constraints that off-the-shelf tools can't solve. We dig into the specifics of your operation and build exactly what fits — nothing more, nothing less.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== CONTACT SECTION ===== -->
+    <section id="contact" class="contacto">
+        <div class="container">
+            <p class="section-tag">Let's talk</p>
+            <h2 class="section-title">Contact</h2>
+            <div class="contacto-content">
+                <form class="contact-form">
+                    <div class="form-row">
+                        <input type="text" placeholder="Name" required>
+                        <input type="email" placeholder="Email" required>
+                    </div>
+                    <textarea placeholder="Message" rows="5" required></textarea>
+                    <button type="submit" class="btn-primary">Send Message</button>
+                </form>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== FOOTER ===== -->
+    <footer class="footer">
+        <div class="container footer-content">
+            <div class="footer-brand">
+                <p>&copy; 2026 DOMINIO. All rights reserved.</p>
+            </div>
+            <div class="footer-links">
+                <a href="#home">Home</a>
+                <a href="#services">Services</a>
+                <a href="#about">About</a>
+                <a href="#contact">Contact</a>
+                <a href="{% url 'terms' %}">Terms of Service</a>
+                <a href="{% url 'privacy' %}">Privacy Policy</a>
+            </div>
+        </div>
+    </footer>
+
+    <script src="{% static 'landing/js/main.js' %}"></script>
+</body>
+</html>
