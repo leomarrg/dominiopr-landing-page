@@ -19,9 +19,11 @@ User=ubuntu
 Group=www-data
 WorkingDirectory=/var/www/dominio
 EnvironmentFile=/var/www/dominio/.env
+RuntimeDirectory=gunicorn-dominio
+RuntimeDirectoryMode=0755
 ExecStart=/var/www/dominio/venv/bin/gunicorn \
     --workers 3 \
-    --bind unix:/run/gunicorn-dominio.sock \
+    --bind unix:/run/gunicorn-dominio/gunicorn.sock \
     --access-logfile - \
     --error-logfile - \
     dominio_website.wsgi:application
