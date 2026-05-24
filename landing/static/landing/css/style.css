@@ -94,6 +94,10 @@
 }
 
 /* ===== BASE TYPOGRAPHY ===== */
+html {
+    scroll-behavior: smooth;
+}
+
 body {
     font-family: 'Montserrat', sans-serif;
     font-weight: 400;
@@ -101,6 +105,11 @@ body {
     color: var(--white);
     background-color: var(--primary);
     -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -138,14 +147,16 @@ p {
 .navbar-pill {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    max-width: 900px;
+    justify-content: center;
+    gap: 12px;
+    width: fit-content;
+    max-width: calc(100% - 32px);
     margin: 0 auto;
     background: rgba(8, 44, 66, 0.92);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border-radius: var(--radius-pill);
-    padding: 8px 8px 8px 24px;
+    padding: 8px 16px;
     box-shadow: var(--shadow-pill);
     border: 1px solid rgba(255, 255, 255, 0.08);
     overflow: hidden;
@@ -154,17 +165,19 @@ p {
 .nav-logo {
     position: relative;
     height: 36px;
+    width: 100px;
     flex-shrink: 0;
+    overflow: hidden;
 }
 
-.nav-logo img {
+.nav-logo .logo-desktop {
     height: 150px;
     width: auto;
     display: block;
     position: absolute;
     top: 50%;
-    left: -30px;
-    transform: translateY(-50%);
+    left: 50%;
+    transform: translate(-50%, -50%);
     mix-blend-mode: lighten;
 }
 
@@ -175,7 +188,7 @@ p {
 .nav-links {
     display: flex;
     list-style: none;
-    gap: 4px;
+    gap: 12px;
     margin: 0;
     padding: 0;
 }
@@ -200,21 +213,21 @@ p {
 .nav-profile {
     position: relative;
     height: 36px;
-    width: 60px;
+    width: 36px;
     flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 50%;
 }
 
 .nav-profile img {
-    height: 60px;
-    width: 60px;
+    height: 36px;
+    width: 36px;
     border-radius: 50%;
     object-fit: cover;
     display: block;
     border: none;
-    position: absolute;
-    top: 50%;
-    right: 0;
-    transform: translateY(-50%);
+    position: static;
+    transform: none;
 }
 
 /* Mobile Toggle */
@@ -466,6 +479,64 @@ p {
     pointer-events: auto;
 }
 
+/* ===== HERO WORD-BY-WORD ENTRANCE ===== */
+@property --hero-reveal-y {
+    syntax: '<length>';
+    inherits: false;
+    initial-value: 28px;
+}
+
+@property --hero-reveal-op {
+    syntax: '<number>';
+    inherits: false;
+    initial-value: 0;
+}
+
+.hero-word {
+    display: inline-block;
+    opacity: 0;
+    transform: translateY(28px);
+    transition:
+        opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1),
+        transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+    transition-delay: calc(var(--i, 0) * 45ms);
+    will-change: opacity, transform;
+}
+
+.hero-content--ready .hero-word {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.hero-actions a {
+    transform: translateY(var(--hero-reveal-y));
+    opacity: var(--hero-reveal-op);
+    transition:
+        --hero-reveal-y 0.9s cubic-bezier(0.22, 1, 0.36, 1) calc(var(--i, 0) * 45ms),
+        --hero-reveal-op 0.9s cubic-bezier(0.22, 1, 0.36, 1) calc(var(--i, 0) * 45ms),
+        transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+        background 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+        box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+        color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hero-content--ready .hero-actions a {
+    --hero-reveal-y: 0px;
+    --hero-reveal-op: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .hero-word {
+        opacity: 1;
+        transform: none;
+        transition: none;
+    }
+    .hero-actions a {
+        --hero-reveal-y: 0px;
+        --hero-reveal-op: 1;
+    }
+}
+
 /* ===== BUTTONS ===== */
 .btn-primary {
     display: inline-block;
@@ -657,6 +728,73 @@ section > .container > .section-tag {
     flex-shrink: 0;
 }
 
+/* ===== BENTO PRODUCT 3D ROTATOR ===== */
+.bento-product-rotator {
+    position: relative;
+    display: inline-block;
+    flex-shrink: 0;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 700;
+    font-size: clamp(1.5rem, 4vw, 2.5rem);
+    color: var(--white);
+    letter-spacing: -0.02em;
+    line-height: 1;
+    perspective: 1200px;
+}
+
+.bento-product-sizer {
+    display: inline-block;
+    visibility: hidden;
+    white-space: nowrap;
+}
+
+.bento-product-stage {
+    position: absolute;
+    inset: 0;
+    transform-style: preserve-3d;
+    animation:
+        bentoProductSpin 9s infinite cubic-bezier(0.45, 0.05, 0.55, 0.95),
+        bentoProductGlow 9s infinite ease-in-out;
+}
+
+.bento-product-face {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    backface-visibility: hidden;
+}
+
+.bento-product-face:nth-child(1) { transform: translateZ(0.29em); }
+.bento-product-face:nth-child(2) { transform: rotateX(120deg) translateZ(0.29em); }
+.bento-product-face:nth-child(3) { transform: rotateX(240deg) translateZ(0.29em); }
+
+@keyframes bentoProductSpin {
+    0%, 25%   { transform: rotateX(0deg); }
+    33%, 58%  { transform: rotateX(-120deg); }
+    66%, 91%  { transform: rotateX(-240deg); }
+    100%      { transform: rotateX(-360deg); }
+}
+
+@keyframes bentoProductGlow {
+    0%        { text-shadow: 0 0 0 rgba(59, 192, 199, 0); }
+    8%        { text-shadow: 0 0 26px rgba(59, 192, 199, 1), 0 0 52px rgba(59, 192, 199, 0.6); }
+    25%       { text-shadow: 0 0 0 rgba(59, 192, 199, 0); }
+    33%       { text-shadow: 0 0 0 rgba(59, 192, 199, 0); }
+    41%       { text-shadow: 0 0 26px rgba(59, 192, 199, 1), 0 0 52px rgba(59, 192, 199, 0.6); }
+    58%       { text-shadow: 0 0 0 rgba(59, 192, 199, 0); }
+    66%       { text-shadow: 0 0 0 rgba(59, 192, 199, 0); }
+    74%       { text-shadow: 0 0 26px rgba(59, 192, 199, 1), 0 0 52px rgba(59, 192, 199, 0.6); }
+    91%       { text-shadow: 0 0 0 rgba(59, 192, 199, 0); }
+    100%      { text-shadow: 0 0 0 rgba(59, 192, 199, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bento-product-stage { animation: none; }
+}
+
 /* ===== BENTO FLIP CARDS ===== */
 .bento-item--flippable {
     perspective: 1000px;
@@ -822,7 +960,7 @@ section > .container > .section-tag {
 
 .nosotros-visual {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 20px;
     width: 100%;
 }
@@ -1071,6 +1209,9 @@ section > .container > .section-tag {
     .navbar-pill {
         padding: 8px 16px;
         overflow: visible;
+        justify-content: space-between;
+        width: 100%;
+        max-width: 100%;
     }
 
     .nav-links {
@@ -1352,3 +1493,623 @@ section > .container > .section-tag {
         animation: cardFloatMobile 7s 1s ease-in-out infinite;
     }
 }
+
+/* ==========================================================================
+   PDF UPDATE — Section Reveal System (universal)
+   ========================================================================== */
+.reveal-section .reveal-item {
+    opacity: 0;
+    transform: translateY(28px);
+    transition:
+        opacity 720ms cubic-bezier(0.22, 1, 0.36, 1),
+        transform 720ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: opacity, transform;
+}
+
+.reveal-section.is-visible .reveal-item {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.reveal-section.is-visible .reveal-item[data-delay="0"] { transition-delay: 0ms; }
+.reveal-section.is-visible .reveal-item[data-delay="1"] { transition-delay: 90ms; }
+.reveal-section.is-visible .reveal-item[data-delay="2"] { transition-delay: 180ms; }
+.reveal-section.is-visible .reveal-item[data-delay="3"] { transition-delay: 270ms; }
+.reveal-section.is-visible .reveal-item[data-delay="4"] { transition-delay: 360ms; }
+.reveal-section.is-visible .reveal-item[data-delay="5"] { transition-delay: 450ms; }
+.reveal-section.is-visible .reveal-item[data-delay="6"] { transition-delay: 540ms; }
+.reveal-section.is-visible .reveal-item[data-delay="7"] { transition-delay: 630ms; }
+.reveal-section.is-visible .reveal-item[data-delay="8"] { transition-delay: 720ms; }
+
+/* Section intro paragraph (used in problems, services, process, products) */
+.section-intro {
+    text-align: center;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 1.05rem;
+    max-width: 680px;
+    margin: -28px auto 56px;
+    line-height: 1.65;
+}
+
+/* ==========================================================================
+   PDF UPDATE — Problem Section ("What we solve")
+   ========================================================================== */
+.problem-section {
+    background: var(--primary);
+    padding: 100px 0;
+}
+
+.problem-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin-top: 16px;
+}
+
+.problem-card {
+    position: relative;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius);
+    padding: 36px 28px 32px;
+    transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+                border-color 0.35s ease,
+                background 0.35s ease,
+                box-shadow 0.35s ease;
+    overflow: hidden;
+}
+
+.problem-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 2px;
+    width: 0;
+    background: var(--accent);
+    transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.problem-card:hover {
+    transform: translateY(-6px);
+    border-color: rgba(59, 192, 199, 0.45);
+    background: rgba(59, 192, 199, 0.04);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
+}
+
+.problem-card:hover::before {
+    width: 100%;
+}
+
+.problem-number {
+    display: inline-block;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 2px;
+    margin-bottom: 18px;
+}
+
+.problem-card h3 {
+    font-size: 1.15rem;
+    color: var(--white);
+    margin-bottom: 10px;
+    line-height: 1.35;
+}
+
+.problem-card p {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.92rem;
+    line-height: 1.6;
+}
+
+/* ==========================================================================
+   PDF UPDATE — Bento 6-services grid (3x2)
+   ========================================================================== */
+.bento-grid--six {
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: auto auto;
+    gap: 18px;
+}
+
+.bento-grid--six .bento-item--flippable {
+    min-height: 340px;
+}
+
+/* Tighter front face for the smaller 6-grid cards */
+.bento-grid--six .bento-flip-front,
+.bento-grid--six .bento-flip-back {
+    padding: 26px 24px;
+    overflow: hidden;
+}
+
+.bento-grid--six .bento-flip-front {
+    justify-content: flex-start;
+}
+
+.bento-grid--six .bento-flip-front .bento-icon {
+    font-size: 1.6rem;
+    margin-bottom: 14px;
+}
+
+.bento-grid--six .bento-flip-front h3 {
+    font-size: 1.1rem;
+    margin-bottom: 8px;
+    line-height: 1.3;
+}
+
+.bento-grid--six .bento-flip-front p {
+    font-size: 0.88rem;
+    line-height: 1.55;
+}
+
+/* Compact back face so all 5 list items + heading fit comfortably */
+.bento-grid--six .bento-flip-back {
+    justify-content: flex-start;
+}
+
+.bento-grid--six .bento-flip-back .bento-icon {
+    font-size: 1.4rem;
+    margin-bottom: 10px;
+}
+
+.bento-grid--six .bento-flip-back h3 {
+    font-size: 1rem;
+    margin-bottom: 10px;
+    line-height: 1.3;
+}
+
+.bento-grid--six .bento-back-list li {
+    font-size: 0.82rem;
+    padding: 6px 0;
+    line-height: 1.45;
+}
+
+/* ==========================================================================
+   PDF UPDATE — Process Section (Timeline)
+   ========================================================================== */
+.process-section {
+    background: var(--primary-light);
+    padding: 100px 0;
+}
+
+.process-timeline {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 28px;
+    margin-top: 24px;
+}
+
+.process-line {
+    position: absolute;
+    top: 32px;
+    left: 6%;
+    right: 6%;
+    height: 2px;
+    background: linear-gradient(90deg,
+        rgba(59, 192, 199, 0.05) 0%,
+        rgba(59, 192, 199, 0.55) 12%,
+        rgba(59, 192, 199, 0.55) 88%,
+        rgba(59, 192, 199, 0.05) 100%);
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform 1.2s cubic-bezier(0.22, 1, 0.36, 1) 200ms;
+}
+
+.process-section.is-visible .process-line {
+    transform: scaleX(1);
+}
+
+.process-step {
+    position: relative;
+    text-align: center;
+    padding: 0 8px;
+}
+
+.process-step__num {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: var(--primary);
+    border: 2px solid rgba(59, 192, 199, 0.35);
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 1.05rem;
+    letter-spacing: 1px;
+    margin-bottom: 22px;
+    box-shadow: 0 0 0 6px var(--primary-light),
+                0 0 24px rgba(59, 192, 199, 0.18);
+    transition: border-color 0.4s ease, box-shadow 0.4s ease;
+}
+
+.process-step:hover .process-step__num {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 6px var(--primary-light),
+                0 0 36px rgba(59, 192, 199, 0.45);
+}
+
+.process-step h3 {
+    font-size: 1.05rem;
+    color: var(--white);
+    margin-bottom: 8px;
+    letter-spacing: -0.01em;
+}
+
+.process-step p {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.88rem;
+    line-height: 1.55;
+    max-width: 240px;
+    margin: 0 auto;
+}
+
+/* ==========================================================================
+   PDF UPDATE — Products Section (Showcase)
+   ========================================================================== */
+.products-section {
+    background: var(--primary);
+    padding: 100px 0;
+}
+
+.products-rotator-wrap {
+    display: flex;
+    justify-content: center;
+    margin: 0 auto 56px;
+}
+
+.products-section .bento-product-rotator {
+    font-size: clamp(2rem, 5vw, 3.2rem);
+}
+
+.product-showcase {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+}
+
+.product-card {
+    position: relative;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius);
+    padding: 36px 32px 32px;
+    transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+                border-color 0.4s ease,
+                background 0.4s ease,
+                box-shadow 0.4s ease;
+    overflow: hidden;
+}
+
+.product-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(59, 192, 199, 0.45);
+    background: rgba(59, 192, 199, 0.04);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
+}
+
+.product-card__badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 2px;
+    margin-bottom: 14px;
+    opacity: 0.85;
+}
+
+.product-card h3 {
+    font-size: 1.4rem;
+    color: var(--white);
+    margin-bottom: 10px;
+    letter-spacing: -0.01em;
+}
+
+.product-card p {
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 0.95rem;
+    line-height: 1.6;
+}
+
+.product-card__line {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 2px;
+    width: 0;
+    background: var(--accent);
+    transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.product-card:hover .product-card__line {
+    width: 100%;
+}
+
+/* ==========================================================================
+   PDF UPDATE — About Section (3 principles + split layout)
+   ========================================================================== */
+.nosotros .nosotros-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 56px;
+}
+
+.nosotros-text .section-title {
+    text-align: left;
+    margin-bottom: 24px;
+}
+
+.nosotros-text .section-tag {
+    text-align: left;
+    display: block;
+}
+
+.nosotros-text p {
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 1.02rem;
+    line-height: 1.7;
+    margin-bottom: 16px;
+    max-width: 720px;
+}
+
+/* Remove the floating animation that conflicted with 3-card grid */
+.nosotros .visual-card:first-child,
+.nosotros .visual-card:last-child {
+    animation: none;
+}
+
+/* ==========================================================================
+   PDF UPDATE — Contact Section (split layout + extra fields)
+   ========================================================================== */
+.contact-layout {
+    display: grid;
+    grid-template-columns: 0.9fr 1.1fr;
+    gap: 56px;
+    align-items: start;
+}
+
+.contact-copy .section-tag,
+.contact-copy .section-title {
+    text-align: left;
+}
+
+.contact-copy .section-title {
+    margin-bottom: 20px;
+}
+
+.contact-copy p {
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 1rem;
+    line-height: 1.65;
+    max-width: 460px;
+}
+
+.contact-form select {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: var(--radius);
+    color: var(--white);
+    padding: 14px 16px;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 0.95rem;
+    transition: border-color 0.3s ease, background 0.3s ease;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, rgba(255,255,255,0.5) 50%),
+                      linear-gradient(135deg, rgba(255,255,255,0.5) 50%, transparent 50%);
+    background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%;
+    background-size: 6px 6px;
+    background-repeat: no-repeat;
+    padding-right: 36px;
+}
+
+.contact-form select:focus {
+    outline: none;
+    border-color: var(--accent);
+    background-color: rgba(59, 192, 199, 0.06);
+}
+
+.contact-form select option {
+    background: var(--primary);
+    color: var(--white);
+}
+
+/* ==========================================================================
+   PDF UPDATE — Focus States (accessibility)
+   ========================================================================== */
+:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+}
+
+a:focus-visible,
+button:focus-visible,
+.bento-item--flippable:focus-visible,
+.visual-card:focus-visible,
+.problem-card:focus-visible,
+.product-card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+    outline: none;
+}
+
+/* ==========================================================================
+   PDF UPDATE — Tablet (max-width: 992px)
+   ========================================================================== */
+@media (max-width: 992px) {
+    .problem-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+
+    .bento-grid--six {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .process-timeline {
+        grid-template-columns: 1fr;
+        gap: 28px;
+        padding-left: 40px;
+    }
+
+    .process-line {
+        top: 0;
+        bottom: 0;
+        left: 30px;
+        right: auto;
+        width: 2px;
+        height: auto;
+        background: linear-gradient(180deg,
+            rgba(59, 192, 199, 0.05) 0%,
+            rgba(59, 192, 199, 0.55) 12%,
+            rgba(59, 192, 199, 0.55) 88%,
+            rgba(59, 192, 199, 0.05) 100%);
+        transform: scaleY(0);
+        transform-origin: top center;
+        transition: transform 1.2s cubic-bezier(0.22, 1, 0.36, 1) 200ms;
+    }
+
+    .process-section.is-visible .process-line {
+        transform: scaleY(1);
+    }
+
+    .process-step {
+        text-align: left;
+        padding-left: 32px;
+        position: relative;
+    }
+
+    .process-step__num {
+        position: absolute;
+        left: -42px;
+        top: 0;
+        width: 52px;
+        height: 52px;
+        font-size: 0.95rem;
+        margin-bottom: 0;
+    }
+
+    .process-step p {
+        max-width: 100%;
+        margin: 0;
+    }
+
+    .product-showcase {
+        grid-template-columns: 1fr;
+    }
+
+    .contact-layout {
+        grid-template-columns: 1fr;
+        gap: 36px;
+    }
+
+    .nosotros-visual {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ==========================================================================
+   PDF UPDATE — Mobile (max-width: 768px)
+   ========================================================================== */
+@media (max-width: 768px) {
+    section {
+        padding: 72px 0;
+    }
+
+    .section-intro {
+        font-size: 0.95rem;
+        margin: -20px auto 40px;
+        padding: 0 8px;
+    }
+
+    .bento-grid--six {
+        grid-template-columns: 1fr;
+    }
+
+    .bento-grid--six .bento-item--flippable {
+        min-height: auto;
+    }
+
+    .problem-section,
+    .process-section,
+    .products-section {
+        padding: 72px 0;
+    }
+
+    .problem-card,
+    .product-card {
+        padding: 28px 22px;
+    }
+
+    .product-showcase {
+        gap: 14px;
+    }
+
+    .product-card h3 {
+        font-size: 1.2rem;
+    }
+
+    /* Reduce hero domino noise on mobile */
+    .dominos-container .domino:nth-child(n+6) {
+        display: none;
+    }
+
+    /* Reduce stagger so mobile reveal doesn't feel slow */
+    .reveal-section.is-visible .reveal-item[data-delay="0"],
+    .reveal-section.is-visible .reveal-item[data-delay="1"],
+    .reveal-section.is-visible .reveal-item[data-delay="2"],
+    .reveal-section.is-visible .reveal-item[data-delay="3"],
+    .reveal-section.is-visible .reveal-item[data-delay="4"],
+    .reveal-section.is-visible .reveal-item[data-delay="5"],
+    .reveal-section.is-visible .reveal-item[data-delay="6"],
+    .reveal-section.is-visible .reveal-item[data-delay="7"],
+    .reveal-section.is-visible .reveal-item[data-delay="8"] {
+        transition-delay: 0ms;
+    }
+
+    /* Hero buttons stack full-width */
+    .hero-actions {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .hero-actions .btn-primary,
+    .hero-actions .btn-outline {
+        width: 100%;
+        text-align: center;
+    }
+}
+
+/* ==========================================================================
+   PDF UPDATE — Reduced Motion fallback
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.001ms !important;
+    }
+
+    .reveal-section .reveal-item {
+        opacity: 1 !important;
+        transform: none !important;
+    }
+
+    .process-line {
+        transform: scaleX(1) !important;
+    }
+}
+

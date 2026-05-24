@@ -1,6 +1,9 @@
 asgiref==3.11.0
 Django==5.2.8
 django-browser-reload==1.21.0
+gunicorn==26.0.0
+whitenoise==6.12.0
+python-dotenv==1.2.2
 sqlparse==0.5.3
 typing_extensions==4.15.0
 tzdata==2025.2

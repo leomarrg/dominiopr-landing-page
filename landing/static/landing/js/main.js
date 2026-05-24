@@ -1,12 +1,69 @@
-// ===== LOADING SCREEN =====
+// ===== REDUCED MOTION FLAG =====
+const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (REDUCE_MOTION) document.documentElement.classList.add('reduce-motion');
+
+// ===== HERO WORD-BY-WORD ENTRANCE PREP =====
+(function splitHeroWords() {
+    const heroContent = document.querySelector('.hero-content');
+    if (!heroContent) return;
+
+    let wordIndex = 0;
+    const textElements = heroContent.querySelectorAll('.hero-tag, h1, .hero-desc');
+
+    textElements.forEach((el) => {
+        const textNodes = [];
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) textNodes.push(node);
+
+        textNodes.forEach((textNode) => {
+            const parts = textNode.textContent.split(/(\s+)/);
+            const fragment = document.createDocumentFragment();
+            parts.forEach((part) => {
+                if (!part) return;
+                if (/\S/.test(part)) {
+                    const span = document.createElement('span');
+                    span.className = 'hero-word';
+                    span.style.setProperty('--i', wordIndex++);
+                    span.textContent = part;
+                    fragment.appendChild(span);
+                } else {
+                    fragment.appendChild(document.createTextNode(part));
+                }
+            });
+            textNode.parentNode.replaceChild(fragment, textNode);
+        });
+    });
+
+    heroContent.querySelectorAll('.hero-actions a').forEach((btn) => {
+        btn.style.setProperty('--i', wordIndex++);
+    });
+})();
+
+// ===== LOADING SCREEN (once per session) =====
 window.addEventListener('load', () => {
     const loader = document.getElementById('loaderOverlay');
-    if (loader) {
-        setTimeout(() => {
-            loader.classList.add('hidden');
-            setTimeout(() => loader.remove(), 500);
-        }, 800);
+    const heroContent = document.querySelector('.hero-content');
+    const revealHero = () => heroContent && heroContent.classList.add('hero-content--ready');
+
+    let hasSeenLoader = false;
+    try { hasSeenLoader = sessionStorage.getItem('dominio_loader_seen') === 'true'; } catch (e) {}
+
+    if (!loader) { revealHero(); return; }
+
+    if (REDUCE_MOTION || hasSeenLoader) {
+        loader.classList.add('hidden');
+        revealHero();
+        setTimeout(() => loader.remove(), 400);
+        return;
     }
+
+    setTimeout(() => {
+        loader.classList.add('hidden');
+        revealHero();
+        setTimeout(() => loader.remove(), 500);
+        try { sessionStorage.setItem('dominio_loader_seen', 'true'); } catch (e) {}
+    }, 800);
 });
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -17,14 +74,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (navToggle) {
         navToggle.addEventListener('click', () => {
+            const willOpen = !navToggle.classList.contains('active');
             navToggle.classList.toggle('active');
             navLinks.classList.toggle('open');
+            navToggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
         });
     }
 
     document.querySelectorAll('.nav-links a').forEach(link => {
         link.addEventListener('click', () => {
-            navToggle.classList.remove('active');
+            if (navToggle) {
+                navToggle.classList.remove('active');
+                navToggle.setAttribute('aria-expanded', 'false');
+            }
             navLinks.classList.remove('open');
         });
     });
@@ -447,16 +509,30 @@ document.addEventListener('DOMContentLoaded', () => {
         window.addEventListener('touchend', endDrag);
     }
 
-    // ===== SCROLL REVEAL =====
-    const revealEls = document.querySelectorAll(
-        '.bento-item, .visual-card, .nosotros-text, .contacto-content, .section-title, .section-tag'
-    );
-    const observer = new IntersectionObserver((entries) => {
-        entries.forEach(e => {
-            if (e.isIntersecting) { e.target.classList.add('revealed'); observer.unobserve(e.target); }
-        });
-    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
-    revealEls.forEach(el => { el.classList.add('reveal'); observer.observe(el); });
+    // ===== SECTION REVEAL SYSTEM =====
+    (function initSectionReveals() {
+        const sections = document.querySelectorAll('.reveal-section');
+        if (!sections.length) return;
+
+        if (REDUCE_MOTION) {
+            sections.forEach((s) => s.classList.add('is-visible'));
+            return;
+        }
+
+        const sectionObserver = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('is-visible');
+                        sectionObserver.unobserve(entry.target);
+                    }
+                });
+            },
+            { threshold: 0.16, rootMargin: '0px 0px -80px 0px' }
+        );
+
+        sections.forEach((section) => sectionObserver.observe(section));
+    })();
 
     // ===== MOBILE TAP-TO-FLIP =====
     if (window.innerWidth <= 768) {
@@ -534,22 +610,38 @@ document.addEventListener('DOMContentLoaded', () => {
             animateHeight(card, currentH, frontH, 850, 150);
         }
 
-        bentoCards.forEach(card => {
-            card.addEventListener('click', () => {
-                const isOpen = card.classList.contains('flipped');
-                bentoCards.forEach(c => { if (c !== card) closeCard(c); });
-                if (isOpen) closeCard(card);
-                else openCard(card);
+        function setupFlippable(cards) {
+            cards.forEach(card => {
+                card.setAttribute('role', 'button');
+                card.setAttribute('tabindex', '0');
+                card.setAttribute('aria-expanded', 'false');
+                const toggle = () => {
+                    const isOpen = card.classList.contains('flipped');
+                    cards.forEach(c => {
+                        if (c !== card) {
+                            closeCard(c);
+                            c.setAttribute('aria-expanded', 'false');
+                        }
+                    });
+                    if (isOpen) {
+                        closeCard(card);
+                        card.setAttribute('aria-expanded', 'false');
+                    } else {
+                        openCard(card);
+                        card.setAttribute('aria-expanded', 'true');
+                    }
+                };
+                card.addEventListener('click', toggle);
+                card.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggle();
+                    }
+                });
             });
-        });
+        }
 
-        visualCards.forEach(card => {
-            card.addEventListener('click', () => {
-                const isOpen = card.classList.contains('flipped');
-                visualCards.forEach(c => { if (c !== card) closeCard(c); });
-                if (isOpen) closeCard(card);
-                else openCard(card);
-            });
-        });
+        setupFlippable(bentoCards);
+        setupFlippable(visualCards);
     }
 });

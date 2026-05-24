@@ -26,6 +26,13 @@ staticfiles/
 .DS_Store
 Thumbs.db
 
+# Claude Code local state
+.claude/
+
 # Variables de entorno
 .env
 .env.local
+.env.production
+
+# Static collected by collectstatic on deploy
+staticfiles/

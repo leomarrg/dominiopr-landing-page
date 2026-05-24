@@ -1,0 +1,36 @@
+# /etc/systemd/system/gunicorn-dominio.service
+#
+# After uploading:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable gunicorn-dominio
+#   sudo systemctl start gunicorn-dominio
+#
+# Status:    sudo systemctl status gunicorn-dominio
+# Logs:      sudo journalctl -u gunicorn-dominio -f
+# Restart:   sudo systemctl restart gunicorn-dominio
+
+[Unit]
+Description=Gunicorn for DOMINIO landing
+After=network.target
+
+[Service]
+Type=notify
+User=ubuntu
+Group=www-data
+WorkingDirectory=/var/www/dominio
+EnvironmentFile=/var/www/dominio/.env
+ExecStart=/var/www/dominio/venv/bin/gunicorn \
+    --workers 3 \
+    --bind unix:/run/gunicorn-dominio.sock \
+    --access-logfile - \
+    --error-logfile - \
+    dominio_website.wsgi:application
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

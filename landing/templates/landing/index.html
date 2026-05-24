@@ -4,10 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dominio - Software Development</title>
+    <title>DOMINIO — Software Development Studio</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'landing/css/style.css' %}">
     <link rel="icon" type="image/png" href="{% static 'landing/images/logo/profile_pic@4x.PNG' %}">
 </head>
@@ -38,7 +38,7 @@
 
     <!-- ===== NAVBAR (Pill) ===== -->
     <header class="header">
-        <nav class="navbar-pill">
+        <nav class="navbar-pill" aria-label="Primary">
             <div class="nav-logo">
                 <img src="{% static 'landing/images/logo/logo_home.PNG' %}" alt="Dominio Logo" class="logo-desktop">
                 <img src="{% static 'landing/images/logo/profile_pic@4x.PNG' %}" alt="Dominio" class="logo-mobile">
@@ -46,13 +46,14 @@
             <ul class="nav-links" id="navLinks">
                 <li><a href="#home" class="active">Home</a></li>
                 <li><a href="#services">Services</a></li>
+                <li><a href="#process">Process</a></li>
                 <li><a href="#about">About</a></li>
                 <li><a href="#contact">Contact</a></li>
             </ul>
             <div class="nav-profile">
                 <img src="{% static 'landing/images/logo/profile_pic@4x.PNG' %}" alt="Profile">
             </div>
-            <button class="nav-toggle" id="navToggle" aria-label="Open menu">
+            <button class="nav-toggle" id="navToggle" aria-label="Open menu" aria-expanded="false">
                 <span></span>
                 <span></span>
                 <span></span>
@@ -65,131 +66,262 @@
         <div class="dominos-container" id="dominosContainer"></div>
         <div class="container">
             <div class="hero-content">
-                <p class="hero-tag">Software Development Studio</p>
-                <h1>From idea to production — <span class="text-accent">no shortcuts</span></h1>
-                <p class="hero-desc">We design, develop, and maintain the platforms, dashboards, and internal tools that organizations actually depend on — from first prototype to production.</p>
+                <p class="hero-tag">Software Development Studio &middot; Puerto Rico</p>
+                <h1>Software that moves from idea to operation. <span class="text-accent">Built clean. Shipped right.</span></h1>
+                <p class="hero-desc">DOMINIO designs, develops, and maintains custom platforms, dashboards, automations, and digital products for organizations that need reliable software — not disposable demos.</p>
                 <div class="hero-actions">
-                    <a href="#services" class="btn-primary">Our Services</a>
-                    <a href="#contact" class="btn-outline">Get in Touch</a>
+                    <a href="#services" class="btn-primary">Explore Services</a>
+                    <a href="#contact" class="btn-outline">Start a Project</a>
                 </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== WHAT WE SOLVE SECTION ===== -->
+    <section id="problems" class="problem-section reveal-section" data-reveal="stagger-cards">
+        <div class="container">
+            <p class="section-tag reveal-item" data-delay="0">What we solve</p>
+            <h2 class="section-title reveal-item" data-delay="1">When your operation outgrows spreadsheets, PDFs, and disconnected tools.</h2>
+            <p class="section-intro reveal-item" data-delay="2">We build the systems that bring structure to daily operations, reduce manual work, and give teams a clearer way to manage data, workflows, and decisions.</p>
+            <div class="problem-grid">
+                <article class="problem-card reveal-item" data-delay="3">
+                    <span class="problem-number">01</span>
+                    <h3>Manual work slows the team down</h3>
+                    <p>We replace repetitive tasks, email chains, paper forms, and fragile spreadsheets with structured digital workflows.</p>
+                </article>
+                <article class="problem-card reveal-item" data-delay="4">
+                    <span class="problem-number">02</span>
+                    <h3>Important data is hard to see</h3>
+                    <p>We centralize information into dashboards, reports, and interfaces that make daily decisions easier.</p>
+                </article>
+                <article class="problem-card reveal-item" data-delay="5">
+                    <span class="problem-number">03</span>
+                    <h3>Generic tools no longer fit</h3>
+                    <p>We design custom platforms around the way your organization actually works, instead of forcing your process into the wrong software.</p>
+                </article>
             </div>
         </div>
     </section>
 
     <!-- ===== SERVICES SECTION ===== -->
-    <section id="services" class="servicios">
+    <section id="services" class="servicios reveal-section" data-reveal="services-grid">
         <div class="container">
-            <p class="section-tag">What we do</p>
-            <h2 class="section-title">Our Services</h2>
-            <div class="bento-grid">
-                <div class="bento-item bento-item--main bento-item--flippable">
+            <p class="section-tag reveal-item" data-delay="0">Services</p>
+            <h2 class="section-title reveal-item" data-delay="1">Software services built around real operational needs.</h2>
+            <p class="section-intro reveal-item" data-delay="2">From internal platforms to automation systems, DOMINIO builds tools that help organizations operate with more clarity, less manual work, and stronger technical foundations.</p>
+
+            <div class="bento-grid bento-grid--six">
+                <div class="bento-item bento-item--flippable reveal-item" data-delay="3">
                     <div class="bento-flip-inner">
                         <div class="bento-flip-front">
                             <span class="bento-icon">&lt;/&gt;</span>
-                            <h3>Web Development</h3>
-                            <p>Full-stack web applications, dashboards, and production-ready sites — built to handle real workloads, not just demos.</p>
+                            <h3>Custom Web Platforms</h3>
+                            <p>Internal platforms, portals, admin systems, and full-stack applications built around your real workflows.</p>
                         </div>
                         <div class="bento-flip-back">
                             <span class="bento-icon">&lt;/&gt;</span>
-                            <h3>Web Development</h3>
+                            <h3>Custom Web Platforms</h3>
                             <ul class="bento-back-list">
-                                <li>Django &amp; React full-stack applications</li>
-                                <li>Multi-tenant platforms with role-based access</li>
-                                <li>Real-time dashboards with live analytics</li>
-                                <li>Landing pages &amp; campaign sites</li>
-                                <li>REST API design and integration</li>
+                                <li>Django-based web applications</li>
+                                <li>Multi-company &amp; multi-tenant systems</li>
+                                <li>Role-based access control</li>
+                                <li>Admin dashboards &amp; internal workflows</li>
+                                <li>Secure data collection &amp; management</li>
                             </ul>
                         </div>
                     </div>
                 </div>
-                <div class="bento-item bento-item--ai bento-item--flippable">
+
+                <div class="bento-item bento-item--flippable reveal-item" data-delay="4">
+                    <div class="bento-flip-inner">
+                        <div class="bento-flip-front">
+                            <span class="bento-icon">&#9707;&#xFE0E;</span>
+                            <h3>Dashboards &amp; Data Systems</h3>
+                            <p>Reporting tools and dashboards that turn operational information into clear, usable insight.</p>
+                        </div>
+                        <div class="bento-flip-back">
+                            <span class="bento-icon">&#9707;&#xFE0E;</span>
+                            <h3>Dashboards &amp; Data Systems</h3>
+                            <ul class="bento-back-list">
+                                <li>Operational dashboards</li>
+                                <li>KPI tracking</li>
+                                <li>Data visualization</li>
+                                <li>QuickSight &amp; Power BI integration support</li>
+                                <li>Custom reporting views</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bento-item bento-item--flippable reveal-item" data-delay="5">
                     <div class="bento-flip-inner">
                         <div class="bento-flip-front">
                             <span class="bento-icon">&#9041;&#xFE0E;</span>
                             <h3>AI &amp; Automation</h3>
-                            <p>Practical automations that cut manual work — document processing, data pipelines, and intelligent workflows built into the tools you already use.</p>
+                            <p>Practical automations that reduce repetitive work without adding unnecessary complexity.</p>
                         </div>
                         <div class="bento-flip-back">
                             <span class="bento-icon">&#9041;&#xFE0E;</span>
                             <h3>AI &amp; Automation</h3>
                             <ul class="bento-back-list">
-                                <li>AI-assisted document processing &amp; data extraction</li>
-                                <li>Workflow automation for internal operations</li>
-                                <li>Automated reporting &amp; data pipelines</li>
-                                <li>Custom integrations between platforms</li>
+                                <li>AI-assisted document processing</li>
+                                <li>Automated data extraction</li>
+                                <li>Internal workflow automation</li>
+                                <li>Email &amp; notification automation</li>
+                                <li>AI assistants connected to structured data</li>
                             </ul>
                         </div>
                     </div>
                 </div>
-                <div class="bento-item bento-item--it bento-item--flippable">
+
+                <div class="bento-item bento-item--flippable reveal-item" data-delay="6">
                     <div class="bento-flip-inner">
                         <div class="bento-flip-front">
-                            <span class="bento-icon">&#9881;&#xFE0E;</span>
-                            <h3>IT Consulting</h3>
-                            <p>Hands-on guidance to get your infrastructure right — from cloud setup to deployment pipelines, we'll make sure your tech decisions hold up long term.</p>
+                            <span class="bento-icon">&#9729;&#xFE0E;</span>
+                            <h3>Cloud, Deployment &amp; Maintenance</h3>
+                            <p>Production setup, hosting, monitoring, and maintenance for systems that need to stay reliable.</p>
                         </div>
                         <div class="bento-flip-back">
-                            <span class="bento-icon">&#9881;&#xFE0E;</span>
-                            <h3>IT Consulting</h3>
+                            <span class="bento-icon">&#9729;&#xFE0E;</span>
+                            <h3>Cloud, Deployment &amp; Maintenance</h3>
                             <ul class="bento-back-list">
-                                <li>Cloud infrastructure setup &amp; management (AWS)</li>
-                                <li>CI/CD pipelines &amp; deployment workflows</li>
-                                <li>Tech stack audits &amp; migration planning</li>
-                                <li>Database design &amp; performance optimization</li>
+                                <li>AWS deployment support</li>
+                                <li>EC2 &amp; RDS configuration</li>
+                                <li>Nginx, Gunicorn, Supervisor setup</li>
+                                <li>Production migrations</li>
+                                <li>Backups, logs &amp; performance checks</li>
                             </ul>
                         </div>
                     </div>
                 </div>
-                <a href="#" class="bento-item bento-item--product">
-                    <span class="bento-icon">&#9672;&#xFE0E;</span>
-                    <div class="bento-product-content">
-                        <h3>Digital Products</h3>
-                        <p>In-house platforms we've built to solve specific industry problems.</p>
+
+                <div class="bento-item bento-item--flippable reveal-item" data-delay="7">
+                    <div class="bento-flip-inner">
+                        <div class="bento-flip-front">
+                            <span class="bento-icon">&#9678;&#xFE0E;</span>
+                            <h3>Landing Pages &amp; Campaign Systems</h3>
+                            <p>Polished public-facing pages and registration systems for events, programs, campaigns, and initiatives.</p>
+                        </div>
+                        <div class="bento-flip-back">
+                            <span class="bento-icon">&#9678;&#xFE0E;</span>
+                            <h3>Landing Pages &amp; Campaign Systems</h3>
+                            <ul class="bento-back-list">
+                                <li>Landing pages</li>
+                                <li>Registration forms</li>
+                                <li>Admin views</li>
+                                <li>Exportable data</li>
+                                <li>Email &amp; SMS notification flows</li>
+                            </ul>
+                        </div>
                     </div>
-                    <span class="bento-product-title">Registrate<span class="text-accent">PR</span></span>
-                </a>
+                </div>
+
+                <div class="bento-item bento-item--flippable reveal-item" data-delay="8">
+                    <div class="bento-flip-inner">
+                        <div class="bento-flip-front">
+                            <span class="bento-icon">&#9672;&#xFE0E;</span>
+                            <h3>Digital Products</h3>
+                            <p>In-house products created from recurring operational problems we see in the real world.</p>
+                        </div>
+                        <div class="bento-flip-back">
+                            <span class="bento-icon">&#9672;&#xFE0E;</span>
+                            <h3>Digital Products</h3>
+                            <ul class="bento-back-list">
+                                <li>Reg&iacute;stratePR</li>
+                                <li>Linkea</li>
+                                <li>Pulso Pol&iacute;tico</li>
+                                <li>Custom product strategy</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== PROCESS SECTION ===== -->
+    <section id="process" class="process-section reveal-section" data-reveal="timeline">
+        <div class="container">
+            <p class="section-tag reveal-item" data-delay="0">Process</p>
+            <h2 class="section-title reveal-item" data-delay="1">A clear path from first idea to production.</h2>
+            <p class="section-intro reveal-item" data-delay="2">We do not start by guessing screens. We define the operation, the data, the users, and the technical foundation before building the system.</p>
+
+            <div class="process-timeline">
+                <span class="process-line" aria-hidden="true"></span>
+                <article class="process-step reveal-item" data-delay="3">
+                    <span class="process-step__num">01</span>
+                    <h3>Discover</h3>
+                    <p>We understand the current process, users, pain points, permissions, data, and operational goals.</p>
+                </article>
+                <article class="process-step reveal-item" data-delay="4">
+                    <span class="process-step__num">02</span>
+                    <h3>Design the system</h3>
+                    <p>We map workflows, database structure, screens, roles, and integrations before development starts.</p>
+                </article>
+                <article class="process-step reveal-item" data-delay="5">
+                    <span class="process-step__num">03</span>
+                    <h3>Build and integrate</h3>
+                    <p>We develop the platform, connect services, test real scenarios, and prepare the product for production use.</p>
+                </article>
+                <article class="process-step reveal-item" data-delay="6">
+                    <span class="process-step__num">04</span>
+                    <h3>Launch and maintain</h3>
+                    <p>We deploy, monitor, improve, and maintain the system so it keeps working after launch.</p>
+                </article>
             </div>
         </div>
     </section>
 
     <!-- ===== ABOUT SECTION ===== -->
-    <section id="about" class="nosotros">
+    <section id="about" class="nosotros reveal-section" data-reveal="split">
         <div class="container">
             <div class="nosotros-layout">
-                <div class="nosotros-text">
-                    <p class="section-tag">Who we are</p>
-                    <h2 class="section-title">About Us</h2>
-                    <p>DOMINIO is a software studio based in Puerto Rico. We build the internal platforms,
-                       dashboards, and digital tools that organizations run on every day. Our work sits at the
-                       intersection of solid engineering and practical design — software that's built right,
-                       does what it should, and doesn't need to be rebuilt six months later.</p>
+                <div class="nosotros-text reveal-item" data-delay="0">
+                    <p class="section-tag">About DOMINIO</p>
+                    <h2 class="section-title">Built like a product. Managed like a long-term system.</h2>
+                    <p>DOMINIO is a software development studio based in Puerto Rico. We build internal platforms, dashboards, automations, and digital products for teams that need their software to work in real operations, not just in a demo.</p>
+                    <p>Our work combines practical engineering, clean interfaces, reliable deployment, and long-term maintainability.</p>
                 </div>
                 <div class="nosotros-visual">
-                    <div class="visual-card">
+                    <div class="visual-card reveal-item" data-delay="1">
                         <div class="visual-flip-inner">
                             <div class="visual-flip-front">
                                 <div class="visual-icon">&#9878;&#xFE0E;</div>
-                                <h3>Precision</h3>
-                                <p>Engineered to perform, built to last</p>
+                                <h3>Architecture first</h3>
+                                <p>The system has to make sense before the interface looks good.</p>
                             </div>
                             <div class="visual-flip-back">
                                 <div class="visual-icon">&#9878;&#xFE0E;</div>
-                                <h3>Precision</h3>
-                                <p>Architecture decisions, database design, deployment — nothing is an afterthought. We write clean, tested code that scales without surprises.</p>
+                                <h3>Architecture first</h3>
+                                <p>We define roles, data models, workflows, permissions, and integrations early so the product can scale without becoming fragile.</p>
                             </div>
                         </div>
                     </div>
-                    <div class="visual-card">
+                    <div class="visual-card reveal-item" data-delay="2">
                         <div class="visual-flip-inner">
                             <div class="visual-flip-front">
-                                <div class="visual-icon">&#9733;&#xFE0E;</div>
-                                <h3>Creativity</h3>
-                                <p>Real problems, original solutions</p>
+                                <div class="visual-icon">&#9633;&#xFE0E;</div>
+                                <h3>Practical design</h3>
+                                <p>Interfaces should feel clear, not decorative.</p>
                             </div>
                             <div class="visual-flip-back">
-                                <div class="visual-icon">&#9733;&#xFE0E;</div>
-                                <h3>Creativity</h3>
-                                <p>Every project has constraints that off-the-shelf tools can't solve. We dig into the specifics of your operation and build exactly what fits — nothing more, nothing less.</p>
+                                <div class="visual-icon">&#9633;&#xFE0E;</div>
+                                <h3>Practical design</h3>
+                                <p>We design around real users, real tasks, and the decisions teams need to make every day.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="visual-card reveal-item" data-delay="3">
+                        <div class="visual-flip-inner">
+                            <div class="visual-flip-front">
+                                <div class="visual-icon">&#9650;&#xFE0E;</div>
+                                <h3>Production mindset</h3>
+                                <p>Launch is not the finish line.</p>
+                            </div>
+                            <div class="visual-flip-back">
+                                <div class="visual-icon">&#9650;&#xFE0E;</div>
+                                <h3>Production mindset</h3>
+                                <p>Deployment, logs, backups, maintenance, and future changes are considered from the beginning.</p>
                             </div>
                         </div>
                     </div>
@@ -198,18 +330,83 @@
         </div>
     </section>
 
-    <!-- ===== CONTACT SECTION ===== -->
-    <section id="contact" class="contacto">
+    <!-- ===== DIGITAL PRODUCTS SHOWCASE ===== -->
+    <section id="products" class="products-section reveal-section" data-reveal="product-cards">
         <div class="container">
-            <p class="section-tag">Let's talk</p>
-            <h2 class="section-title">Contact</h2>
-            <div class="contacto-content">
-                <form class="contact-form">
-                    <div class="form-row">
-                        <input type="text" placeholder="Name" required>
-                        <input type="email" placeholder="Email" required>
+            <p class="section-tag reveal-item" data-delay="0">Digital Products</p>
+            <h2 class="section-title reveal-item" data-delay="1">Products built from real operational needs.</h2>
+            <p class="section-intro reveal-item" data-delay="2">Some problems repeat across industries. We turn those patterns into focused digital products that can be adapted for real use cases.</p>
+
+            <div class="products-rotator-wrap reveal-item" data-delay="3" aria-hidden="true">
+                <div class="bento-product-rotator" aria-label="Reg&iacute;stratePR, Pulso Pol&iacute;tico, Linkea">
+                    <span class="bento-product-sizer" aria-hidden="true">Pulso Pol&iacute;tico</span>
+                    <div class="bento-product-stage">
+                        <span class="bento-product-face">Registrate<span class="text-accent">PR</span></span>
+                        <span class="bento-product-face">Pulso <span class="text-accent">Pol&iacute;tico</span></span>
+                        <span class="bento-product-face">Link<span class="text-accent">ea</span></span>
                     </div>
-                    <textarea placeholder="Message" rows="5" required></textarea>
+                </div>
+            </div>
+
+            <div class="product-showcase">
+                <article class="product-card reveal-item" data-delay="4">
+                    <span class="product-card__badge">01</span>
+                    <h3>Reg&iacute;stratePR</h3>
+                    <p>Registration, attendance, survey, and event management tools for campaigns, meetings, and organizations.</p>
+                    <span class="product-card__line" aria-hidden="true"></span>
+                </article>
+                <article class="product-card reveal-item" data-delay="5">
+                    <span class="product-card__badge">02</span>
+                    <h3>Linkea</h3>
+                    <p>A local-first link-in-bio and digital business card platform with services, booking, payments, and contact flows.</p>
+                    <span class="product-card__line" aria-hidden="true"></span>
+                </article>
+                <article class="product-card reveal-item" data-delay="6">
+                    <span class="product-card__badge">03</span>
+                    <h3>Pulso Pol&iacute;tico</h3>
+                    <p>Monitoring, listening, and intelligence tools for public conversations, campaigns, and communications strategy.</p>
+                    <span class="product-card__line" aria-hidden="true"></span>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== CONTACT SECTION ===== -->
+    <section id="contact" class="contacto reveal-section" data-reveal="contact">
+        <div class="container">
+            <div class="contact-layout">
+                <div class="contact-copy reveal-item" data-delay="0">
+                    <p class="section-tag">Contact</p>
+                    <h2 class="section-title">Have a project that needs to work beyond the demo?</h2>
+                    <p>Tell us what you are trying to build, automate, or improve. We will review the idea and respond with a clear next step.</p>
+                </div>
+                <form class="contact-form reveal-item" data-delay="1" method="post" novalidate>
+                    {% csrf_token %}
+                    <div class="form-row">
+                        <input type="text" name="name" placeholder="Name" required>
+                        <input type="email" name="email" placeholder="Email" required>
+                    </div>
+                    <input type="text" name="company" placeholder="Company / Organization">
+                    <div class="form-row">
+                        <select name="service" required>
+                            <option value="">Service needed</option>
+                            <option value="custom-platform">Custom Web Platform</option>
+                            <option value="dashboard">Dashboard / Data System</option>
+                            <option value="automation">AI / Automation</option>
+                            <option value="landing">Landing Page / Campaign System</option>
+                            <option value="cloud">Cloud / Deployment</option>
+                            <option value="consulting">Consulting</option>
+                        </select>
+                        <select name="budget">
+                            <option value="">Budget range</option>
+                            <option value="under-1000">Under $1,000</option>
+                            <option value="1000-3000">$1,000 – $3,000</option>
+                            <option value="3000-7500">$3,000 – $7,500</option>
+                            <option value="7500-plus">$7,500+</option>
+                            <option value="not-sure">Not sure yet</option>
+                        </select>
+                    </div>
+                    <textarea name="message" placeholder="Tell us about the project" rows="5" required></textarea>
                     <button type="submit" class="btn-primary">Send Message</button>
                 </form>
             </div>
@@ -225,6 +422,7 @@
             <div class="footer-links">
                 <a href="#home">Home</a>
                 <a href="#services">Services</a>
+                <a href="#process">Process</a>
                 <a href="#about">About</a>
                 <a href="#contact">Contact</a>
                 <a href="{% url 'terms' %}">Terms of Service</a>
