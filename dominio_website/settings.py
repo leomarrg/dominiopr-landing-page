@@ -94,6 +94,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'landing.context_processors.site_globals',
             ],
         },
     },
@@ -198,3 +199,34 @@ LOGGING = {
         },
     },
 }
+
+
+# ============================================================
+# EMAIL — contact form notifications
+# In DEBUG we print emails to the console (no SMTP needed locally).
+# In production we use SMTP (Gmail) with an App Password from the .env.
+# ============================================================
+
+EMAIL_BACKEND = os.environ.get(
+    'DJANGO_EMAIL_BACKEND',
+    'django.core.mail.backends.console.EmailBackend' if DEBUG
+    else 'django.core.mail.backends.smtp.EmailBackend',
+)
+EMAIL_HOST = os.environ.get('DJANGO_EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.environ.get('DJANGO_EMAIL_PORT', '587'))
+EMAIL_USE_TLS = os.environ.get('DJANGO_EMAIL_USE_TLS', 'True').lower() in ('true', '1', 'yes')
+EMAIL_HOST_USER = os.environ.get('DJANGO_EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('DJANGO_EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.environ.get(
+    'DJANGO_DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'no-reply@dominiopr.com'
+)
+# Where new contact-form leads are emailed.
+CONTACT_NOTIFY_EMAIL = os.environ.get('DJANGO_CONTACT_NOTIFY_EMAIL', 'creatudominiopr@gmail.com')
+
+
+# ============================================================
+# ANALYTICS — Google Analytics 4 (loaded client-side, only after consent)
+# Set GA_MEASUREMENT_ID in the .env (e.g. G-XXXXXXXXXX). Empty = no tracking.
+# ============================================================
+
+GA_MEASUREMENT_ID = os.environ.get('GA_MEASUREMENT_ID', '')

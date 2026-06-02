@@ -7,7 +7,7 @@ Deployment a AWS Lightsail con dominio en GoDaddy y CI/CD vía GitHub Actions.
 ## Arquitectura
 
 ```
-GoDaddy DNS  ───────────►  AWS Lightsail Instance (Ubuntu 22.04)
+GoDaddy DNS  ───────────►  AWS Lightsail Instance (Ubuntu 22.04)si pude entrar
    *.dominiopr.com               │
                                  ├── Nginx (reverse proxy + SSL)
                                  │     ├── dominiopr.com         → gunicorn-dominio.sock

@@ -1,0 +1,123 @@
+{% comment %}
+Cookie consent + Google Analytics 4.
+GA only loads AFTER the visitor clicks "Accept" (opt-in), satisfying
+US/PR privacy expectations (CCPA/CPRA: clear notice + ability to reject).
+The choice is stored in localStorage. A footer link with id="cookieSettings"
+reopens the banner so the visitor can change their mind.
+{% endcomment %}
+
+{% if GA_MEASUREMENT_ID %}
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){ dataLayer.push(arguments); }
+  function dominioLoadGA(){
+    if (window.__dominioGA) return;
+    window.__dominioGA = true;
+    var s = document.createElement('script');
+    s.async = true;
+    s.src = 'https://www.googletagmanager.com/gtag/js?id={{ GA_MEASUREMENT_ID }}';
+    document.head.appendChild(s);
+    gtag('js', new Date());
+    gtag('config', '{{ GA_MEASUREMENT_ID }}', { anonymize_ip: true });
+  }
+</script>
+{% endif %}
+
+<div id="cookieBanner" class="cookie-banner" role="dialog" aria-live="polite"
+     aria-label="Cookie consent" hidden>
+  <p class="cookie-banner__text">
+    We use cookies to measure site traffic and understand how visitors use our
+    site. You can accept or reject analytics cookies. See our
+    <a href="{% url 'privacy' %}">Privacy Policy</a>.
+  </p>
+  <div class="cookie-banner__actions">
+    <button type="button" id="cookieReject" class="cookie-banner__btn cookie-banner__btn--ghost">Reject</button>
+    <button type="button" id="cookieAccept" class="cookie-banner__btn cookie-banner__btn--primary">Accept</button>
+  </div>
+</div>
+
+<style>
+  .cookie-banner {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    z-index: 9999;
+    max-width: 560px;
+    margin: 0 auto;
+    background: #11131a;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    padding: 18px 20px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .cookie-banner[hidden] { display: none; }
+  .cookie-banner__text {
+    margin: 0;
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 0.85rem;
+    line-height: 1.6;
+  }
+  .cookie-banner__text a { color: var(--accent, #6ea8fe); text-decoration: underline; }
+  .cookie-banner__actions { display: flex; gap: 10px; justify-content: flex-end; }
+  .cookie-banner__btn {
+    border: 0;
+    border-radius: 8px;
+    padding: 9px 18px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .cookie-banner__btn--ghost {
+    background: transparent;
+    color: rgba(255, 255, 255, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+  }
+  .cookie-banner__btn--primary { background: var(--accent, #6ea8fe); color: #0b0d12; }
+  @media (max-width: 480px) {
+    .cookie-banner__actions { justify-content: stretch; }
+    .cookie-banner__btn { flex: 1; }
+  }
+</style>
+
+<script>
+  (function () {
+    var KEY = 'dominio_cookie_consent';
+    var banner = document.getElementById('cookieBanner');
+    var choice = null;
+    try { choice = localStorage.getItem(KEY); } catch (e) {}
+
+    if (choice === 'accepted') {
+      if (typeof dominioLoadGA === 'function') dominioLoadGA();
+    } else if (choice !== 'rejected' && banner) {
+      banner.hidden = false;
+    }
+
+    function store(value) {
+      try { localStorage.setItem(KEY, value); } catch (e) {}
+      if (banner) banner.hidden = true;
+    }
+
+    var accept = document.getElementById('cookieAccept');
+    var reject = document.getElementById('cookieReject');
+    if (accept) accept.addEventListener('click', function () {
+      store('accepted');
+      if (typeof dominioLoadGA === 'function') dominioLoadGA();
+    });
+    if (reject) reject.addEventListener('click', function () { store('rejected'); });
+
+    // Let a footer "Cookie settings" link reopen the banner.
+    document.addEventListener('click', function (e) {
+      var trigger = e.target.closest && e.target.closest('#cookieSettings');
+      if (trigger) {
+        e.preventDefault();
+        try { localStorage.removeItem(KEY); } catch (_) {}
+        if (banner) banner.hidden = false;
+      }
+    });
+  })();
+</script>

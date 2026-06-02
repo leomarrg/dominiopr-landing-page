@@ -72,7 +72,7 @@
             <div class="legal-content">
                 <a href="{% url 'index' %}" class="legal-back">&larr; Back to Home</a>
                 <h1>Terms of Service</h1>
-                <span class="legal-updated">Last updated: March 1, 2026</span>
+                <span class="legal-updated">Last updated: June 2, 2026</span>
 
                 <h2>1. Agreement to Terms</h2>
                 <p>By accessing or using the services provided by DOMINIO ("we," "us," or "our"), you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our services.</p>
@@ -116,7 +116,10 @@
                 <h2>10. Changes to Terms</h2>
                 <p>We reserve the right to update these Terms of Service at any time. Changes will be posted on this page with an updated revision date. Continued use of our services after changes constitutes acceptance of the new terms.</p>
 
-                <h2>11. Contact</h2>
+                <h2>11. Governing Law</h2>
+                <p>These Terms of Service are governed by and construed in accordance with the laws of the Commonwealth of Puerto Rico and applicable laws of the United States, without regard to conflict-of-law principles. Any dispute arising from these terms or our services shall be subject to the exclusive jurisdiction of the courts located in San Juan, Puerto Rico.</p>
+
+                <h2>12. Contact</h2>
                 <p>If you have questions about these Terms of Service, please contact us through our <a href="{% url 'index' %}#contact">contact form</a>.</p>
             </div>
         </div>
@@ -131,8 +134,10 @@
                 <a href="{% url 'index' %}">Home</a>
                 <a href="{% url 'terms' %}">Terms of Service</a>
                 <a href="{% url 'privacy' %}">Privacy Policy</a>
+                <a href="#" id="cookieSettings">Cookie Settings</a>
             </div>
         </div>
     </footer>
+    {% include 'landing/_tracking.html' %}
 </body>
 </html>

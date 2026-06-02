@@ -21,8 +21,15 @@ WorkingDirectory=/var/www/dominio
 EnvironmentFile=/var/www/dominio/.env
 RuntimeDirectory=gunicorn-dominio
 RuntimeDirectoryMode=0755
+# Tuned for a 512MB-1GB instance:
+#   --workers 2          fits low-RAM boxes (raise to 3 only with >=2GB RAM)
+#   --max-requests       recycle workers periodically to release leaked memory
+#   --timeout 60         kill a worker stuck >60s (was the default 30s)
 ExecStart=/var/www/dominio/venv/bin/gunicorn \
-    --workers 3 \
+    --workers 2 \
+    --max-requests 500 \
+    --max-requests-jitter 50 \
+    --timeout 60 \
     --bind unix:/run/gunicorn-dominio/gunicorn.sock \
     --access-logfile - \
     --error-logfile - \
