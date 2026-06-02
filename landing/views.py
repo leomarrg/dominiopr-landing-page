@@ -2,8 +2,9 @@ import logging
 
 from django.conf import settings
 from django.contrib import messages
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives
 from django.shortcuts import redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 
 from .forms import ContactForm
@@ -19,33 +20,50 @@ def _client_ip(request):
     return request.META.get('REMOTE_ADDR')
 
 
-def _notify_new_lead(submission):
-    """Email the team when a new lead comes in. Never raises to the request."""
-    recipient = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
-    if not recipient:
-        return
-    subject = f'New lead from dominiopr.com: {submission.name}'
-    body = (
-        f'Name:    {submission.name}\n'
-        f'Email:   {submission.email}\n'
-        f'Company: {submission.company or "-"}\n'
-        f'Service: {submission.get_service_display()}\n'
-        f'Budget:  {submission.get_budget_display() or "-"}\n'
-        f'Date:    {submission.created_at:%Y-%m-%d %H:%M %Z}\n'
-        f'IP:      {submission.ip_address or "-"}\n\n'
-        f'Message:\n{submission.message}\n'
-    )
+def _send_html_email(subject, to, html_template, txt_template, context, reply_to=None):
+    """Send a multipart (text + HTML) email. Logs and swallows errors."""
     try:
-        send_mail(
+        html_body = render_to_string(html_template, context)
+        text_body = render_to_string(txt_template, context)
+        msg = EmailMultiAlternatives(
             subject,
-            body,
+            text_body,
             settings.DEFAULT_FROM_EMAIL,
-            [recipient],
-            fail_silently=False,
+            to,
+            reply_to=reply_to,
         )
+        msg.attach_alternative(html_body, 'text/html')
+        msg.send(fail_silently=False)
     except Exception:
         # The lead is already saved in the DB; a failed email must not break the UX.
-        logger.exception('Failed to send contact notification email')
+        logger.exception('Failed to send email "%s" to %s', subject, to)
+
+
+def _send_lead_emails(submission):
+    """Notify the DOMINIO team and send the visitor a styled confirmation."""
+    notify_to = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
+    context = {'submission': submission}
+
+    # 1) Internal notification to the DOMINIO inbox.
+    if notify_to:
+        _send_html_email(
+            subject=f'New lead from dominiopr.com: {submission.name}',
+            to=[notify_to],
+            html_template='landing/emails/lead_notification.html',
+            txt_template='landing/emails/lead_notification.txt',
+            context=context,
+            reply_to=[submission.email],
+        )
+
+    # 2) Confirmation to the person who submitted the form.
+    _send_html_email(
+        subject='We received your request — DOMINIO',
+        to=[submission.email],
+        html_template='landing/emails/lead_confirmation.html',
+        txt_template='landing/emails/lead_confirmation.txt',
+        context=context,
+        reply_to=[notify_to] if notify_to else None,
+    )
 
 
 def index(request):
@@ -56,7 +74,7 @@ def index(request):
             submission.ip_address = _client_ip(request)
             submission.user_agent = request.META.get('HTTP_USER_AGENT', '')[:300]
             submission.save()
-            _notify_new_lead(submission)
+            _send_lead_emails(submission)
             messages.success(
                 request,
                 'Thank you. We received your message and will get back to you soon.',

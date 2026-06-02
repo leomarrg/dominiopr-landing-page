@@ -26,10 +26,19 @@ class ContactFormTests(TestCase):
         sub = ContactSubmission.objects.get()
         self.assertEqual(sub.email, 'ana@example.com')
         self.assertEqual(sub.service, 'custom-platform')
-        # Notification email was sent
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn('Ana Rivera', mail.outbox[0].body)
-        self.assertEqual(mail.outbox[0].to, ['leads@example.com'])
+
+        # Two emails go out: internal notification + visitor confirmation.
+        self.assertEqual(len(mail.outbox), 2)
+        by_recipient = {m.to[0]: m for m in mail.outbox}
+
+        notify = by_recipient['leads@example.com']
+        self.assertIn('Ana Rivera', notify.body)
+        self.assertEqual(notify.reply_to, ['ana@example.com'])
+        self.assertTrue(any(mime == 'text/html' for _, mime in notify.alternatives))
+
+        confirm = by_recipient['ana@example.com']
+        self.assertIn('Thank you', confirm.body)
+        self.assertTrue(any(mime == 'text/html' for _, mime in confirm.alternatives))
 
     def test_honeypot_blocks_spam(self):
         spam = dict(VALID_PAYLOAD, website='http://spam.example')

@@ -1,0 +1,15 @@
+NEW PROJECT INQUIRY — dominiopr.com
+Received {{ submission.created_at|date:"M j, Y \a\t g:i A" }}
+
+Name:    {{ submission.name }}
+Email:   {{ submission.email }}
+Company: {{ submission.company|default:"-" }}
+Service: {{ submission.get_service_display }}
+Budget:  {{ submission.get_budget_display|default:"-" }}
+
+Message:
+{{ submission.message }}
+
+--
+Reply directly to this email to respond to {{ submission.name }}.
+DOMINIO · dominiopr.com

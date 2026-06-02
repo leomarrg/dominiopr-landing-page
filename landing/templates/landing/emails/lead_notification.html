@@ -1,0 +1,61 @@
+{% extends "landing/emails/_base.html" %}
+
+{% block content %}
+<h1 style="margin:0 0 6px; color:#ffffff; font-size:21px; font-weight:700;">New project inquiry</h1>
+<p style="margin:0 0 28px; color:#3bc0c7; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:1.5px;">
+  Received {{ submission.created_at|date:"M j, Y \a\t g:i A" }}
+</p>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr>
+    <td style="padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.08);">
+      <span style="display:block; color:rgba(255,255,255,0.45); font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Name</span>
+      <span style="color:#ffffff; font-size:15px;">{{ submission.name }}</span>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.08);">
+      <span style="display:block; color:rgba(255,255,255,0.45); font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Email</span>
+      <a href="mailto:{{ submission.email }}" style="color:#3bc0c7; font-size:15px; text-decoration:none;">{{ submission.email }}</a>
+    </td>
+  </tr>
+  {% if submission.company %}
+  <tr>
+    <td style="padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.08);">
+      <span style="display:block; color:rgba(255,255,255,0.45); font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Company</span>
+      <span style="color:#ffffff; font-size:15px;">{{ submission.company }}</span>
+    </td>
+  </tr>
+  {% endif %}
+  <tr>
+    <td style="padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.08);">
+      <span style="display:block; color:rgba(255,255,255,0.45); font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Service</span>
+      <span style="color:#ffffff; font-size:15px;">{{ submission.get_service_display }}</span>
+    </td>
+  </tr>
+  {% if submission.budget %}
+  <tr>
+    <td style="padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.08);">
+      <span style="display:block; color:rgba(255,255,255,0.45); font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Budget</span>
+      <span style="color:#ffffff; font-size:15px;">{{ submission.get_budget_display }}</span>
+    </td>
+  </tr>
+  {% endif %}
+</table>
+
+<div style="margin-top:24px; padding:20px 22px; background:rgba(59,192,199,0.06); border-radius:10px; border-left:3px solid #3bc0c7;">
+  <span style="display:block; color:rgba(255,255,255,0.45); font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">Message</span>
+  <p style="margin:0; color:#ffffff; font-size:15px; line-height:1.7; white-space:pre-line;">{{ submission.message }}</p>
+</div>
+
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:30px;">
+  <tr>
+    <td style="border-radius:8px; background:#3bc0c7;">
+      <a href="mailto:{{ submission.email }}?subject=Re: your inquiry to DOMINIO"
+         style="display:inline-block; padding:13px 30px; font-family:'Helvetica Neue',Arial,sans-serif; color:#0b0d12; font-size:14px; font-weight:700; text-decoration:none;">
+        Reply to {{ submission.name }}
+      </a>
+    </td>
+  </tr>
+</table>
+{% endblock %}

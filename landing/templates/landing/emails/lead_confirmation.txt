@@ -1,0 +1,17 @@
+Thank you, {{ submission.name }}.
+
+We've received your request and our team is already reviewing it.
+
+WHAT HAPPENS NEXT
+1. We review the details you shared and assess the best approach.
+2. We reply with a clear next step — usually within 1-2 business days.
+
+YOUR REQUEST
+Service: {{ submission.get_service_display }}
+{% if submission.budget %}Budget:  {{ submission.get_budget_display }}
+{% endif %}Message: {{ submission.message }}
+
+If you'd like to add anything in the meantime, just reply to this email — it reaches us directly.
+
+— The DOMINIO team
+dominiopr.com
