@@ -5,12 +5,11 @@ class ContactSubmission(models.Model):
     """A lead captured from the landing page contact form."""
 
     SERVICE_CHOICES = [
-        ('custom-platform', 'Custom Web Platform'),
-        ('dashboard', 'Dashboard / Data System'),
-        ('automation', 'AI / Automation'),
-        ('landing', 'Landing Page / Campaign System'),
-        ('cloud', 'Cloud / Deployment'),
-        ('consulting', 'Consulting'),
+        ('operational-platform', 'Custom Operational Platforms'),
+        ('data-dashboards', 'Data, Dashboards & Reporting Systems'),
+        ('ai-automation', 'AI, Automation & Workflow Optimization'),
+        ('landing-campaigns', 'Landing Pages, Forms & Campaign Systems'),
+        ('consulting', 'Product Strategy & Technical Consulting'),
     ]
     BUDGET_CHOICES = [
         ('under-1000', 'Under $1,000'),

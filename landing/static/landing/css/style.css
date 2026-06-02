@@ -1665,6 +1665,22 @@ section > .container > .section-tag {
     line-height: 1.45;
 }
 
+/* 5-services layout: 3 cards on the top row, 2 balanced below (desktop only).
+   Uses a 6-col track so 3x span-2 fills row 1 and 2x span-3 fills row 2.
+   Mobile keeps the .bento-grid--six single-column collapse. */
+@media (min-width: 769px) {
+    .bento-grid--five {
+        grid-template-columns: repeat(6, 1fr);
+    }
+    .bento-grid--five .bento-item--flippable {
+        grid-column: span 2;
+    }
+    .bento-grid--five .bento-item--flippable:nth-child(4),
+    .bento-grid--five .bento-item--flippable:nth-child(5) {
+        grid-column: span 3;
+    }
+}
+
 /* ==========================================================================
    PDF UPDATE — Process Section (Timeline)
    ========================================================================== */

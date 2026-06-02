@@ -9,7 +9,7 @@ VALID_PAYLOAD = {
     'name': 'Ana Rivera',
     'email': 'ana@example.com',
     'company': 'Acme PR',
-    'service': 'custom-platform',
+    'service': 'operational-platform',
     'budget': '3000-7500',
     'message': 'We need a booking platform.',
     'website': '',  # honeypot left empty
@@ -25,7 +25,7 @@ class ContactFormTests(TestCase):
         self.assertEqual(ContactSubmission.objects.count(), 1)
         sub = ContactSubmission.objects.get()
         self.assertEqual(sub.email, 'ana@example.com')
-        self.assertEqual(sub.service, 'custom-platform')
+        self.assertEqual(sub.service, 'operational-platform')
 
         # Two emails go out: internal notification + visitor confirmation.
         self.assertEqual(len(mail.outbox), 2)
