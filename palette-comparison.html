@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DOMINIO — Comparación de paletas</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family:'Montserrat',sans-serif;
+    background:#070b12;
+    color:#fff;
+    padding:48px 24px 80px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .head { max-width:1200px; margin:0 auto 48px; text-align:center; }
+  .head h1 { font-family:'Space Grotesk',sans-serif; font-size:2.2rem; letter-spacing:1px; margin-bottom:10px; }
+  .head p { color:rgba(255,255,255,0.55); font-size:0.95rem; }
+  .grid { max-width:1200px; margin:0 auto; display:grid; grid-template-columns:repeat(2,1fr); gap:28px; }
+  @media (max-width:880px){ .grid{ grid-template-columns:1fr; } }
+
+  .palette {
+    border-radius:18px;
+    overflow:hidden;
+    border:1px solid rgba(255,255,255,0.1);
+    background:#0e131c;
+  }
+  .palette__title {
+    padding:20px 24px 4px;
+  }
+  .palette__title h2 { font-family:'Space Grotesk',sans-serif; font-size:1.3rem; }
+  .palette__title .vibe { color:rgba(255,255,255,0.5); font-size:0.82rem; margin-top:4px; }
+  .badge { display:inline-block; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:1px;
+           padding:3px 10px; border-radius:100px; margin-bottom:8px; }
+
+  /* swatches */
+  .swatches { display:flex; flex-wrap:wrap; gap:0; padding:16px 24px 8px; }
+  .sw { flex:1 1 0; min-width:64px; text-align:center; }
+  .sw__box { height:64px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); }
+  .sw__name { display:block; font-size:0.62rem; color:rgba(255,255,255,0.55); margin-top:6px; text-transform:uppercase; letter-spacing:0.5px; }
+  .sw__hex { display:block; font-size:0.66rem; color:#fff; font-family:'Space Grotesk',monospace; margin-top:1px; }
+
+  /* mini mockup */
+  .mock { margin:14px 24px 24px; border-radius:12px; padding:24px; }
+  .mock__tag { font-size:0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:2px; }
+  .mock__h { font-family:'Space Grotesk',sans-serif; font-size:1.35rem; line-height:1.25; margin:8px 0 8px; }
+  .mock__h span {}
+  .mock__p { font-size:0.82rem; line-height:1.6; margin-bottom:16px; }
+  .mock__btns { display:flex; gap:10px; margin-bottom:18px; }
+  .mock__btn { padding:9px 18px; border-radius:8px; font-size:0.78rem; font-weight:700; text-decoration:none; }
+  .mock__btn--ghost { background:transparent; }
+  .mock__card { border-radius:10px; padding:14px 16px; }
+  .mock__card .ico { font-family:'Space Grotesk'; font-weight:700; font-size:1.1rem; }
+  .mock__card .ct { font-size:0.85rem; font-weight:600; margin-top:6px; }
+  .mock__card .cp { font-size:0.72rem; margin-top:2px; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <h1>DOMINIO — Paletas de color</h1>
+    <p>Compara las 4 opciones sobre un mini-preview real. Cada cuadrado muestra su token y hex.</p>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+<script>
+const PALETTES = [
+  {
+    name: "Actual", vibe: "La que tienes hoy", badgeBg:"rgba(255,255,255,0.12)", badgeColor:"#fff",
+    colors: {
+      "primary":"#082c42", "primary-light":"#0e4060", "secondary":"#6b90ca",
+      "accent":"#3bc0c7", "text-muted":"#a9a8a8", "light-bg":"#edeef1", "border":"#a9a8a8"
+    },
+    bg:"#082c42", surface:"#0e4060", accent:"#3bc0c7", secondary:"#6b90ca", muted:"#a9a8a8", textOnAccent:"#082c42"
+  },
+  {
+    name: "1 · Deep Tech", vibe: "Evolución de la actual — profesional", badgeBg:"#34d6c8", badgeColor:"#06121a",
+    colors: {
+      "primary":"#0a1c2e", "primary-light":"#12304a", "secondary":"#6c7cff",
+      "accent":"#34d6c8", "text-muted":"#8aa0b5", "light-bg":"#eef2f7", "border":"#9fb1c2"
+    },
+    bg:"#0a1c2e", surface:"#12304a", accent:"#34d6c8", secondary:"#6c7cff", muted:"#8aa0b5", textOnAccent:"#06121a"
+  },
+  {
+    name: "2 · Midnight Violet", vibe: "Moderno, creativo, con personalidad", badgeBg:"#8b5cf6", badgeColor:"#fff",
+    colors: {
+      "primary":"#0a0a14", "surface":"#15151f", "secondary":"#8b5cf6",
+      "accent":"#2dd4bf", "text-muted":"#9a9ab0", "light-bg":"#f4f4f8", "border":"#2a2a3a"
+    },
+    bg:"#0a0a14", surface:"#15151f", accent:"#2dd4bf", secondary:"#8b5cf6", muted:"#9a9ab0", textOnAccent:"#06120f"
+  },
+  {
+    name: "3 · Slate & Amber", vibe: "Premium, slate (sin negro) + ámbar cálido", badgeBg:"#f0b35b", badgeColor:"#241803",
+    colors: {
+      "primary":"#1a2632", "primary-light":"#25333f", "secondary":"#45c4b0",
+      "accent":"#f0b35b", "text-muted":"#9aa7b4", "light-bg":"#f0f3f7", "border":"#34424f"
+    },
+    bg:"#1a2632", surface:"#25333f", accent:"#f0b35b", secondary:"#45c4b0", muted:"#9aa7b4", textOnAccent:"#241803"
+  }
+];
+
+const grid = document.getElementById('grid');
+PALETTES.forEach(p => {
+  const swatches = Object.entries(p.colors).map(([name,hex]) => `
+    <div class="sw">
+      <div class="sw__box" style="background:${hex}"></div>
+      <span class="sw__name">${name}</span>
+      <span class="sw__hex">${hex}</span>
+    </div>`).join('');
+
+  grid.insertAdjacentHTML('beforeend', `
+    <div class="palette">
+      <div class="palette__title">
+        <span class="badge" style="background:${p.badgeBg};color:${p.badgeColor}">${p.name}</span>
+        <h2>${p.name}</h2>
+        <div class="vibe">${p.vibe}</div>
+      </div>
+      <div class="swatches">${swatches}</div>
+      <div class="mock" style="background:${p.bg};border:1px solid ${p.secondary}33;">
+        <div class="mock__tag" style="color:${p.accent}">Software Development Studio</div>
+        <div class="mock__h" style="color:#fff">Built clean. <span style="color:${p.accent}">Shipped right.</span></div>
+        <div class="mock__p" style="color:${p.muted}">Custom platforms, dashboards and automation for teams that need reliable software.</div>
+        <div class="mock__btns">
+          <a class="mock__btn" style="background:${p.accent};color:${p.textOnAccent}">Explore</a>
+          <a class="mock__btn mock__btn--ghost" style="border:1px solid ${p.secondary};color:${p.secondary}">Start a Project</a>
+        </div>
+        <div class="mock__card" style="background:${p.surface};border-left:3px solid ${p.accent};">
+          <div class="ico" style="color:${p.accent}">&lt;/&gt;</div>
+          <div class="ct" style="color:#fff">Custom Operational Platforms</div>
+          <div class="cp" style="color:${p.muted}">Digital platforms built around real workflows.</div>
+        </div>
+      </div>
+    </div>
+  `);
+});
+</script>
+</body>
+</html>

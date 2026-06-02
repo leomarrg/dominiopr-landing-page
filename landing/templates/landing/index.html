@@ -7,7 +7,7 @@
     <title>DOMINIO — Software Development Studio</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'landing/css/style.css' %}">
     <link rel="icon" type="image/png" href="{% static 'landing/images/logo/profile_pic@4x.PNG' %}">
     <style>
@@ -82,7 +82,61 @@
 
     <!-- ===== HERO SECTION ===== -->
     <section id="home" class="hero">
-        <div class="dominos-container" id="dominosContainer"></div>
+        <div class="hero-domino" aria-hidden="true">
+            <div class="hero-domino__glow"></div>
+            <div class="hd-spin">
+                <!-- TOP HALF (value 6) -->
+                <div class="hd-piece hd-piece--top">
+                    <div class="hd-face hd-front">
+                        <div class="hd-half">
+                            <span class="hd-pip dot-tl"></span><span class="hd-pip dot-tr"></span>
+                            <span class="hd-pip dot-ml"></span><span class="hd-pip dot-mr"></span>
+                            <span class="hd-pip dot-bl"></span><span class="hd-pip dot-br"></span>
+                        </div>
+                    </div>
+                    <div class="hd-face hd-back">
+                        <div class="hd-half">
+                            <span class="hd-pip dot-tl"></span><span class="hd-pip dot-tr"></span>
+                            <span class="hd-pip dot-ml"></span><span class="hd-pip dot-mr"></span>
+                            <span class="hd-pip dot-bl"></span><span class="hd-pip dot-br"></span>
+                        </div>
+                    </div>
+                    <div class="hd-edge hd-edge-l"></div>
+                    <div class="hd-edge hd-edge-r"></div>
+                    <div class="hd-edge hd-edge-t"></div>
+                    <div class="hd-edge hd-edge-b"></div>
+                </div>
+                <!-- BOTTOM HALF (value 6) -->
+                <div class="hd-piece hd-piece--bottom">
+                    <div class="hd-face hd-front">
+                        <div class="hd-half">
+                            <span class="hd-pip dot-tl"></span><span class="hd-pip dot-tr"></span>
+                            <span class="hd-pip dot-ml"></span><span class="hd-pip dot-mr"></span>
+                            <span class="hd-pip dot-bl"></span><span class="hd-pip dot-br"></span>
+                        </div>
+                    </div>
+                    <div class="hd-face hd-back">
+                        <div class="hd-half">
+                            <span class="hd-pip dot-tl"></span><span class="hd-pip dot-tr"></span>
+                            <span class="hd-pip dot-ml"></span><span class="hd-pip dot-mr"></span>
+                            <span class="hd-pip dot-bl"></span><span class="hd-pip dot-br"></span>
+                        </div>
+                    </div>
+                    <div class="hd-edge hd-edge-l"></div>
+                    <div class="hd-edge hd-edge-r"></div>
+                    <div class="hd-edge hd-edge-t"></div>
+                    <div class="hd-edge hd-edge-b"></div>
+                </div>
+                <!-- Shard particles (scatter on break) -->
+                <span class="hd-particle" style="--px:-160;--py:-120;--pz:90;--pc:var(--accent)"></span>
+                <span class="hd-particle" style="--px:150;--py:-90;--pz:60;--pc:var(--accent-violet)"></span>
+                <span class="hd-particle" style="--px:-120;--py:130;--pz:120;--pc:var(--accent-warm)"></span>
+                <span class="hd-particle" style="--px:170;--py:110;--pz:40;--pc:var(--accent-coral)"></span>
+                <span class="hd-particle" style="--px:-190;--py:20;--pz:70;--pc:#ffffff"></span>
+                <span class="hd-particle" style="--px:120;--py:-160;--pz:100;--pc:var(--secondary)"></span>
+                <span class="hd-particle" style="--px:60;--py:180;--pz:80;--pc:var(--accent)"></span>
+            </div>
+        </div>
         <div class="container">
             <div class="hero-content">
                 <p class="hero-tag">Software Development Studio &middot; Puerto Rico</p>
@@ -248,22 +302,36 @@
             <div class="process-timeline">
                 <span class="process-line" aria-hidden="true"></span>
                 <article class="process-step reveal-item" data-delay="3">
-                    <span class="process-step__num">01</span>
+                    <span class="process-step__num" role="img" aria-label="Step 1">
+                        <span class="p-pip dot-mc"></span>
+                    </span>
                     <h3>Discover</h3>
                     <p>We understand the current process, users, pain points, permissions, data, and operational goals.</p>
                 </article>
                 <article class="process-step reveal-item" data-delay="4">
-                    <span class="process-step__num">02</span>
+                    <span class="process-step__num" role="img" aria-label="Step 2">
+                        <span class="p-pip dot-tr"></span>
+                        <span class="p-pip dot-bl"></span>
+                    </span>
                     <h3>Design the system</h3>
                     <p>We map workflows, database structure, screens, roles, and integrations before development starts.</p>
                 </article>
                 <article class="process-step reveal-item" data-delay="5">
-                    <span class="process-step__num">03</span>
+                    <span class="process-step__num" role="img" aria-label="Step 3">
+                        <span class="p-pip dot-tr"></span>
+                        <span class="p-pip dot-mc"></span>
+                        <span class="p-pip dot-bl"></span>
+                    </span>
                     <h3>Build and integrate</h3>
                     <p>We develop the platform, connect services, test real scenarios, and prepare the product for production use.</p>
                 </article>
                 <article class="process-step reveal-item" data-delay="6">
-                    <span class="process-step__num">04</span>
+                    <span class="process-step__num" role="img" aria-label="Step 4">
+                        <span class="p-pip dot-tl"></span>
+                        <span class="p-pip dot-tr"></span>
+                        <span class="p-pip dot-bl"></span>
+                        <span class="p-pip dot-br"></span>
+                    </span>
                     <h3>Launch and maintain</h3>
                     <p>We deploy, monitor, improve, and maintain the system so it keeps working after launch.</p>
                 </article>
@@ -436,6 +504,36 @@
     </footer>
 
     <script src="{% static 'landing/js/main.js' %}"></script>
+    <script>
+    // Scroll-driven hero domino: spins + breaks apart as you scroll through the hero.
+    (function () {
+        var spin = document.querySelector('.hd-spin');
+        var hero = document.querySelector('.hero');
+        if (!spin || !hero) return;
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            spin.style.setProperty('--spin', '-26deg');
+            return;
+        }
+        var ticking = false;
+        function update() {
+            ticking = false;
+            var rect = hero.getBoundingClientRect();
+            var total = rect.height || 1;
+            var scrolled = Math.min(Math.max(-rect.top, 0), total);
+            var p = scrolled / total;                                  // 0 -> 1 across the hero
+            var spinDeg = -28 + p * 430;                               // side view -> ~1.2 turns
+            var brk = Math.max(0, Math.min(1, (p - 0.12) / 0.7));      // break starts after 12%
+            spin.style.setProperty('--spin', spinDeg.toFixed(1) + 'deg');
+            spin.style.setProperty('--break', brk.toFixed(3));
+        }
+        function onScroll() {
+            if (!ticking) { ticking = true; requestAnimationFrame(update); }
+        }
+        window.addEventListener('scroll', onScroll, { passive: true });
+        window.addEventListener('resize', onScroll, { passive: true });
+        update();
+    })();
+    </script>
     {% include 'landing/_tracking.html' %}
 </body>
 </html>
