@@ -103,6 +103,10 @@ html {
     scroll-behavior: smooth;
 }
 
+html {
+    overflow-x: clip;
+}
+
 body {
     font-family: 'Montserrat', sans-serif;
     font-weight: 400;
@@ -300,7 +304,7 @@ p {
     animation: gradientWave 10s ease-in-out infinite;
     color: var(--white);
     position: relative;
-    overflow: hidden;
+    overflow: clip;
 }
 
 @keyframes gradientWave {
@@ -587,25 +591,26 @@ p {
         scale(calc(0.4 + var(--break, 0) * 0.7));
 }
 
-/* Tablet: smaller, still on the right */
+/* Tablet / iPad: centered behind the text (text stays on top, readable) */
 @media (max-width: 900px) {
     .hero-domino {
-        width: 120px;
-        height: 225px;
-        right: 5%;
-        transform: translateY(-50%) scale(0.92);
-        opacity: 0.85;
+        width: 130px;
+        height: 244px;
+        right: 50%;
+        top: 50%;
+        transform: translate(50%, -50%) scale(0.95);
+        opacity: 0.55;
     }
 }
 
-/* Phone: centered as an ambient 3D backdrop behind the text (text stays on top) */
+/* Phone: centered + a bit lower, more subtle */
 @media (max-width: 600px) {
     .hero-domino {
-        top: 150px;
+        top: 260px;
         right: 50%;
         width: 120px;
         height: 225px;
-        transform: translateX(50%);
+        transform: translateX(50%) scale(0.9);
         opacity: 0.4;
     }
 }
@@ -2315,5 +2320,20 @@ select:focus-visible {
     .process-line {
         transform: scaleX(1) !important;
     }
+}
+
+/* (Section color-coding reverted — single teal accent / original look kept) */
+
+/* Contact form — prevent grid/flex items from overflowing their cell on mobile
+   (min-width:auto stops them shrinking; force min-width:0 + max-width:100%). */
+.contact-form { min-width: 0; }
+.form-row,
+.form-row > * { min-width: 0; }
+.contact-form input,
+.contact-form select,
+.contact-form textarea {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
