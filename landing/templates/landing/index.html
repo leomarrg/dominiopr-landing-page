@@ -11,13 +11,12 @@
     <link rel="stylesheet" href="{% static 'landing/css/style.css' %}">
     <link rel="icon" type="image/png" href="{% static 'landing/images/logo/profile_pic@4x.PNG' %}">
     <style>
-        .form-messages { margin-bottom: 18px; }
+        .form-messages { display: flex; flex-direction: column; gap: 10px; }
         .form-message {
             padding: 12px 16px;
             border-radius: 10px;
             font-size: 0.9rem;
             line-height: 1.5;
-            margin-bottom: 10px;
         }
         .form-message--success {
             background: rgba(46, 160, 87, 0.14);
@@ -394,15 +393,15 @@
                     <h2 class="section-title">Have a project that needs to work beyond the demo?</h2>
                     <p>Tell us what you are trying to build, automate, or improve. We will review the idea and respond with a clear next step.</p>
                 </div>
-                {% if messages %}
-                <div class="form-messages reveal-item" data-delay="1">
-                    {% for message in messages %}
-                    <div class="form-message form-message--{{ message.tags }}">{{ message }}</div>
-                    {% endfor %}
-                </div>
-                {% endif %}
                 <form class="contact-form reveal-item" data-delay="1" method="post" action="{% url 'index' %}#contact" novalidate>
                     {% csrf_token %}
+                    {% if messages %}
+                    <div class="form-messages">
+                        {% for message in messages %}
+                        <div class="form-message form-message--{{ message.tags }}">{{ message }}</div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
                     {# Honeypot: hidden anti-spam field. Real users leave it empty. #}
                     <div style="position:absolute;left:-9999px;" aria-hidden="true">
                         <label>Website<input type="text" name="website" tabindex="-1" autocomplete="off"></label>
