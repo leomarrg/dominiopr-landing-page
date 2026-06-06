@@ -39,7 +39,26 @@
         .gs-form .err{color:#f0a0a0;font-size:.78rem;margin-top:-8px}
         .gs-note{color:rgba(255,255,255,.5);font-size:.8rem;text-align:center;margin-top:4px}
         .gs-success{background:rgba(46,160,87,.14);border:1px solid rgba(46,160,87,.45);color:#8be0a4;border-radius:12px;padding:16px;margin-bottom:20px;text-align:center}
-        @media (max-width:860px){.plans{grid-template-columns:1fr}.gs-top h1{font-size:1.9rem}.gs-row{flex-direction:column}}
+        /* ---- Demo "Try your own agent" ---- */
+        .gs-demo{max-width:640px;margin:0 auto 40px;background:var(--primary-light);border:1px solid rgba(52,214,200,.2);border-radius:20px;padding:28px}
+        .gs-demo__head h2{color:var(--white);font-family:'Space Grotesk',sans-serif;font-size:1.4rem;margin:0 0 6px}
+        .gs-demo__head p{color:rgba(255,255,255,.65);font-size:.92rem;line-height:1.5;margin:0 0 18px}
+        .gs-demo__ctx{width:100%;box-sizing:border-box;padding:13px 16px;border-radius:10px;border:1px solid rgba(52,214,200,.22);background:var(--primary);color:var(--white);font-family:inherit;font-size:16px;line-height:1.5;resize:vertical;min-height:96px}
+        .gs-demo__ctx::placeholder{color:rgba(255,255,255,.4)}
+        .gs-demo__ctx:focus{outline:none;border-color:var(--accent)}
+        .gs-demo__log{display:flex;flex-direction:column;gap:10px;margin-top:16px;max-height:320px;overflow-y:auto}
+        .gs-demo__log:empty{display:none}
+        .gs-demo__b{max-width:85%;padding:10px 14px;border-radius:14px;font-size:.9rem;line-height:1.5;white-space:pre-wrap;word-wrap:break-word}
+        .gs-demo__b--user{align-self:flex-end;background:var(--accent);color:var(--primary);font-weight:500;border-bottom-right-radius:4px}
+        .gs-demo__b--assistant{align-self:flex-start;background:var(--primary);color:rgba(255,255,255,.92);border:1px solid rgba(52,214,200,.16);border-bottom-left-radius:4px}
+        .gs-demo__b--err{align-self:flex-start;background:rgba(224,98,98,.12);border:1px solid rgba(224,98,98,.4);color:#f0a0a0}
+        .gs-demo__form{display:flex;gap:10px;margin-top:16px;align-items:stretch}
+        #demoInput{flex:1;min-width:0;box-sizing:border-box;padding:13px 16px;border-radius:10px;border:1px solid rgba(52,214,200,.22);background:var(--primary);color:var(--white);font-family:inherit;font-size:16px}
+        #demoInput::placeholder{color:rgba(255,255,255,.4)}
+        #demoInput:focus{outline:none;border-color:var(--accent)}
+        .gs-demo__form .btn-primary{flex:0 0 auto;padding:13px 22px;white-space:nowrap}
+        .gs-demo__form .btn-primary:disabled{opacity:.5;cursor:default}
+        @media (max-width:860px){.plans{grid-template-columns:1fr}.gs-top h1{font-size:1.9rem}.gs-row{flex-direction:column}.gs-demo{padding:22px 18px}.gs-demo__form{flex-direction:column}.gs-demo__form .btn-primary{width:100%}}
     </style>
 </head>
 <body>
@@ -114,6 +133,62 @@
             document.getElementById('request').scrollIntoView({behavior:'smooth'});
         });
     });
+
+    // "Try your own agent" demo: POST context + conversation to /api/demo/.
+    (function(){
+        var form = document.getElementById('demoForm');
+        var input = document.getElementById('demoInput');
+        var ctx = document.getElementById('demoContext');
+        var log = document.getElementById('demoLog');
+        var btn = form ? form.querySelector('button') : null;
+        if (!form) return;
+        var history = [];
+
+        function bubble(text, kind){
+            var d = document.createElement('div');
+            d.className = 'gs-demo__b gs-demo__b--' + kind;
+            d.textContent = text;
+            log.appendChild(d);
+            log.scrollTop = log.scrollHeight;
+            return d;
+        }
+
+        form.addEventListener('submit', function(e){
+            e.preventDefault();
+            var msg = (input.value || '').trim();
+            var context = (ctx.value || '').trim();
+            if (!msg) return;
+            if (!context){ ctx.focus(); return; }
+
+            bubble(msg, 'user');
+            history.push({role:'user', content: msg});
+            input.value = '';
+            input.disabled = true; btn.disabled = true;
+            var thinking = bubble('…', 'assistant');
+
+            fetch('/api/demo/', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({context: context, messages: history})
+            }).then(function(r){ return r.json().then(function(data){ return {ok: r.ok, data: data}; }); })
+            .then(function(res){
+                if (res.ok && res.data.reply){
+                    thinking.textContent = res.data.reply;
+                    history.push({role:'assistant', content: res.data.reply});
+                } else {
+                    thinking.className = 'gs-demo__b gs-demo__b--err';
+                    thinking.textContent = (res.data && res.data.error) || 'Something went wrong. Try again.';
+                    history.pop();
+                }
+            }).catch(function(){
+                thinking.className = 'gs-demo__b gs-demo__b--err';
+                thinking.textContent = 'Network error. Try again.';
+                history.pop();
+            }).finally(function(){
+                input.disabled = false; btn.disabled = false; input.focus();
+            });
+        });
+    })();
 </script>
 </body>
 </html>

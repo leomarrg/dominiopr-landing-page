@@ -39,7 +39,7 @@
         + '.dmn-quick{display:flex;flex-wrap:wrap;gap:7px}'
         + '.dmn-chip{padding:8px 13px;border-radius:999px;border:1px solid ' + CFG.color + ';background:transparent;color:' + CFG.color + ';font:inherit;font-size:13px;cursor:pointer}'
         + '.dmn-form{display:flex;gap:8px;padding:12px 14px 6px;border-top:1px solid rgba(52,214,200,.14)}'
-        + '.dmn-input{flex:1;min-width:0;padding:11px 14px;border-radius:999px;border:1px solid rgba(52,214,200,.25);background:#0a1c2e;color:#fff;font:inherit;font-size:14px}'
+        + '.dmn-input{flex:1;min-width:0;padding:11px 14px;border-radius:999px;border:1px solid rgba(52,214,200,.25);background:#0a1c2e;color:#fff;font:inherit;font-size:16px}'
         + '.dmn-send{flex:0 0 auto;width:42px;height:42px;border:none;border-radius:50%;background:' + CFG.color + ';color:#0a1c2e;font-size:16px;cursor:pointer}'
         + '.dmn-foot{margin:0;padding:4px 14px 12px;font-size:11px;color:rgba(255,255,255,.4);text-align:center}'
         + '.dmn-typing span{display:inline-block;width:6px;height:6px;border-radius:50%;background:' + CFG.color + ';opacity:.5;margin:0 2px;animation:dmnT 1s infinite}'
