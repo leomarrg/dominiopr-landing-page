@@ -79,6 +79,34 @@ for a tailored estimate."""
 DEFAULT_GREETING = ("Hi, welcome. What are you looking for? Pick one to get started, "
                     "or just type your question.")
 
+# Used to auto-write a per-business greeting from its knowledge.
+GREETING_INSTRUCTION = (
+    "Write the FIRST message a website chat widget shows visitors for this business. "
+    "One or two short, warm sentences that invite the visitor to ask something, "
+    "grounded in what the business actually does. Match the language the business "
+    "information is written in (Spanish if it's in Spanish). Plain text only: no "
+    "emojis, no markdown, no surrounding quotes. Return ONLY the greeting text.")
+
+
+def generate_greeting(business_prompt):
+    """Auto-generate a short widget greeting from the business knowledge.
+
+    Returns the greeting text. Raises AgentNotConfigured if no API key is set;
+    callers treat any failure as "fall back to DEFAULT_GREETING".
+    """
+    api_key = getattr(settings, 'ANTHROPIC_API_KEY', '')
+    if not api_key:
+        raise AgentNotConfigured()
+    client = anthropic.Anthropic(api_key=api_key)
+    model = getattr(settings, 'DOMINIO_AGENT_MODEL', 'claude-haiku-4-5')
+    response = client.messages.create(
+        model=model, max_tokens=160,
+        system=GREETING_INSTRUCTION + BUSINESS_HEADER + (business_prompt or DOMINIO_BUSINESS),
+        messages=[{'role': 'user', 'content': 'Write the greeting now.'}],
+    )
+    text = ''.join(b.text for b in response.content if b.type == 'text').strip()
+    return text.strip('"').strip()[:400]  # Client.greeting is max_length=400
+
 # The agent's one tool. The view supplies the actual save+email handler.
 LEAD_TOOL = {
     'name': 'capture_lead',

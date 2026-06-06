@@ -817,6 +817,32 @@ def password_change(request):
 # AGENT FACTORY — embeddable widget + client management
 # ============================================================
 
+def _brand_palette(hex_color):
+    """Derive a widget palette from one brand color so the widget matches the
+    client's brand (Pro: 'Matched to your brand & colors').
+
+    Returns (accent, accent_rgb, on_accent): the hex accent, its 'r,g,b' string
+    for tinted borders, and #0a1c2e-or-#ffffff text chosen by WCAG luminance so
+    it stays legible on any brand color (dark brands get white text, not navy).
+    Invalid input falls back to DOMINIO teal.
+    """
+    raw = (hex_color or '').strip().lstrip('#')
+    if len(raw) == 3:
+        raw = ''.join(c * 2 for c in raw)
+    try:
+        r, g, b = (int(raw[i:i + 2], 16) for i in (0, 2, 4))
+    except (ValueError, IndexError):
+        r, g, b = 0x34, 0xd6, 0xc8  # DOMINIO teal fallback
+
+    def _lin(c):
+        c /= 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    luminance = 0.2126 * _lin(r) + 0.7152 * _lin(g) + 0.0722 * _lin(b)
+    on_accent = '#0a1c2e' if luminance > 0.179 else '#ffffff'
+    return f'#{r:02x}{g:02x}{b:02x}', f'{r},{g},{b}', on_accent
+
+
 def widget_js(request):
     """Serve the embeddable chat widget JavaScript for a client (?key=<slug>).
 
@@ -828,11 +854,14 @@ def widget_js(request):
     if not client_obj:
         return HttpResponse('/* DOMINIO: unknown or inactive client key */',
                             content_type='application/javascript')
+    accent, accent_rgb, on_accent = _brand_palette(client_obj.primary_color)
     ctx = {
         'slug': client_obj.slug,
         'name': client_obj.name,
         'greeting': client_obj.greeting or agent.DEFAULT_GREETING,
-        'color': client_obj.primary_color or '#34d6c8',
+        'color': accent,
+        'color_rgb': accent_rgb,
+        'on_color': on_accent,
         'api_url': request.build_absolute_uri(reverse('chat_api')),
     }
     resp = HttpResponse(render_to_string('landing/widget.js', ctx),
@@ -885,6 +914,16 @@ def client_form(request, pk=None):
                 form.add_error('slug', 'That key was just taken — try saving again.')
                 return render(request, 'landing/dashboard_client_form.html',
                               {'form': form, 'instance': instance})
+            # Auto-write the widget greeting from the agent's knowledge when left
+            # blank. Best-effort: any failure just leaves it blank (the widget
+            # falls back to DEFAULT_GREETING). Owner can edit/clear to regenerate.
+            if not obj.greeting:
+                try:
+                    greeting = agent.generate_greeting(obj.system_prompt)
+                    if greeting:
+                        Client.objects.filter(pk=obj.pk).update(greeting=greeting)
+                except Exception:
+                    logger.exception('Greeting generation failed for %s', obj.slug)
             # Mark-as-Active = payment confirmed → auto-email install instructions,
             # once. (Toggle onboarding_sent off in admin to resend.)
             if obj.is_active and not obj.onboarding_sent:
