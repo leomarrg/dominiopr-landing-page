@@ -27,6 +27,9 @@ pip install --quiet -r requirements.txt
 echo "==> Running migrations (no-op if none)"
 python manage.py migrate --noinput
 
+echo "==> Ensuring cache table exists (idempotent; rate limiting needs it)"
+python manage.py createcachetable
+
 echo "==> Collecting static files"
 python manage.py collectstatic --noinput
 
