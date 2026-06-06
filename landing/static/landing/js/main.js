@@ -533,7 +533,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
             },
-            { threshold: 0.16, rootMargin: '0px 0px -80px 0px' }
+            // Fire when the section is ~20% into the viewport (not the instant its
+            // bottom edge peeks in) so the reveal happens where the eye is looking
+            // — otherwise it finishes off-screen and content looks "already there".
+            { threshold: 0, rootMargin: '0px 0px -20% 0px' }
         );
 
         sections.forEach((section) => sectionObserver.observe(section));
