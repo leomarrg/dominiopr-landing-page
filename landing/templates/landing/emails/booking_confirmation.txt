@@ -1,0 +1,10 @@
+Thank you, {{ booking.name }}.
+
+Your booking request is received:
+When: {{ local_start|date:"l, M j, Y \a\t g:i A" }}
+{% if booking.service %}For:  {{ booking.service }}
+{% endif %}
+We'll confirm shortly. If you need to change the time, just reply to this email.
+
+— The {{ business|default:"DOMINIO" }} team
+{% if business and business != "DOMINIO" %}Powered by DOMINIO · dominiopr.com{% else %}dominiopr.com{% endif %}

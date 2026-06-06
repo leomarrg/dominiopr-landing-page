@@ -1,0 +1,21 @@
+Your AI agent is live, {{ client.name }}.
+
+Install it on your website by pasting this one line just before </body>:
+
+{{ embed }}
+
+That's it — your agent will appear on your site, answer visitors 24/7, and email you every lead.
+
+Works on WordPress, Wix, Squarespace, Shopify, or plain HTML. Paste it in your site's "custom code" / header-footer area.
+{% if login %}
+YOUR LEADS DASHBOARD
+See every lead, update its status, and reply by email — all in one place:
+{{ login.url }}
+Email: {{ login.username }}{% if login.password %}
+Temporary password: {{ login.password }}
+(Please change your password after your first sign-in.){% endif %}
+{% endif %}
+Need a hand installing it? Just reply to this email.
+
+— DOMINIO
+dominiopr.com

@@ -51,7 +51,7 @@
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:30px;">
   <tr>
     <td style="border-radius:8px; background:#3bc0c7;">
-      <a href="mailto:{{ submission.email }}?subject=Re: your inquiry to DOMINIO"
+      <a href="mailto:{{ submission.email }}?subject=Re: your inquiry to {{ business|default:'DOMINIO' }}"
          style="display:inline-block; padding:13px 30px; font-family:'Helvetica Neue',Arial,sans-serif; color:#0b0d12; font-size:14px; font-weight:700; text-decoration:none;">
         Reply to {{ submission.name }}
       </a>

@@ -20,12 +20,18 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # CORE
 # ============================================================
 
-SECRET_KEY = os.environ.get(
-    'DJANGO_SECRET_KEY',
-    'django-insecure-qhc=x5)p53y(abfe#s666@l+l#a8hvy0(5xh29pylt(&)u(1!='
-)
+# DEBUG is OFF by default — you turn it ON deliberately in local dev (.env),
+# never the reverse. A missing env var in production must fail safe.
+DEBUG = os.environ.get('DJANGO_DEBUG', 'False').lower() in ('true', '1', 'yes')
 
-DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
+# No insecure committed fallback in production: fail loudly if the key is missing.
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = 'django-insecure-dev-only-do-not-use-in-production'
+    else:
+        from django.core.exceptions import ImproperlyConfigured
+        raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set in production.')
 
 # ALLOWED_HOSTS: leading dot matches the domain AND all subdomains.
 # e.g. ".dominiopr.com" matches dominiopr.com, www.dominiopr.com,
@@ -33,10 +39,13 @@ DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
 _default_hosts = '.dominiopr.com,localhost,127.0.0.1' if not DEBUG else '*'
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', _default_hosts).split(',') if h.strip()]
 
+# Default trusts only DOMINIO's own domains. Dev tunnels (e.g. ngrok) must be
+# added via DJANGO_CSRF_TRUSTED_ORIGINS in the local .env — never trusted by
+# default, so a forgotten env var in prod can't leave a wildcard tunnel trusted.
 CSRF_TRUSTED_ORIGINS = [
     o.strip() for o in os.environ.get(
         'DJANGO_CSRF_TRUSTED_ORIGINS',
-        'https://dominiopr.com,https://www.dominiopr.com,https://*.dominiopr.com,https://*.ngrok-free.app'
+        'https://dominiopr.com,https://www.dominiopr.com,https://*.dominiopr.com'
     ).split(',') if o.strip()
 ]
 
@@ -83,6 +92,32 @@ if DEBUG:
         pass
 
 ROOT_URLCONF = 'dominio_website.urls'
+
+# Auth redirects for the custom dashboard (not Django admin).
+LOGIN_URL = 'login'
+LOGIN_REDIRECT_URL = 'dashboard'
+LOGOUT_REDIRECT_URL = 'login'
+
+# ============================================================
+# SECURITY — abuse / DoS protection for the public chat endpoint
+# ============================================================
+# Shared, persistent counter for rate limiting (survives worker restarts and
+# is shared across gunicorn workers). SQLite-backed — no Redis needed.
+# Run once after deploy: python manage.py createcachetable
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'dominio_cache',
+    }
+}
+
+# Reject oversized request bodies before they are parsed into memory (the chat
+# endpoint never needs more than a few KB). Protects the 512MB box.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024  # 1 MB hard cap on POST bodies
+
+# The CSRF token is read from the DOM (not the cookie), so the cookie can be
+# HttpOnly — one less thing a XSS could read.
+CSRF_COOKIE_HTTPONLY = True
 
 TEMPLATES = [
     {
@@ -230,3 +265,28 @@ CONTACT_NOTIFY_EMAIL = os.environ.get('DJANGO_CONTACT_NOTIFY_EMAIL', 'creatudomi
 # ============================================================
 
 GA_MEASUREMENT_ID = os.environ.get('GA_MEASUREMENT_ID', '')
+
+
+# ============================================================
+# AI AGENT — the "Ask DOMINIO" website chat assistant.
+# Inference runs on Anthropic's cloud (not on this server), so it does not
+# load the Lightsail box. Set ANTHROPIC_API_KEY in the .env to switch it on;
+# empty key = widget is hidden and the endpoint returns a friendly notice.
+# ============================================================
+
+ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
+# Hard ceiling on total chat requests across ALL visitors per day. This is the
+# defense per-IP rate limits can't provide: it caps the worst-case daily API
+# spend even under a distributed/botnet attack. Tune to your budget.
+DOMINIO_AGENT_DAILY_CAP = int(os.environ.get('DOMINIO_AGENT_DAILY_CAP', '2000'))
+# Haiku is the right tier for a fast, low-cost FAQ/sales chat. We read the
+# project's ANTHROPIC_MODEL_FAST convention, with DOMINIO_AGENT_MODEL as an
+# explicit override and a safe default.
+DOMINIO_AGENT_MODEL = (
+    os.environ.get('DOMINIO_AGENT_MODEL')
+    or os.environ.get('ANTHROPIC_MODEL_FAST')
+    or 'claude-haiku-4-5'
+)
+# Cap how much history a single conversation can send back to the API, to
+# bound cost/abuse from a public widget.
+DOMINIO_AGENT_MAX_TURNS = int(os.environ.get('DOMINIO_AGENT_MAX_TURNS', '12'))

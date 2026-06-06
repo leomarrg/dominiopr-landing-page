@@ -1,0 +1,9 @@
+{% extends "landing/emails/_base.html" %}
+
+{% block content %}
+<h1 style="margin:0 0 18px; color:#ffffff; font-size:22px; font-weight:700;">Hi {{ lead.name }},</h1>
+
+<p style="margin:0 0 18px; white-space:pre-line;">{{ body }}</p>
+
+<p style="margin:22px 0 0; color:#ffffff;">&mdash; The {{ business|default:"DOMINIO" }} team</p>
+{% endblock %}

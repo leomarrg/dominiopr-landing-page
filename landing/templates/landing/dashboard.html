@@ -1,0 +1,145 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DOMINIO — Leads</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'landing/css/dashboard.css' %}">
+    <link rel="icon" type="image/png" href="{% static 'landing/images/logo/profile_pic@4x.PNG' %}">
+</head>
+<body class="dash-body">
+    {% include 'landing/_dash_nav.html' with active='leads' %}
+
+    <main class="dash-main">
+        <h1 class="dash-h1">Leads</h1>
+
+        <section class="dash-stats">
+            <div class="dash-stat"><div class="dash-stat__num">{{ stats.total }}</div><div class="dash-stat__label">Total leads</div></div>
+            <div class="dash-stat dash-stat--accent"><div class="dash-stat__num">{{ stats.new }}</div><div class="dash-stat__label">New</div></div>
+            <div class="dash-stat"><div class="dash-stat__num">{{ stats.this_month }}</div><div class="dash-stat__label">This month</div></div>
+            <div class="dash-stat"><div class="dash-stat__num">{{ stats.from_chat }}</div><div class="dash-stat__label">From AI chat</div></div>
+        </section>
+
+        <form class="dash-filters" method="get">
+            <input type="search" name="q" value="{{ q }}" placeholder="Search name, email, company, message…">
+            <select name="source">
+                <option value="">All sources</option>
+                {% for val, label in source_choices %}
+                <option value="{{ val }}" {% if cur_source == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <select name="status">
+                <option value="">All statuses</option>
+                {% for val, label in status_choices %}
+                <option value="{{ val }}" {% if cur_status == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit">Filter</button>
+            {% if q or cur_source or cur_status %}<a class="dash-clear" href="{% url 'dashboard' %}">Clear</a>{% endif %}
+        </form>
+
+        <div class="dash-table-wrap">
+            <table class="dash-table">
+                <thead>
+                    <tr>
+                        <th>Name</th><th>Contact</th><th>Service</th>
+                        <th>Source</th><th>Status</th><th>Date</th><th aria-label="Expand"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for lead in leads %}
+                    <tr class="dash-row" data-target="detail-{{ lead.pk }}" aria-expanded="false" aria-controls="detail-{{ lead.pk }}" tabindex="0" role="button">
+                        <td>
+                            <div class="dash-name">{{ lead.name }}</div>
+                            {% if lead.company %}<div class="dash-sub">{{ lead.company }}</div>{% endif %}
+                            {% if lead.message %}<div class="dash-sub dash-preview">{{ lead.message|truncatechars:64 }}</div>{% endif %}
+                        </td>
+                        <td><div class="dash-email">{{ lead.email }}</div></td>
+                        <td>{{ lead.get_service_display|default:"—" }}</td>
+                        <td><span class="dash-badge dash-badge--{{ lead.source }}">{{ lead.get_source_display }}</span></td>
+                        <td onclick="event.stopPropagation();">
+                            <form method="post" action="{% url 'lead_status' lead.pk %}">
+                                {% csrf_token %}
+                                <span class="dash-dot dash-dot--{{ lead.status }}"></span>
+                                <select name="status" class="dash-status-select" onchange="this.form.submit()" aria-label="Lead status">
+                                    {% for val, label in status_choices %}
+                                    <option value="{{ val }}" {% if lead.status == val %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </form>
+                        </td>
+                        <td class="dash-sub">{{ lead.created_at|date:"M d, Y · g:i A" }}</td>
+                        <td class="dash-chevron" aria-hidden="true">⌄</td>
+                    </tr>
+                    <tr class="dash-detail" id="detail-{{ lead.pk }}">
+                        <td colspan="7">
+                            <dl class="dash-detail__grid">
+                                <dt>Message</dt><dd>{{ lead.message|default:"—" }}</dd>
+                                <dt>Email</dt><dd>{{ lead.email }}</dd>
+                                {% if lead.company %}<dt>Company</dt><dd>{{ lead.company }}</dd>{% endif %}
+                                {% if lead.get_budget_display %}<dt>Budget</dt><dd>{{ lead.get_budget_display }}</dd>{% endif %}
+                                <dt>Source</dt><dd>{{ lead.get_source_display }}</dd>
+                                <dt>Received</dt><dd>{{ lead.created_at|date:"M d, Y · g:i A" }}</dd>
+                            </dl>
+
+                            <div class="dash-reply">
+                                <button type="button" class="dash-reply-toggle" data-reply="reply-{{ lead.pk }}">Reply by email</button>
+                                <form class="dash-reply-form" id="reply-{{ lead.pk }}" method="post" action="{% url 'lead_email' lead.pk %}">
+                                    {% csrf_token %}
+                                    <div class="dash-reply-meta">To: <b>{{ lead.email }}</b></div>
+                                    <input type="text" name="subject" class="dash-reply-input" value="Re: your message to {{ lead.client.name|default:'DOMINIO' }}" maxlength="200" required>
+                                    <textarea name="body" class="dash-reply-textarea" rows="6" placeholder="Write your reply…" maxlength="10000" required></textarea>
+                                    <div class="dash-reply-actions">
+                                        <button type="submit" class="save-btn">Send email</button>
+                                        {% if default_from %}<span class="dash-reply-hint">Sent from {{ default_from }}</span>{% endif %}
+                                    </div>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7"><div class="dash-empty">No leads yet. They'll show up here as the form and AI chat capture them.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <script>
+        function toggleRow(row) {
+            var detail = document.getElementById(row.getAttribute('data-target'));
+            if (!detail) return;
+            var open = detail.classList.toggle('is-open');
+            row.classList.toggle('is-expanded', open);
+            row.setAttribute('aria-expanded', open ? 'true' : 'false');
+        }
+        document.querySelectorAll('.dash-row').forEach(function (row) {
+            row.addEventListener('click', function () { toggleRow(row); });
+            row.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRow(row); }
+            });
+        });
+        // Reveal the reply form; keep clicks inside the detail row from collapsing it.
+        document.querySelectorAll('.dash-detail').forEach(function (d) {
+            d.addEventListener('click', function (e) { e.stopPropagation(); });
+        });
+        document.querySelectorAll('.dash-reply-toggle').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var form = document.getElementById(btn.getAttribute('data-reply'));
+                if (form) form.classList.toggle('is-open');
+            });
+        });
+        document.querySelectorAll('.dash-reply-form').forEach(function (form) {
+            form.addEventListener('submit', function () {
+                var b = form.querySelector('button[type=submit]');
+                if (b) { b.disabled = true; b.textContent = 'Sending…'; }
+            });
+        });
+    </script>
+</body>
+</html>

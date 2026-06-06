@@ -1,0 +1,13 @@
+NEW BOOKING — {{ business|default:"DOMINIO" }}
+Received {{ booking.created_at|date:"M j, Y \a\t g:i A" }}
+
+Name:   {{ booking.name }}
+Email:  {{ booking.email }}
+When:   {{ local_start|date:"l, M j, Y \a\t g:i A" }}
+{% if booking.service %}For:    {{ booking.service }}
+{% endif %}{% if booking.notes %}Notes:  {{ booking.notes }}
+{% endif %}Status: {{ booking.get_status_display }}
+
+--
+Reply to confirm with {{ booking.name }}.
+{% if business and business != "DOMINIO" %}{{ business }} · Powered by DOMINIO{% else %}DOMINIO · dominiopr.com{% endif %}

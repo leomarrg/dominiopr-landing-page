@@ -1,0 +1,78 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DOMINIO — Agents</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'landing/css/dashboard.css' %}">
+    <style>
+        .agent-card{background:var(--primary-light);border:1px solid var(--line);border-radius:14px;padding:22px;margin-bottom:16px}
+        .agent-card__top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+        .agent-card h3{margin:0 0 2px;color:var(--white);font-size:1.1rem}
+        .agent-card .slug{color:var(--muted);font-size:.82rem}
+        .agent-meta{display:flex;gap:18px;color:var(--muted);font-size:.82rem;margin-bottom:14px}
+        .agent-meta b{color:var(--accent)}
+        .snippet{display:flex;gap:8px;align-items:center}
+        .snippet code{flex:1;background:var(--primary);border:1px solid var(--line);border-radius:8px;padding:10px 12px;color:#b9c9d8;font-size:.78rem;overflow-x:auto;white-space:nowrap}
+        .copy-btn,.edit-btn{border:1px solid var(--line);background:transparent;color:var(--white);padding:9px 14px;border-radius:8px;font:inherit;font-size:.82rem;cursor:pointer;text-decoration:none;white-space:nowrap}
+        .copy-btn:hover,.edit-btn:hover{border-color:var(--accent);color:var(--accent)}
+        .agent-actions{display:flex;align-items:center;gap:10px}
+        .toggle-btn:hover{border-color:#f6a96b;color:#f6a96b}
+        .badge-off{background:rgba(224,98,98,.16);color:#f0a0a0;padding:3px 9px;border-radius:999px;font-size:.72rem}
+        .badge-on{background:rgba(46,168,87,.16);color:#8be0a4;padding:3px 9px;border-radius:999px;font-size:.72rem}
+        .new-btn{background:var(--accent);color:var(--primary);border:none;padding:11px 18px;border-radius:10px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none}
+    </style>
+</head>
+<body class="dash-body">
+    {% include 'landing/_dash_nav.html' with active='agents' %}
+    <main class="dash-main">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 22px;">
+            <h1 class="dash-h1" style="margin:0;">Agent factory</h1>
+            <a href="{% url 'client_create' %}" class="new-btn">+ New agent</a>
+        </div>
+
+        {% for c in clients %}
+        <div class="agent-card">
+            <div class="agent-card__top">
+                <div>
+                    <h3>{{ c.name }}</h3>
+                    <span class="slug">key: {{ c.slug }}</span>
+                </div>
+                <div class="agent-actions">
+                    {% if c.is_active %}<span class="badge-on">Active</span>{% else %}<span class="badge-off">Paused</span>{% endif %}
+                    <a href="{% url 'client_edit' c.pk %}" class="edit-btn">Edit</a>
+                    <form method="post" action="{% url 'client_toggle_active' c.pk %}" style="display:inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="edit-btn toggle-btn">{% if c.is_active %}Pause{% else %}Activate{% endif %}</button>
+                    </form>
+                </div>
+            </div>
+            <div class="agent-meta">
+                <span><b>{{ c.lead_count }}</b> leads</span>
+                <span>Notifies: {{ c.notify_email }}</span>
+            </div>
+            <p style="color:var(--muted);font-size:.8rem;margin:0 0 8px;">Install — paste this one line into the site, before &lt;/body&gt;:</p>
+            <div class="snippet">
+                <code id="embed-{{ c.pk }}">{{ c.embed }}</code>
+                <button type="button" class="copy-btn" data-copy="embed-{{ c.pk }}">Copy</button>
+            </div>
+        </div>
+        {% empty %}
+        <div class="dash-empty" style="background:var(--primary-light);border:1px solid var(--line);border-radius:14px;">No agents yet. Click “New agent” to create your first one.</div>
+        {% endfor %}
+    </main>
+    <script>
+        document.querySelectorAll('.copy-btn').forEach(function (b) {
+            b.addEventListener('click', function () {
+                var el = document.getElementById(b.getAttribute('data-copy'));
+                navigator.clipboard.writeText(el.textContent).then(function () {
+                    var t = b.textContent; b.textContent = 'Copied'; setTimeout(function () { b.textContent = t; }, 1500);
+                });
+            });
+        });
+    </script>
+</body>
+</html>

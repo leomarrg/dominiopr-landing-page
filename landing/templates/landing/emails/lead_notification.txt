@@ -1,4 +1,4 @@
-NEW PROJECT INQUIRY — dominiopr.com
+NEW LEAD — {{ business|default:"DOMINIO" }}
 Received {{ submission.created_at|date:"M j, Y \a\t g:i A" }}
 
 Name:    {{ submission.name }}
@@ -12,4 +12,4 @@ Message:
 
 --
 Reply directly to this email to respond to {{ submission.name }}.
-DOMINIO · dominiopr.com
+{% if business and business != "DOMINIO" %}{{ business }} · Powered by DOMINIO{% else %}DOMINIO · dominiopr.com{% endif %}

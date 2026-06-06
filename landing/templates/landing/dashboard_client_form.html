@@ -1,0 +1,51 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DOMINIO — {% if instance %}Edit agent{% else %}New agent{% endif %}</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'landing/css/dashboard.css' %}">
+    <style>
+        .cform{max-width:720px;background:var(--primary-light);border:1px solid var(--line);border-radius:14px;padding:28px}
+        .cfield{margin-bottom:18px}
+        .cfield label{display:block;color:var(--white);font-size:.85rem;font-weight:600;margin-bottom:6px}
+        .cfield .help{color:var(--muted);font-size:.76rem;margin-top:5px}
+        .cform input[type=text],.cform input[type=email],.cform input[type=url],.cform textarea,.cform input:not([type]){
+            width:100%;box-sizing:border-box;padding:11px 14px;border-radius:9px;border:1px solid var(--line);
+            background:var(--primary);color:var(--white);font-family:inherit;font-size:.9rem}
+        .cform textarea{resize:vertical}
+        .cform input:focus,.cform textarea:focus{outline:none;border-color:var(--accent)}
+        .cform input[type=color]{width:54px;height:40px;padding:3px;cursor:pointer}
+        .cform .errors{color:#f0a0a0;font-size:.8rem;margin-top:5px}
+        .cactions{display:flex;gap:10px;margin-top:8px}
+        .save-btn{background:var(--accent);color:var(--primary);border:none;padding:12px 22px;border-radius:10px;font:inherit;font-weight:600;cursor:pointer}
+        .cancel-btn{color:var(--muted);text-decoration:none;padding:12px 8px;font-size:.88rem}
+        .chk{display:flex;align-items:center;gap:8px}
+        .chk input{width:auto}
+    </style>
+</head>
+<body class="dash-body">
+    {% include 'landing/_dash_nav.html' with active='agents' %}
+    <main class="dash-main">
+        <h1 class="dash-h1">{% if instance %}Edit “{{ instance.name }}”{% else %}New agent{% endif %}</h1>
+        <form class="cform" method="post" novalidate>
+            {% csrf_token %}
+            {% for field in form %}
+            <div class="cfield {% if field.name == 'is_active' %}chk{% endif %}">
+                <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+                {% if field.errors %}<div class="errors">{{ field.errors|striptags }}</div>{% endif %}
+            </div>
+            {% endfor %}
+            <div class="cactions">
+                <button type="submit" class="save-btn">Save agent</button>
+                <a href="{% url 'clients_list' %}" class="cancel-btn">Cancel</a>
+            </div>
+        </form>
+    </main>
+</body>
+</html>

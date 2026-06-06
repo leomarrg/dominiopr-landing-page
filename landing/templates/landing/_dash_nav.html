@@ -1,0 +1,33 @@
+{% load static %}
+{# Shared dashboard top bar. Pass `active` = 'leads' | 'agents'. #}
+<header class="dash-topbar">
+    <div class="dash-brand">
+        <a href="{% url 'dashboard' %}" class="dash-brand__home" aria-label="DOMINIO dashboard home">
+            <img src="{% static 'landing/images/logo/logo_home.PNG' %}" alt="DOMINIO">
+        </a>
+        <nav class="dash-nav" aria-label="Sections">
+            <a href="{% url 'dashboard' %}"
+               class="dash-nav__link {% if active == 'leads' %}is-active{% endif %}"
+               {% if active == 'leads' %}aria-current="page"{% endif %}>Leads</a>
+            {% if request.user.is_staff %}
+            <a href="{% url 'clients_list' %}"
+               class="dash-nav__link {% if active == 'agents' %}is-active{% endif %}"
+               {% if active == 'agents' %}aria-current="page"{% endif %}>Agents</a>
+            {% endif %}
+        </nav>
+    </div>
+    <div class="dash-user">
+        <a href="{% url 'password_change' %}" class="dash-user__name" style="text-decoration:none;">{{ request.user.username }}</a>
+        <form method="post" action="{% url 'logout' %}">
+            {% csrf_token %}
+            <button type="submit" class="dash-logout">Sign out</button>
+        </form>
+    </div>
+</header>
+{% if messages %}
+<div class="dash-flash-wrap">
+    {% for m in messages %}
+    <div class="dash-flash dash-flash--{{ m.tags }}">{{ m }}</div>
+    {% endfor %}
+</div>
+{% endif %}

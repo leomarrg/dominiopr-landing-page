@@ -1,0 +1,6 @@
+Hi {{ lead.name }},
+
+{{ body }}
+
+— The {{ business|default:"DOMINIO" }} team
+{% if business and business != "DOMINIO" %}Powered by DOMINIO · dominiopr.com{% else %}dominiopr.com{% endif %}

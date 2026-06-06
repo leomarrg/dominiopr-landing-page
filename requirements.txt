@@ -1,3 +1,4 @@
+anthropic==0.105.2
 asgiref==3.11.0
 Django==5.2.8
 django-browser-reload==1.21.0

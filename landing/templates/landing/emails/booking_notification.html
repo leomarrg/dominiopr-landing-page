@@ -1,0 +1,15 @@
+{% extends "landing/emails/_base.html" %}
+{% block content %}
+<p style="margin:0 0 6px; color:#3bc0c7; font-size:12px; letter-spacing:2px; text-transform:uppercase;">New booking</p>
+<h1 style="margin:0 0 18px; color:#ffffff; font-size:22px; font-weight:700;">{{ booking.name }}</h1>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:15px; color:rgba(255,255,255,0.82);">
+  <tr><td style="padding:4px 0; width:90px; color:rgba(255,255,255,0.45);">When</td><td style="padding:4px 0; color:#ffffff;">{{ local_start|date:"l, M j, Y \a\t g:i A" }}</td></tr>
+  <tr><td style="padding:4px 0; color:rgba(255,255,255,0.45);">Email</td><td style="padding:4px 0;"><a href="mailto:{{ booking.email }}" style="color:#3bc0c7; text-decoration:none;">{{ booking.email }}</a></td></tr>
+  {% if booking.service %}<tr><td style="padding:4px 0; color:rgba(255,255,255,0.45);">For</td><td style="padding:4px 0;">{{ booking.service }}</td></tr>{% endif %}
+  {% if booking.notes %}<tr><td style="padding:4px 0; color:rgba(255,255,255,0.45);">Notes</td><td style="padding:4px 0; white-space:pre-line;">{{ booking.notes }}</td></tr>{% endif %}
+  <tr><td style="padding:4px 0; color:rgba(255,255,255,0.45);">Status</td><td style="padding:4px 0;">{{ booking.get_status_display }}</td></tr>
+</table>
+
+<p style="margin:22px 0 0;">Reply directly to this email to confirm with {{ booking.name }}.</p>
+{% endblock %}

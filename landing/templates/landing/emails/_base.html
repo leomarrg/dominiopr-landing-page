@@ -15,7 +15,7 @@
           <!-- Header -->
           <tr>
             <td style="padding:28px 36px; background:#11131a; border-bottom:2px solid #3bc0c7;">
-              <span style="font-family:'Helvetica Neue',Arial,sans-serif; color:#ffffff; font-size:22px; font-weight:700; letter-spacing:3px;">DOMINIO</span>
+              <span style="font-family:'Helvetica Neue',Arial,sans-serif; color:#ffffff; font-size:22px; font-weight:700; letter-spacing:3px;">{{ business|default:"DOMINIO"|upper }}</span>
             </td>
           </tr>
 
@@ -30,8 +30,9 @@
           <tr>
             <td style="padding:22px 36px; background:#0e1016; border-top:1px solid rgba(255,255,255,0.06);">
               <p style="margin:0; font-family:'Helvetica Neue',Arial,sans-serif; color:rgba(255,255,255,0.4); font-size:12px; line-height:1.6;">
-                DOMINIO &middot; Software Development Studio &middot; Puerto Rico<br>
-                <a href="https://dominiopr.com" style="color:#3bc0c7; text-decoration:none;">dominiopr.com</a>
+                {% if business and business != "DOMINIO" %}{{ business }}<br>
+                <a href="https://dominiopr.com" style="color:#3bc0c7; text-decoration:none;">Powered by DOMINIO</a>{% else %}DOMINIO &middot; Software Development Studio &middot; Puerto Rico<br>
+                <a href="https://dominiopr.com" style="color:#3bc0c7; text-decoration:none;">dominiopr.com</a>{% endif %}
               </p>
             </td>
           </tr>

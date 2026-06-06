@@ -1,0 +1,28 @@
+{% extends "landing/emails/_base.html" %}
+{% block content %}
+<p style="margin:0 0 6px; color:#3bc0c7; font-size:12px; letter-spacing:2px; text-transform:uppercase;">Your agent is live</p>
+<h1 style="margin:0 0 16px; color:#ffffff; font-size:22px; font-weight:700;">Welcome, {{ client.name }}.</h1>
+<p style="margin:0 0 14px;">Your AI agent is ready. Install it on your website by pasting this one line just before <span style="color:#3bc0c7;">&lt;/body&gt;</span>:</p>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;">
+  <tr><td style="background:#0e1016; border:1px solid rgba(59,192,199,0.3); border-radius:8px; padding:14px 16px; font-family:Menlo,Consolas,monospace; font-size:13px; color:#b9c9d8; word-break:break-all;">{{ embed }}</td></tr>
+</table>
+
+<p style="margin:0 0 14px;">That's it — your agent appears on your site, answers visitors 24/7, and emails you every lead.</p>
+<p style="margin:0 0 14px; color:rgba(255,255,255,0.7); font-size:14px;">Works on WordPress, Wix, Squarespace, Shopify, or plain HTML — paste it in your site's custom-code / header-footer area.</p>
+
+{% if login %}
+<p style="margin:24px 0 6px; color:#3bc0c7; font-size:12px; letter-spacing:2px; text-transform:uppercase;">Your leads dashboard</p>
+<p style="margin:0 0 12px;">See every lead, update its status, and reply by email — all in one place:</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px;">
+  <tr><td style="background:rgba(59,192,199,0.06); border:1px solid rgba(59,192,199,0.3); border-radius:8px; padding:16px 18px; font-size:14px; color:rgba(255,255,255,0.85); line-height:1.8;">
+    <a href="{{ login.url }}" style="color:#3bc0c7; text-decoration:none; font-weight:600;">{{ login.url }}</a><br>
+    <strong style="color:rgba(255,255,255,0.6);">Email:</strong> {{ login.username }}{% if login.password %}<br>
+    <strong style="color:rgba(255,255,255,0.6);">Temporary password:</strong> <span style="font-family:Menlo,Consolas,monospace; color:#ffffff;">{{ login.password }}</span>{% endif %}
+  </td></tr>
+</table>
+{% if login.password %}<p style="margin:0 0 14px; color:rgba(255,255,255,0.6); font-size:13px;">Please change your password after your first sign-in.</p>{% endif %}
+{% endif %}
+
+<p style="margin:18px 0 0;">Need a hand installing it? Just reply to this email.</p>
+{% endblock %}

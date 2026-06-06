@@ -13,5 +13,5 @@ Service: {{ submission.get_service_display }}
 
 If you'd like to add anything in the meantime, just reply to this email — it reaches us directly.
 
-— The DOMINIO team
-dominiopr.com
+— The {{ business|default:"DOMINIO" }} team
+{% if business and business != "DOMINIO" %}Powered by DOMINIO · dominiopr.com{% else %}dominiopr.com{% endif %}

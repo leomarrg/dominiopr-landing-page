@@ -65,6 +65,7 @@
             <ul class="nav-links" id="navLinks">
                 <li><a href="#home" class="active">Home</a></li>
                 <li><a href="#services">Services</a></li>
+                <li><a href="#ai-agents">AI Agents</a></li>
                 <li><a href="#process">Process</a></li>
                 <li><a href="#about">About</a></li>
                 <li><a href="#contact">Contact</a></li>
@@ -432,6 +433,51 @@
         </div>
     </section>
 
+    <!-- ===== AI AGENTS SECTION ===== -->
+    <section id="ai-agents" class="ai-agents reveal-section" data-reveal="ai-agents">
+        <div class="container">
+            <p class="section-tag reveal-item" data-delay="0">AI Agents</p>
+            <h2 class="section-title reveal-item" data-delay="1">AI agents that answer, qualify, and never sleep.</h2>
+            <p class="section-intro reveal-item" data-delay="2">We build AI assistants trained on <em>your</em> business — they reply to customers 24/7, qualify leads, and handle repetitive questions, so your team focuses on the work that matters.</p>
+
+            <div class="ai-agents-grid">
+                <article class="ai-use-card reveal-item" data-delay="3">
+                    <span class="ai-use-card__icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.6-.8L3 21l1.9-5.4A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z"/></svg></span>
+                    <h3>Support &amp; sales agent</h3>
+                    <p>Answers visitor questions instantly, day or night, and captures the lead while interest is high.</p>
+                </article>
+                <article class="ai-use-card reveal-item" data-delay="4">
+                    <span class="ai-use-card__icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></span>
+                    <h3>Lead qualifier</h3>
+                    <p>Asks the right questions, then routes only the ready-to-buy prospects to your inbox.</p>
+                </article>
+                <article class="ai-use-card reveal-item" data-delay="5">
+                    <span class="ai-use-card__icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>
+                    <h3>Internal knowledge assistant</h3>
+                    <p>Your team asks your docs, policies, and data in plain language instead of digging through files.</p>
+                </article>
+                <article class="ai-use-card reveal-item" data-delay="6">
+                    <span class="ai-use-card__icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h6"/></svg></span>
+                    <h3>Document &amp; data agent</h3>
+                    <p>Reads forms, invoices, and documents, extracts the data, and drops it where you need it.</p>
+                </article>
+            </div>
+
+            <div class="ai-demo reveal-item" data-delay="7">
+                <div class="ai-demo__copy">
+                    <h3>See it live — right now</h3>
+                    <p>This site has one running. Ask it anything about DOMINIO — services, process, pricing. It's the exact kind of agent we'd build for you, trained on your business instead of ours.</p>
+                </div>
+                <div class="ai-demo__cta">
+                    {% if AI_CHAT_ENABLED %}
+                    <button type="button" class="btn-outline ai-demo__btn" data-chat-open>Try the live demo</button>
+                    {% endif %}
+                    <a href="{% url 'get_started' %}" class="btn-primary ai-demo__btn">Get your own agent</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- ===== CONTACT SECTION ===== -->
     <section id="contact" class="contacto reveal-section" data-reveal="contact">
         <div class="container">
@@ -493,6 +539,7 @@
             <div class="footer-links">
                 <a href="#home">Home</a>
                 <a href="#services">Services</a>
+                <a href="#ai-agents">AI Agents</a>
                 <a href="#process">Process</a>
                 <a href="#about">About</a>
                 <a href="#contact">Contact</a>
@@ -502,6 +549,38 @@
             </div>
         </div>
     </footer>
+
+    {% if AI_CHAT_ENABLED %}
+    <!-- ===== ASK DOMINIO — AI chat widget ===== -->
+    <div class="chat-widget" id="chatWidget"
+         data-chat-url="{% url 'chat_api' %}"
+         data-csrf="{{ csrf_token }}">
+        <button type="button" class="chat-fab" id="chatFab" aria-label="Ask DOMINIO" aria-expanded="false">
+            <svg class="chat-fab__icon" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.6-.8L3 21l1.9-5.4A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z"/></svg>
+            <span class="chat-fab__label">Ask DOMINIO</span>
+        </button>
+        <div class="chat-panel" id="chatPanel" role="dialog" aria-label="Ask DOMINIO" aria-hidden="true">
+            <div class="chat-panel__head">
+                <div class="chat-panel__title">
+                    <span class="chat-panel__dot" aria-hidden="true"></span>
+                    <div>
+                        <strong>Ask DOMINIO</strong>
+                        <small>AI assistant · replies in seconds</small>
+                    </div>
+                </div>
+                <button type="button" class="chat-panel__close" id="chatClose" aria-label="Close chat">&times;</button>
+            </div>
+            <div class="chat-log" id="chatLog" aria-live="polite"></div>
+            <form class="chat-input" id="chatForm">
+                <input type="text" id="chatText" name="message" autocomplete="off"
+                       placeholder="Ask about services, AI agents, pricing…" maxlength="2000" required>
+                <button type="submit" class="chat-send" id="chatSend" aria-label="Send">&#10148;</button>
+            </form>
+            <p class="chat-disclaimer">AI assistant — for a real quote, use the contact form.</p>
+        </div>
+    </div>
+    <script src="{% static 'landing/js/chat-widget.js' %}"></script>
+    {% endif %}
 
     <script src="{% static 'landing/js/main.js' %}"></script>
     <script>
