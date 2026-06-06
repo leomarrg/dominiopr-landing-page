@@ -44,7 +44,7 @@
     align-items: center;
     justify-content: center;
     z-index: 9999;
-    transition: opacity 0.5s ease, visibility 0.5s ease;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
 }
 
 .loader-overlay.hidden {
@@ -63,7 +63,13 @@
     align-items: center;
     justify-content: space-between;
     padding: 10px 8px;
-    animation: dominoSpin 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    transform-origin: center center;
+    transform-style: preserve-3d;
+    backface-visibility: hidden;
+    /* The tile spins one full turn and decelerates onto its front face in ~750ms,
+       while its pips build in (loaderDot) during the final stretch — so it
+       "assembles while spinning". */
+    animation: loaderSpin 750ms cubic-bezier(0.16, 0.84, 0.3, 1) both;
 }
 
 .loader-half {
@@ -74,6 +80,7 @@
     gap: 3px;
     place-content: center;
     place-items: center;
+    transform-style: preserve-3d;
 }
 
 .loader-half .domino-dot {
@@ -81,21 +88,41 @@
     height: 10px;
     border-radius: 50%;
     background: var(--accent);
+    /* translateZ lifts pips off the face so they never poke through the back
+       mid-spin. They pop in during the final stretch, as the tile faces front. */
+    transform: translateZ(2px) scale(0);
+    animation: loaderDot 240ms cubic-bezier(0.34, 1.5, 0.5, 1) both;
 }
+.loader-half .domino-dot:nth-child(1) { animation-delay: 430ms; }
+.loader-half .domino-dot:nth-child(2) { animation-delay: 470ms; }
+.loader-half .domino-dot:nth-child(3) { animation-delay: 510ms; }
+.loader-half .domino-dot:nth-child(4) { animation-delay: 550ms; }
+.loader-half .domino-dot:nth-child(5) { animation-delay: 590ms; }
+.loader-half .domino-dot:nth-child(6) { animation-delay: 630ms; }
 
 .loader-divider {
     width: 70%;
     height: 1px;
     background: rgba(255, 255, 255, 0.3);
     flex-shrink: 0;
+    transform: translateZ(2px);
 }
 
-@keyframes dominoSpin {
-    0%   { transform: rotateY(0deg) rotateX(0deg); }
-    25%  { transform: rotateY(180deg) rotateX(0deg); }
-    50%  { transform: rotateY(180deg) rotateX(180deg); }
-    75%  { transform: rotateY(360deg) rotateX(180deg); }
-    100% { transform: rotateY(360deg) rotateX(360deg); }
+@keyframes loaderSpin {
+    0%   { opacity: 0; transform: perspective(700px) rotateY(0deg) scale(0.85); }
+    15%  { opacity: 1; }
+    100% { opacity: 1; transform: perspective(700px) rotateY(360deg) scale(1); }
+}
+
+@keyframes loaderDot {
+    0%   { transform: translateZ(2px) scale(0); opacity: 0; }
+    100% { transform: translateZ(2px) scale(1); opacity: 1; }
+}
+
+/* Reduced motion: show the tile and pips assembled instantly. */
+@media (prefers-reduced-motion: reduce) {
+    .loader-domino { animation: none; opacity: 1; transform: none; }
+    .loader-half .domino-dot { animation: none; transform: scale(1); opacity: 1; }
 }
 
 /* ===== BASE TYPOGRAPHY ===== */
@@ -1728,16 +1755,16 @@ section > .container > .section-tag {
     transform: translateY(0);
 }
 
-/* Tighter stagger (70ms) so a row reads as a domino chain, not a slow queue. */
+/* Marked 90ms stagger so a row reads as a domino chain — one tipping the next. */
 .reveal-section.is-visible .reveal-item[data-delay="0"] { transition-delay: 0ms; }
-.reveal-section.is-visible .reveal-item[data-delay="1"] { transition-delay: 70ms; }
-.reveal-section.is-visible .reveal-item[data-delay="2"] { transition-delay: 140ms; }
-.reveal-section.is-visible .reveal-item[data-delay="3"] { transition-delay: 210ms; }
-.reveal-section.is-visible .reveal-item[data-delay="4"] { transition-delay: 280ms; }
-.reveal-section.is-visible .reveal-item[data-delay="5"] { transition-delay: 350ms; }
-.reveal-section.is-visible .reveal-item[data-delay="6"] { transition-delay: 420ms; }
-.reveal-section.is-visible .reveal-item[data-delay="7"] { transition-delay: 490ms; }
-.reveal-section.is-visible .reveal-item[data-delay="8"] { transition-delay: 560ms; }
+.reveal-section.is-visible .reveal-item[data-delay="1"] { transition-delay: 90ms; }
+.reveal-section.is-visible .reveal-item[data-delay="2"] { transition-delay: 180ms; }
+.reveal-section.is-visible .reveal-item[data-delay="3"] { transition-delay: 270ms; }
+.reveal-section.is-visible .reveal-item[data-delay="4"] { transition-delay: 360ms; }
+.reveal-section.is-visible .reveal-item[data-delay="5"] { transition-delay: 450ms; }
+.reveal-section.is-visible .reveal-item[data-delay="6"] { transition-delay: 540ms; }
+.reveal-section.is-visible .reveal-item[data-delay="7"] { transition-delay: 630ms; }
+.reveal-section.is-visible .reveal-item[data-delay="8"] { transition-delay: 720ms; }
 
 /* ==========================================================================
    "Dominoes assembling" reveal — cards tip into place like a domino landing.
@@ -1763,22 +1790,24 @@ section > .container > .section-tag {
     transform: translateY(0);
 }
 
-/* Cards: tip in from the top edge (rotateX), the domino "landing" gesture. */
+/* Cards: a steep tip from the top edge + a real fall, so each one reads as a
+   domino tile slapping down — not a fade. */
 .reveal-section .problem-card.reveal-item,
 .reveal-section .process-step.reveal-item,
 .reveal-section .product-card.reveal-item,
 .reveal-section .ai-use-card.reveal-item {
     transform-origin: top center;
-    transform: perspective(1100px) rotateX(32deg) translateY(26px);
+    transform: perspective(900px) rotateX(52deg) translateY(40px);
     transition:
-        opacity 620ms cubic-bezier(0.22, 1, 0.36, 1),
-        transform 700ms cubic-bezier(0.2, 0.9, 0.3, 1.06);
+        opacity 560ms cubic-bezier(0.22, 1, 0.36, 1),
+        /* Snappier settle = the "clack" of a tile landing. */
+        transform 720ms cubic-bezier(0.18, 0.85, 0.28, 1.18);
 }
 .reveal-section.is-visible .problem-card.reveal-item,
 .reveal-section.is-visible .process-step.reveal-item,
 .reveal-section.is-visible .product-card.reveal-item,
 .reveal-section.is-visible .ai-use-card.reveal-item {
-    transform: perspective(1100px) rotateX(0deg) translateY(0);
+    transform: perspective(900px) rotateX(0deg) translateY(0);
 }
 
 /* Mobile: drop the 3D flip (cheaper to composite), keep a simple rise. */
@@ -1787,7 +1816,7 @@ section > .container > .section-tag {
     .reveal-section .process-step.reveal-item,
     .reveal-section .product-card.reveal-item,
     .reveal-section .ai-use-card.reveal-item {
-        transform: translateY(22px);
+        transform: translateY(34px);
     }
     .reveal-section.is-visible .problem-card.reveal-item,
     .reveal-section.is-visible .process-step.reveal-item,
@@ -2168,15 +2197,21 @@ section > .container > .section-tag {
     display: grid;
     grid-template-columns: 1fr;
     gap: 56px;
+    justify-items: center;
+}
+
+/* Centered header to match every other section (was left-aligned). */
+.nosotros-text {
+    margin: 0 auto;
 }
 
 .nosotros-text .section-title {
-    text-align: left;
+    text-align: center;
     margin-bottom: 24px;
 }
 
 .nosotros-text .section-tag {
-    text-align: left;
+    text-align: center;
     display: block;
 }
 
@@ -2186,6 +2221,7 @@ section > .container > .section-tag {
     line-height: 1.7;
     margin-bottom: 16px;
     max-width: 720px;
+    text-align: center;
 }
 
 /* Remove the floating animation that conflicted with 3-card grid */

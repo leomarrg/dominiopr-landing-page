@@ -40,31 +40,36 @@ if (REDUCE_MOTION) document.documentElement.classList.add('reduce-motion');
     });
 })();
 
-// ===== LOADING SCREEN (once per session) =====
-window.addEventListener('load', () => {
+// ===== LOADING SCREEN (domino assembling — on every load) =====
+function initDominoLoader() {
     const loader = document.getElementById('loaderOverlay');
     const heroContent = document.querySelector('.hero-content');
     const revealHero = () => heroContent && heroContent.classList.add('hero-content--ready');
 
-    let hasSeenLoader = false;
-    try { hasSeenLoader = sessionStorage.getItem('dominio_loader_seen') === 'true'; } catch (e) {}
-
     if (!loader) { revealHero(); return; }
 
-    if (REDUCE_MOTION || hasSeenLoader) {
-        loader.classList.add('hidden');
-        revealHero();
-        setTimeout(() => loader.remove(), 400);
-        return;
-    }
+    // Reveal the hero immediately, hidden UNDER the opaque overlay, so the LCP
+    // <h1> is already painted by the time the overlay lifts (don't serialize the
+    // word reveal AFTER the loader — that pushes LCP out). guardian-performance.
+    revealHero();
 
-    setTimeout(() => {
+    const hide = () => {
         loader.classList.add('hidden');
-        revealHero();
-        setTimeout(() => loader.remove(), 500);
-        try { sessionStorage.setItem('dominio_loader_seen', 'true'); } catch (e) {}
-    }, 800);
-});
+        setTimeout(() => loader.remove(), 350);
+    };
+
+    if (REDUCE_MOTION) { hide(); return; }
+
+    // Hold long enough for the spin + pips to finish assembling (~870ms), then
+    // fade. Fired on DOMContentLoaded (not `load`) so slow images/fonts can't
+    // stretch the loader and hurt LCP. No session gate: shows every load.
+    setTimeout(hide, 900);
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDominoLoader);
+} else {
+    initDominoLoader();
+}
 
 document.addEventListener('DOMContentLoaded', () => {
 
