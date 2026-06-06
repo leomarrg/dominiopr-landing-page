@@ -450,6 +450,33 @@ p {
 .dot-bc { grid-column: 2; grid-row: 3; }
 .dot-br { grid-column: 3; grid-row: 3; }
 
+/* ==========================================================================
+   Domino face — small integers (1-6) shown as dice pips, a brand accent.
+   Used for decorative section numbering. Reuses the .dot-* pip positions.
+   Only for values 1-6 (a domino half maxes at 6); never for prices/metrics.
+   ========================================================================== */
+.domino-num { display: inline-flex; line-height: 0; }
+.dn-face {
+    display: inline-grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    padding: 8px;
+    border-radius: 12px;
+    background: var(--primary);
+    border: 2px solid rgba(52, 214, 200, 0.4);
+    box-shadow: 0 0 0 4px var(--primary-light), 0 0 16px rgba(52, 214, 200, 0.16);
+}
+.dn-pip {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px rgba(52, 214, 200, 0.55);
+}
+
 /* Snap flash */
 @keyframes snapFlash {
     0% { box-shadow: 0 0 0 rgba(59, 192, 199, 0); }
@@ -1701,15 +1728,82 @@ section > .container > .section-tag {
     transform: translateY(0);
 }
 
+/* Tighter stagger (70ms) so a row reads as a domino chain, not a slow queue. */
 .reveal-section.is-visible .reveal-item[data-delay="0"] { transition-delay: 0ms; }
-.reveal-section.is-visible .reveal-item[data-delay="1"] { transition-delay: 90ms; }
-.reveal-section.is-visible .reveal-item[data-delay="2"] { transition-delay: 180ms; }
-.reveal-section.is-visible .reveal-item[data-delay="3"] { transition-delay: 270ms; }
-.reveal-section.is-visible .reveal-item[data-delay="4"] { transition-delay: 360ms; }
-.reveal-section.is-visible .reveal-item[data-delay="5"] { transition-delay: 450ms; }
-.reveal-section.is-visible .reveal-item[data-delay="6"] { transition-delay: 540ms; }
-.reveal-section.is-visible .reveal-item[data-delay="7"] { transition-delay: 630ms; }
-.reveal-section.is-visible .reveal-item[data-delay="8"] { transition-delay: 720ms; }
+.reveal-section.is-visible .reveal-item[data-delay="1"] { transition-delay: 70ms; }
+.reveal-section.is-visible .reveal-item[data-delay="2"] { transition-delay: 140ms; }
+.reveal-section.is-visible .reveal-item[data-delay="3"] { transition-delay: 210ms; }
+.reveal-section.is-visible .reveal-item[data-delay="4"] { transition-delay: 280ms; }
+.reveal-section.is-visible .reveal-item[data-delay="5"] { transition-delay: 350ms; }
+.reveal-section.is-visible .reveal-item[data-delay="6"] { transition-delay: 420ms; }
+.reveal-section.is-visible .reveal-item[data-delay="7"] { transition-delay: 490ms; }
+.reveal-section.is-visible .reveal-item[data-delay="8"] { transition-delay: 560ms; }
+
+/* ==========================================================================
+   "Dominoes assembling" reveal — cards tip into place like a domino landing.
+   Pure CSS over the existing reveal system; transform/opacity only (CLS-safe).
+   No persistent will-change (see the note above — it froze the process pips).
+   Excludes .bento-item and .visual-card, which have their own inner 3D flip.
+   ========================================================================== */
+
+/* Headings/paragraphs: a longer fall that settles with a soft overshoot. */
+.reveal-section .section-tag.reveal-item,
+.reveal-section .section-title.reveal-item,
+.reveal-section .section-intro.reveal-item,
+.reveal-section .nosotros-text.reveal-item {
+    transform: translateY(32px);
+    transition:
+        opacity 700ms cubic-bezier(0.22, 1, 0.36, 1),
+        transform 760ms cubic-bezier(0.34, 1.4, 0.5, 1);
+}
+.reveal-section.is-visible .section-tag.reveal-item,
+.reveal-section.is-visible .section-title.reveal-item,
+.reveal-section.is-visible .section-intro.reveal-item,
+.reveal-section.is-visible .nosotros-text.reveal-item {
+    transform: translateY(0);
+}
+
+/* Cards: tip in from the top edge (rotateX), the domino "landing" gesture. */
+.reveal-section .problem-card.reveal-item,
+.reveal-section .process-step.reveal-item,
+.reveal-section .product-card.reveal-item,
+.reveal-section .ai-use-card.reveal-item {
+    transform-origin: top center;
+    transform: perspective(1100px) rotateX(32deg) translateY(26px);
+    transition:
+        opacity 620ms cubic-bezier(0.22, 1, 0.36, 1),
+        transform 700ms cubic-bezier(0.2, 0.9, 0.3, 1.06);
+}
+.reveal-section.is-visible .problem-card.reveal-item,
+.reveal-section.is-visible .process-step.reveal-item,
+.reveal-section.is-visible .product-card.reveal-item,
+.reveal-section.is-visible .ai-use-card.reveal-item {
+    transform: perspective(1100px) rotateX(0deg) translateY(0);
+}
+
+/* Mobile: drop the 3D flip (cheaper to composite), keep a simple rise. */
+@media (max-width: 768px) {
+    .reveal-section .problem-card.reveal-item,
+    .reveal-section .process-step.reveal-item,
+    .reveal-section .product-card.reveal-item,
+    .reveal-section .ai-use-card.reveal-item {
+        transform: translateY(22px);
+    }
+    .reveal-section.is-visible .problem-card.reveal-item,
+    .reveal-section.is-visible .process-step.reveal-item,
+    .reveal-section.is-visible .product-card.reveal-item,
+    .reveal-section.is-visible .ai-use-card.reveal-item {
+        transform: translateY(0);
+    }
+}
+
+/* Reduced motion: appear in place, no transform, no transition. */
+@media (prefers-reduced-motion: reduce) {
+    .reveal-section .reveal-item {
+        transform: none !important;
+        transition: none !important;
+    }
+}
 
 /* Section intro paragraph (used in problems, services, process, products) */
 .section-intro {
