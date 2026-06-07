@@ -542,6 +542,35 @@ document.addEventListener('DOMContentLoaded', () => {
         sections.forEach((section) => sectionObserver.observe(section));
     })();
 
+    // ===== PER-CARD PIP REVEAL =====
+    // Domino tiles assemble per card, fired when THAT card is clearly in view —
+    // not when the tall parent section first peeks in — so cards below the fold
+    // don't build off-screen.
+    (function initPipReveals() {
+        const cards = document.querySelectorAll('.problem-card, .product-card');
+        if (!cards.length) return;
+
+        if (REDUCE_MOTION) {
+            cards.forEach((c) => c.classList.add('pips-in'));
+            return;
+        }
+
+        const pipObserver = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('pips-in');
+                        pipObserver.unobserve(entry.target);
+                    }
+                });
+            },
+            // ~30% of the card in view so the build happens where the eye is.
+            { threshold: 0.3, rootMargin: '0px 0px -10% 0px' }
+        );
+
+        cards.forEach((card) => pipObserver.observe(card));
+    })();
+
     // ===== MOBILE TAP-TO-FLIP =====
     if (window.innerWidth <= 768) {
         const FLIP_DURATION = 600; // matches CSS transition duration

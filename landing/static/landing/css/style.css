@@ -505,38 +505,32 @@ p {
 }
 
 /* ==========================================================================
-   Domino pips assemble inside reveal cards — the card fades up first, then a
-   beat later the pips "snap" in one by one so you can watch the tile build.
-   State scoped to .reveal-section so pips render normally without JS / outside
-   a reveal section. transform/opacity only, no persistent will-change.
+   Domino pips assemble per card — each tile builds when ITS card scrolls into
+   view (JS adds .pips-in), pip by pip, slow enough to watch. Pips render
+   normally without JS / outside a reveal section. transform/opacity only.
    ========================================================================== */
 .reveal-section .problem-card .dn-pip,
 .reveal-section .product-card .dn-pip {
     opacity: 0;
     transform: scale(0.35);
 }
-.reveal-section.is-visible .problem-card .dn-pip,
-.reveal-section.is-visible .product-card .dn-pip {
-    animation: pipPop 320ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
-    animation-delay: calc(var(--pip-base, 900ms) + (var(--pip-i, 0) * 110ms));
+.problem-card.pips-in .dn-pip,
+.product-card.pips-in .dn-pip {
+    animation: pipPop 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    /* short base + generous per-pip stagger so the build is clearly visible */
+    animation-delay: calc(160ms + (var(--pip-i, 0) * 200ms));
 }
 @keyframes pipPop {
     0%   { opacity: 0; transform: scale(0.35); }
-    60%  { opacity: 1; transform: scale(1.12); }
+    55%  { opacity: 1; transform: scale(1.14); }
+    78%  { transform: scale(0.97); }
     100% { opacity: 1; transform: scale(1); }
 }
-/* Per-card base delay (each tile assembles after the previous), set after the
-   card's own fade-up has landed. */
-.reveal-section.is-visible .problem-card:nth-of-type(1) { --pip-base: 880ms; }
-.reveal-section.is-visible .problem-card:nth-of-type(2) { --pip-base: 1080ms; }
-.reveal-section.is-visible .problem-card:nth-of-type(3) { --pip-base: 1280ms; }
-.reveal-section.is-visible .product-card:nth-of-type(1) { --pip-base: 980ms; }
-.reveal-section.is-visible .product-card:nth-of-type(2) { --pip-base: 1180ms; }
-.reveal-section.is-visible .product-card:nth-of-type(3) { --pip-base: 1380ms; }
-/* Per-pip stagger within a tile (markup order). */
-.reveal-section.is-visible .dn-pip:nth-of-type(1) { --pip-i: 0; }
-.reveal-section.is-visible .dn-pip:nth-of-type(2) { --pip-i: 1; }
-.reveal-section.is-visible .dn-pip:nth-of-type(3) { --pip-i: 2; }
+/* Per-pip stagger within a tile (markup order). Offset BETWEEN tiles now comes
+   naturally from each card entering the viewport at its own time. */
+.dn-pip:nth-of-type(1) { --pip-i: 0; }
+.dn-pip:nth-of-type(2) { --pip-i: 1; }
+.dn-pip:nth-of-type(3) { --pip-i: 2; }
 
 /* Snap flash */
 @keyframes snapFlash {
@@ -1864,13 +1858,12 @@ section > .container > .section-tag {
     .reveal-section.is-visible .reveal-item {
         transform: translateY(0) scale(1);
     }
-    /* Shorter pip-assemble delays on mobile (card stagger is 0 here). */
-    .reveal-section.is-visible .problem-card:nth-of-type(1),
-    .reveal-section.is-visible .product-card:nth-of-type(1) { --pip-base: 360ms; }
-    .reveal-section.is-visible .problem-card:nth-of-type(2),
-    .reveal-section.is-visible .product-card:nth-of-type(2) { --pip-base: 480ms; }
-    .reveal-section.is-visible .problem-card:nth-of-type(3),
-    .reveal-section.is-visible .product-card:nth-of-type(3) { --pip-base: 600ms; }
+    /* Slightly tighter pip build on mobile (each card still fires on its own). */
+    .problem-card.pips-in .dn-pip,
+    .product-card.pips-in .dn-pip {
+        animation-duration: 440ms;
+        animation-delay: calc(100ms + (var(--pip-i, 0) * 150ms));
+    }
 }
 
 /* Reduced motion: final state, no transform/filter/transition. */
