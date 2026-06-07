@@ -506,8 +506,9 @@
                     </div>
                     <div class="form-row">
                         <input type="text" name="company" placeholder="Company / Organization" value="{{ form.company.value|default:'' }}">
-                        <input type="tel" name="phone" placeholder="Phone" inputmode="tel" value="{{ form.phone.value|default:'' }}">
+                        <input type="tel" name="phone" placeholder="(787) 123-4567" inputmode="tel" autocomplete="tel" maxlength="14" value="{{ form.phone.value|default:'' }}">
                     </div>
+                    {% if form.phone.errors %}<p style="color:#f0a0a0;font-size:.8rem;margin:-6px 0 0;">{{ form.phone.errors|striptags }}</p>{% endif %}
                     <p style="color:rgba(255,255,255,.5);font-size:.78rem;margin:-6px 0 0;">Leave an email or a phone — whichever works for you.</p>
                     <div class="form-row">
                         <select name="service" required>
@@ -615,6 +616,21 @@
         window.addEventListener('scroll', onScroll, { passive: true });
         window.addEventListener('resize', onScroll, { passive: true });
         update();
+    })();
+    </script>
+    <script>
+    // Format phone inputs as (XXX) XXX-XXXX while typing (US/PR).
+    (function () {
+        document.querySelectorAll('input[name="phone"]').forEach(function (el) {
+            el.addEventListener('input', function () {
+                var d = el.value.replace(/\D/g, '');
+                if (d[0] === '1') d = d.slice(1);  // NANP area codes never start with 1
+                d = d.slice(0, 10);
+                el.value = d.length > 6 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6)
+                    : d.length > 3 ? '(' + d.slice(0, 3) + ') ' + d.slice(3)
+                    : d.length > 0 ? '(' + d : '';
+            });
+        });
     })();
     </script>
     {% include 'landing/_tracking.html' %}

@@ -28,6 +28,7 @@ from django.views.decorators.http import require_POST
 from . import agent
 from .forms import ContactForm
 from .models import Client, ContactSubmission, Membership
+from .phone import normalize_phone
 
 logger = logging.getLogger(__name__)
 
@@ -318,15 +319,23 @@ def _chat_lead_handler(request, client_obj=None):
     def handle(data):
         name = (data.get('name') or '').strip()[:120]
         email = (data.get('email') or '').strip()[:254]
-        phone = (data.get('phone') or '').strip()[:30]
-        # A lead needs a name and at least one way to reach them (email OR phone).
-        if not name or (not email and not phone):
-            raise ValueError('Missing name, and an email or phone.')
+        phone = normalize_phone((data.get('phone') or '').strip()[:30])
+        if not name:
+            raise ValueError('Missing name.')
         if email:
             try:
                 validate_email(email)
             except ValidationError:
                 raise ValueError('Invalid email.')
+        # Bad phone: drop it if there's a valid email; otherwise ask again.
+        if phone is None:
+            if email:
+                phone = ''
+            else:
+                raise ValueError('Invalid phone number — ask the visitor to re-share it.')
+        # A lead needs a name and at least one way to reach them.
+        if not email and not phone:
+            raise ValueError('Need an email or a phone number.')
 
         # Per-IP cap: a bot can't flood the inbox or abuse our SMTP to relay
         # confirmation emails to arbitrary third parties.
@@ -634,12 +643,16 @@ def get_started(request):
             errors['name'] = 'Required.'
         if not company:
             errors['company'] = 'Required.'
-        # Email OR phone — a phone-only signup is fine.
+        # Email OR phone — a phone-only signup is fine, but a given phone must be valid.
         if email:
             try:
                 validate_email(email)
             except ValidationError:
                 errors['email'] = 'Enter a valid email.'
+        phone = normalize_phone(phone)
+        if phone is None:
+            errors['phone'] = 'Enter a valid phone number, e.g. (787) 123-4567.'
+            phone = ''
         if not email and not phone:
             errors['email'] = 'Leave an email or a phone so we can reach you.'
         if errors:

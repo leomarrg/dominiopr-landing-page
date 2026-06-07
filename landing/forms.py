@@ -2,6 +2,7 @@ from django import forms
 from django.utils.text import slugify
 
 from .models import Client, ContactSubmission
+from .phone import normalize_phone
 
 
 class ClientForm(forms.ModelForm):
@@ -75,6 +76,13 @@ class ContactForm(forms.ModelForm):
         if self.cleaned_data.get('website'):
             raise forms.ValidationError('Spam detected.')
         return ''
+
+    def clean_phone(self):
+        # Normalize to E.164, or reject garbage. Blank stays blank (optional).
+        normalized = normalize_phone(self.cleaned_data.get('phone', ''))
+        if normalized is None:
+            raise forms.ValidationError('Enter a valid phone number, e.g. (787) 123-4567.')
+        return normalized
 
     def clean(self):
         cleaned = super().clean()

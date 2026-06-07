@@ -111,9 +111,10 @@
                 {% if errors.company %}<div class="err">{{ errors.company }}</div>{% endif %}
                 <div class="gs-row">
                     <input type="email" name="email" placeholder="Email" value="{{ form.email|default:'' }}">
-                    <input type="tel" name="phone" placeholder="Phone" inputmode="tel" value="{{ form.phone|default:'' }}">
+                    <input type="tel" name="phone" placeholder="(787) 123-4567" inputmode="tel" autocomplete="tel" maxlength="14" value="{{ form.phone|default:'' }}">
                 </div>
                 {% if errors.email %}<div class="err">{{ errors.email }}</div>{% endif %}
+                {% if errors.phone %}<div class="err">{{ errors.phone }}</div>{% endif %}
                 <input type="text" name="website_url" placeholder="Website (optional)" value="{{ form.website_url|default:'' }}">
                 <select name="plan" id="planSelect">
                     <option value="">Choose a plan</option>
@@ -132,6 +133,18 @@
             var sel = document.getElementById('planSelect');
             if (sel) sel.value = b.getAttribute('data-plan');
             document.getElementById('request').scrollIntoView({behavior:'smooth'});
+        });
+    });
+
+    // Format the phone field as (XXX) XXX-XXXX while typing (US/PR).
+    document.querySelectorAll('input[name="phone"]').forEach(function (el) {
+        el.addEventListener('input', function () {
+            var d = el.value.replace(/\D/g, '');
+            if (d[0] === '1') d = d.slice(1);  // NANP area codes never start with 1
+            d = d.slice(0, 10);
+            el.value = d.length > 6 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6)
+                : d.length > 3 ? '(' + d.slice(0, 3) + ') ' + d.slice(3)
+                : d.length > 0 ? '(' + d : '';
         });
     });
 
