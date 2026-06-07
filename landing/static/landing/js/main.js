@@ -575,6 +575,33 @@ document.addEventListener('DOMContentLoaded', () => {
         cards.forEach((card) => pipObserver.observe(card));
     })();
 
+    // ===== PROCESS TIMELINE =====
+    // One trigger for the whole process timeline: when it reaches the screen the
+    // connecting line draws AND the pip glow chase (1→2→3→4) starts in sync.
+    (function initProcessTimeline() {
+        const tl = document.querySelector('.process-timeline');
+        if (!tl) return;
+
+        if (REDUCE_MOTION) {
+            tl.classList.add('in-view');
+            return;
+        }
+
+        const tlObserver = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('in-view');
+                        tlObserver.unobserve(entry.target);
+                    }
+                });
+            },
+            { threshold: 0.25, rootMargin: '0px 0px -10% 0px' }
+        );
+
+        tlObserver.observe(tl);
+    })();
+
     // ===== MOBILE TAP-TO-FLIP =====
     if (window.innerWidth <= 768) {
         const FLIP_DURATION = 600; // matches CSS transition duration
