@@ -32,10 +32,15 @@ toward a lead: ask what they need and offer to have the team follow up.
 conversationally (one short question at a time), plus company and what they want if \
 natural. Ask for both, but a lead needs only ONE: if they have no email, a phone number \
 is enough (and vice versa).
-- Once you have a name AND at least one contact (a valid-looking email OR a phone \
-number), call the capture_lead tool with whatever they gave. After it succeeds, confirm \
-warmly and say the team will follow up. Never claim a lead was saved unless the tool \
-actually ran.
+- VALIDATE before saving: an email must look real (name@domain.tld with an "@" and a \
+domain); a phone must be a complete US/PR number of 10 digits. If what they typed is \
+incomplete or wrong (too few or too many digits, missing "@", looks like random text), \
+DON'T call the tool — kindly point out what's off and ask them to re-share that one \
+detail (e.g. "That phone looks short — could you give me the full 10-digit number?").
+- Once you have a name AND at least one VALID contact (a real-looking email OR a \
+10-digit phone), call the capture_lead tool with whatever they gave. After it succeeds, \
+confirm warmly and say the team will follow up. Never claim a lead was saved unless the \
+tool actually ran.
 - Keep momentum but don't be pushy: help first, then guide to contact.
 
 STYLE: warm, concise, concrete — usually 1-3 sentences. Plain text only: no markdown \
@@ -162,9 +167,13 @@ BOOKING_TOOL = {
 
 BOOKING_RULES = (
     "\n\nBOOKINGS: This business takes reservations/appointments. When the visitor wants "
-    "to book a time, collect their name, email, and a specific date and time, then call "
-    "create_booking. If the slot is taken, offer another time. Confirm only after the tool "
-    "succeeds."
+    "to book a time, collect their name, a valid email, and a specific date and time. "
+    "VALIDATE before booking: the email must look real, and the date/time must be a "
+    "concrete FUTURE moment — read it back in plain words and get a yes before calling "
+    "create_booking. Don't book a vague, past, or incomplete time. If the tool says the "
+    "time is in the past, too soon, too far out, or already taken, do NOT claim it was "
+    "booked — apologize briefly and offer another specific time. Confirm only after the "
+    "tool succeeds."
 )
 
 # Safety cap on the tool-use loop within a single request.

@@ -59,14 +59,14 @@
                             {% if lead.company %}<div class="dash-sub">{{ lead.company }}</div>{% endif %}
                             {% if lead.message %}<div class="dash-sub dash-preview">{{ lead.message|truncatechars:64 }}</div>{% endif %}
                         </td>
-                        <td>
+                        <td data-label="Contact">
                             {% if lead.email %}<div class="dash-email">{{ lead.email }}</div>{% endif %}
                             {% if lead.phone %}<div class="dash-sub">{{ lead.phone|format_phone }}</div>{% endif %}
                             {% if not lead.email and not lead.phone %}<div class="dash-sub">—</div>{% endif %}
                         </td>
-                        <td>{{ lead.get_service_display|default:"—" }}</td>
-                        <td><span class="dash-badge dash-badge--{{ lead.source }}">{{ lead.get_source_display }}</span></td>
-                        <td onclick="event.stopPropagation();">
+                        <td data-label="Service">{{ lead.get_service_display|default:"—" }}</td>
+                        <td data-label="Source"><span class="dash-badge dash-badge--{{ lead.source }}">{{ lead.get_source_display }}</span></td>
+                        <td data-label="Status" onclick="event.stopPropagation();">
                             <form method="post" action="{% url 'lead_status' lead.pk %}">
                                 {% csrf_token %}
                                 <span class="dash-dot dash-dot--{{ lead.status }}"></span>
@@ -77,7 +77,7 @@
                                 </select>
                             </form>
                         </td>
-                        <td class="dash-sub">{{ lead.created_at|date:"M d, Y · g:i A" }}</td>
+                        <td class="dash-sub" data-label="Date">{{ lead.created_at|date:"M d, Y · g:i A" }}</td>
                         <td class="dash-chevron" aria-hidden="true">⌄</td>
                     </tr>
                     <tr class="dash-detail" id="detail-{{ lead.pk }}">

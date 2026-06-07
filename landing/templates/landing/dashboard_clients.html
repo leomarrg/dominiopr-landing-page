@@ -24,6 +24,20 @@
         .badge-off{background:rgba(224,98,98,.16);color:#f0a0a0;padding:3px 9px;border-radius:999px;font-size:.72rem}
         .badge-on{background:rgba(46,168,87,.16);color:#8be0a4;padding:3px 9px;border-radius:999px;font-size:.72rem}
         .new-btn{background:var(--accent);color:var(--primary);border:none;padding:11px 18px;border-radius:10px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none}
+        @media (max-width:600px){
+            .agent-card{padding:18px}
+            /* Name above, then actions wrap full-width below — 4 buttons fit. */
+            .agent-card__top{flex-direction:column;align-items:stretch;gap:14px}
+            .agent-actions{flex-wrap:wrap;gap:8px}
+            .agent-actions .edit-btn,.agent-actions .toggle-btn{flex:1 1 auto;text-align:center;min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+            .agent-actions form{display:flex;flex:1 1 auto}
+            .agent-actions form .edit-btn{width:100%}
+            /* Install snippet: full-width with its own scroll, Copy below. */
+            .snippet{flex-direction:column;align-items:stretch}
+            .snippet code{font-size:13px;padding:12px}
+            .snippet .copy-btn{width:100%;padding:12px}
+            .agent-meta{flex-wrap:wrap;gap:6px 18px}
+        }
     </style>
 </head>
 <body class="dash-body">
