@@ -200,37 +200,27 @@ a { color: var(--accent); text-decoration: none; }
 .dash-filters a.dash-clear { color: var(--muted); font-size: 0.82rem; padding: 0 6px; }
 
 /* Table */
-/* Each lead is its own card: a vertical gap separates them (border-spacing),
-   and the summary row + its detail share a surface/border so they read as one. */
-.dash-table-wrap { background: transparent; border: none; border-radius: 0; }
-.dash-table { width: 100%; border-collapse: separate; border-spacing: 0 10px; }
-.dash-table thead tr { background: transparent; }
+.dash-table-wrap {
+    background: var(--primary-light);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+}
+.dash-table { width: 100%; border-collapse: collapse; }
 .dash-table th {
     text-align: left;
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--muted);
-    padding: 4px 18px 8px;
+    padding: 14px 18px;
     border-bottom: 1px solid var(--line);
     font-weight: 600;
 }
-.dash-table td { padding: 14px 18px; font-size: 0.88rem; vertical-align: middle; }
+.dash-table td { padding: 14px 18px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); font-size: 0.88rem; vertical-align: middle; }
+.dash-row { cursor: pointer; transition: background 0.15s ease; }
+.dash-row:hover { background: rgba(52, 214, 200, 0.05); }
 .dash-name { font-weight: 600; }
-
-/* Card face = the summary row's cells (border-radius lives on cells in tables). */
-.dash-row { cursor: pointer; }
-.dash-row > td { background: var(--surface); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); transition: background 0.15s ease; }
-.dash-row > td:first-child { border-left: 1px solid var(--line); border-top-left-radius: 12px; }
-.dash-row > td:last-child { border-right: 1px solid var(--line); border-top-right-radius: 12px; }
-.dash-row:not(.is-expanded) > td:first-child { border-bottom-left-radius: 12px; }
-.dash-row:not(.is-expanded) > td:last-child { border-bottom-right-radius: 12px; }
-.dash-row:hover > td { background: linear-gradient(rgba(52, 214, 200, 0.06), rgba(52, 214, 200, 0.06)), var(--surface); }
-/* Expanded lead: tinted + accent edge so it's clearly the open one, grouped with its detail. */
-.dash-row.is-expanded > td { background: var(--primary-light); }
-.dash-row.is-expanded > td:first-child { box-shadow: inset 1px 0 0 var(--accent), inset 0 1px 0 var(--accent); }
-.dash-row.is-expanded > td:last-child { box-shadow: inset -1px 0 0 var(--accent), inset 0 1px 0 var(--accent); }
-.dash-row.is-expanded > td:not(:first-child):not(:last-child) { box-shadow: inset 0 1px 0 var(--accent); }
 .dash-name { font-weight: 600; }
 .dash-sub { color: var(--muted); font-size: 0.8rem; }
 .dash-email { color: var(--white); }
@@ -264,17 +254,9 @@ a { color: var(--accent); text-decoration: none; }
 .dash-dot--won { background: var(--won); }
 .dash-dot--lost { background: var(--lost); }
 
-.dash-detail { display: none; }
+.dash-detail { display: none; background: var(--primary); }
 .dash-detail.is-open { display: table-row; }
-.dash-detail > td {
-    padding: 4px 22px 20px;
-    background: var(--primary-light);
-    border-left: 1px solid var(--accent);
-    border-right: 1px solid var(--accent);
-    border-bottom: 1px solid var(--accent);
-    border-bottom-left-radius: 12px;
-    border-bottom-right-radius: 12px;
-}
+.dash-detail td { padding: 18px 22px; }
 .dash-detail__grid { display: grid; grid-template-columns: 130px 1fr; gap: 8px 16px; font-size: 0.85rem; }
 .dash-detail__grid dt { color: var(--muted); }
 .dash-detail__grid dd { margin: 0; white-space: pre-wrap; }
@@ -374,40 +356,52 @@ a { color: var(--accent); text-decoration: none; }
 @media (max-width: 820px) {
     .dash-stats { grid-template-columns: repeat(2, 1fr); }
 
-    /* Leads table collapses to cards; each cell keeps its column label. */
+    /* The leads table becomes a stack of clearly separate CARDS — one per lead.
+       Each card lifts off the page (shadow + gap) so it never reads as a striped
+       table, and the name sits as the card's header above its own data. */
     .dash-table { border-spacing: 0; }
     .dash-table thead { display: none; }
     .dash-table, .dash-table tbody, .dash-table tr, .dash-table td { display: block; width: 100%; }
+    /* Re-assert the collapse: `tr { display:block }` above would otherwise force
+       every detail open. Only an expanded lead shows its detail. */
+    .dash-table .dash-detail { display: none; }
+    .dash-table .dash-detail.is-open { display: block; }
 
-    /* Each lead is a separated card; the row is its top, the detail its bottom. */
     .dash-row {
-        position: relative; padding: 14px 16px; margin-top: 12px;
-        background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+        position: relative; padding: 16px; margin: 0 0 16px;
+        background: var(--primary-light); border: 1px solid var(--line); border-radius: 14px;
+        box-shadow: 0 3px 12px rgba(0, 0, 0, 0.28);
     }
-    /* Undo the desktop per-cell card styling — the card lives on the block here. */
-    .dash-row > td { background: none; border: none; border-radius: 0; padding: 4px 0; box-shadow: none; }
-    .dash-row > td:first-child { padding-bottom: 8px; padding-right: 34px; }
+    .dash-row > td { background: none; border: none; border-radius: 0; padding: 0; box-shadow: none; }
+    /* Name = card header, divided from the rest so it's clearly one lead's data. */
+    .dash-row > td:first-child {
+        padding: 0 34px 12px 0; margin-bottom: 8px; border-bottom: 1px solid var(--line);
+    }
+    .dash-row .dash-name { font-size: 1.05rem; }
     .dash-row td[data-label] {
         display: flex; justify-content: space-between; align-items: center; gap: 12px;
+        padding: 5px 0;
     }
     .dash-row td[data-label]::before {
         content: attr(data-label);
-        color: var(--muted); font-size: 0.7rem; text-transform: uppercase;
-        letter-spacing: 0.05em; font-weight: 600; flex: 0 0 auto;
+        color: var(--muted); font-size: 0.68rem; text-transform: uppercase;
+        letter-spacing: 0.06em; font-weight: 600; flex: 0 0 auto;
     }
-    .dash-chevron { position: absolute; top: 14px; right: 14px; width: auto; padding: 0; }
+    .dash-row td[data-label] > * { text-align: right; }
+    .dash-chevron { position: absolute; top: 16px; right: 14px; width: auto; padding: 0; }
     .dash-preview { max-width: 100%; white-space: normal; }
 
-    /* Open lead: row joins its detail into one accented card. */
+    /* Open lead: the detail becomes the lower half of the SAME card (seamless join). */
     .dash-row.is-expanded {
-        margin-bottom: 0; background: var(--primary-light); border-color: var(--accent);
+        margin-bottom: 0; box-shadow: none;
         border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom-color: transparent;
     }
     .dash-detail.is-open {
-        background: var(--primary-light); border: 1px solid var(--accent); border-top: none;
-        border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;
+        background: var(--primary-light); border: 1px solid var(--line); border-top: none;
+        border-bottom-left-radius: 14px; border-bottom-right-radius: 14px;
+        margin-bottom: 16px; box-shadow: 0 3px 12px rgba(0, 0, 0, 0.28);
     }
-    .dash-detail > td { background: none; border: none; border-radius: 0; padding: 14px 16px; box-shadow: none; }
+    .dash-detail > td { background: none; border: none; border-radius: 0; padding: 4px 16px 16px; box-shadow: none; }
     .dash-detail__grid { grid-template-columns: 1fr; gap: 2px 0; }
     .dash-detail__grid dt { margin-top: 8px; }
     .dash-detail__grid dt:first-child { margin-top: 0; }
