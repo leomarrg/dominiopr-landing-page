@@ -43,6 +43,7 @@ urlpatterns = [
     path('dashboard/clients/new/', views.client_form, name='client_create'),
     path('dashboard/clients/<int:pk>/', views.client_form, name='client_edit'),
     path('dashboard/clients/<int:pk>/toggle/', views.client_toggle_active, name='client_toggle_active'),
+    path('dashboard/clients/<int:pk>/resend/', views.client_resend_onboarding, name='client_resend_onboarding'),
     path('dashboard/password/', views.password_change, name='password_change'),
     path('dashboard/login/', login_view, name='login'),
     path('dashboard/logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),

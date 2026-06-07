@@ -195,7 +195,7 @@ def _send_onboarding_email(client, embed_snippet, login=None):
     paying for. password is None when the account already existed.
     """
     reply_to = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
-    _send_html_email(
+    return _send_html_email(
         subject=f'Your AI agent is live — install instructions ({client.name})',
         to=[client.notify_email],
         html_template='landing/emails/agent_onboarding.html',
@@ -205,36 +205,41 @@ def _send_onboarding_email(client, embed_snippet, login=None):
     )
 
 
-def _provision_client_login(client):
-    """Ensure `client` has a dashboard login tied to it, scoped to its data.
+def _provision_client_login(client, reset_password=False):
+    """Ensure `client` has a dashboard login, linking the notify_email's user to it.
 
-    Returns (username, temp_password). temp_password is None when a login already
-    existed (so we never silently reset a working password). The account is forced
-    non-staff so it can never see another tenant's leads.
+    One login can manage SEVERAL agents: if the email already has an account, we
+    just add a membership to this client. `reset_password=True` (used by the
+    Resend action) sets a fresh temp password so the owner can hand the client a
+    working credential even if the first email was lost. Returns (username,
+    temp_password); temp_password is None when reusing a login without a reset.
+    Staff accounts are never scoped into a tenant.
     """
     User = get_user_model()
     email = (client.notify_email or '').strip().lower()
     if not email:
         return None, None
 
-    # Already provisioned for this client? Reuse it, don't reset.
-    existing = Membership.objects.filter(client=client).select_related('user').first()
-    if existing:
-        return existing.user.get_username(), None
-
     user = User.objects.filter(username=email).first()
+    if user and (user.is_staff or user.is_superuser):
+        # Never scope (or silently demote) a staff/superuser into one tenant.
+        logger.warning('Skipped login provisioning: %s is a staff account', email)
+        return None, None
+
     temp_password = None
     if user is None:
         temp_password = secrets.token_urlsafe(12)
         user = User.objects.create_user(username=email, email=email, password=temp_password)
-    elif user.is_staff or user.is_superuser:
-        # Never scope (or silently demote) a staff/superuser into one tenant —
-        # skip provisioning rather than risk a cross-tenant exposure.
-        logger.warning('Skipped login provisioning: %s is a staff account', email)
-        return None, None
-    # Force a password change on first sign-in only when we set a temp password.
-    Membership.objects.create(
-        user=user, client=client, must_change_password=bool(temp_password))
+    elif reset_password:
+        temp_password = secrets.token_urlsafe(12)
+        user.set_password(temp_password)
+        user.save(update_fields=['password'])
+        Membership.objects.filter(user=user).update(must_change_password=True)
+
+    # Link the user to this client (a user may manage many agents).
+    Membership.objects.get_or_create(
+        user=user, client=client,
+        defaults={'must_change_password': bool(temp_password)})
     return user.get_username(), temp_password
 
 
@@ -246,25 +251,23 @@ def _provision_client_login(client):
 staff_required = user_passes_test(lambda u: u.is_staff, login_url='login')
 
 
-def client_for(user):
-    """The Client this user belongs to, or None for staff (who see everything)."""
-    if user.is_staff:
-        return None
-    membership = getattr(user, 'membership', None)
-    return membership.client if membership else None
+def _member_client_ids(user):
+    """Client ids this user is a member of (a user can manage several agents)."""
+    return list(
+        Membership.objects.filter(user=user).values_list('client_id', flat=True))
 
 
 def leads_for(user):
-    """Leads this user may see: all for staff, only their own for a client,
+    """Leads this user may see: all for staff, only their clients' for a member,
     none for a logged-in user with no membership (safe default — never another
     tenant's data)."""
     qs = ContactSubmission.objects.all()
+    if not getattr(user, 'is_authenticated', False):
+        return qs.none()
     if user.is_staff:
         return qs
-    membership = getattr(user, 'membership', None)
-    if not membership:
-        return qs.none()
-    return qs.filter(client=membership.client)
+    ids = _member_client_ids(user)
+    return qs.filter(client_id__in=ids) if ids else qs.none()
 
 
 def get_lead_or_404(user, pk):
@@ -672,8 +675,7 @@ def dashboard(request):
     """
     # First sign-in on an auto-provisioned account: force the temp password out
     # of circulation before showing any data.
-    membership = getattr(request.user, 'membership', None)
-    if membership and membership.must_change_password:
+    if Membership.objects.filter(user=request.user, must_change_password=True).exists():
         messages.info(request, 'Please set a new password to finish setting up your account.')
         return redirect('password_change')
 
@@ -801,11 +803,9 @@ def password_change(request):
         if form.is_valid():
             user = form.save()
             update_session_auth_hash(request, user)  # stay logged in
-            # Clear the first-login gate, if any.
-            membership = getattr(request.user, 'membership', None)
-            if membership and membership.must_change_password:
-                membership.must_change_password = False
-                membership.save(update_fields=['must_change_password'])
+            # Clear the first-login gate across all of the user's agents.
+            Membership.objects.filter(user=request.user, must_change_password=True) \
+                .update(must_change_password=False)
             messages.success(request, 'Your password has been updated.')
             return redirect('dashboard')
     else:
@@ -899,6 +899,38 @@ def client_toggle_active(request, pk):
 
 @login_required
 @staff_required
+@require_POST
+def client_resend_onboarding(request, pk):
+    """Re-send the install email (snippet + a fresh dashboard login) for a client.
+    Use when the first email was lost or never sent."""
+    client = get_object_or_404(Client, pk=pk)
+    embed = (f'<script src="{request.build_absolute_uri("/widget.js")}'
+             f'?key={client.slug}" async></script>')
+    login = None
+    try:
+        with transaction.atomic():
+            username, temp_password = _provision_client_login(client, reset_password=True)
+        if username:
+            login = {
+                'username': username,
+                'password': temp_password,
+                'url': request.build_absolute_uri(reverse('dashboard')),
+            }
+    except Exception:
+        logger.exception('Resend provision failed for %s', client.slug)
+    sent = _send_onboarding_email(client, embed, login=login)
+    Client.objects.filter(pk=client.pk).update(onboarding_sent=True)
+    if sent:
+        messages.success(request, f'Install email resent to {client.notify_email}.')
+    else:
+        messages.error(
+            request,
+            f'Could not send to {client.notify_email} — check the mail settings.')
+    return redirect('clients_list')
+
+
+@login_required
+@staff_required
 def client_form(request, pk=None):
     """Create or edit a client agent (the 'factory' form). Staff only."""
     from .forms import ClientForm
@@ -930,25 +962,39 @@ def client_form(request, pk=None):
                 embed = (f'<script src="{request.build_absolute_uri("/widget.js")}'
                          f'?key={obj.slug}" async></script>')
                 # Auto-provision the client's dashboard login when the agent goes
-                # live. Best-effort: a failure here must not block activation.
+                # live. Reusing an email that already has a login just adds this
+                # agent to it (one login, many agents). Best-effort: a failure
+                # must not block activation, and we report what happened.
                 login = None
+                login_note = ''
                 try:
                     with transaction.atomic():
                         username, temp_password = _provision_client_login(obj)
                     if username:
                         login = {
                             'username': username,
-                            'password': temp_password,
+                            'password': temp_password,  # None when reusing a login
                             'url': request.build_absolute_uri(reverse('dashboard')),
                         }
+                    elif obj.notify_email:
+                        # Only happens when the email is a staff account.
+                        login_note = (f' (no dashboard login — {obj.notify_email} is a '
+                                      f'staff account)')
                 except Exception:
                     logger.exception('Failed to provision login for client %s', obj.slug)
-                _send_onboarding_email(obj, embed, login=login)
+                    login_note = ' (dashboard login could not be created)'
+                sent = _send_onboarding_email(obj, embed, login=login)
                 Client.objects.filter(pk=obj.pk).update(onboarding_sent=True)
-                messages.success(
-                    request,
-                    f'{obj.name} is live — install instructions and dashboard login '
-                    f'emailed to {obj.notify_email}.')
+                if sent:
+                    messages.success(
+                        request,
+                        f'{obj.name} is live — install email sent to '
+                        f'{obj.notify_email}{login_note}.')
+                else:
+                    messages.error(
+                        request,
+                        f'{obj.name} is live, but the install email to '
+                        f'{obj.notify_email} could not be sent — check the mail settings.')
             else:
                 messages.success(request, f'Agent for {obj.name} saved.')
             return redirect('clients_list')

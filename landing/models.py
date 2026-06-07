@@ -156,21 +156,29 @@ class Booking(models.Model):
 class Membership(models.Model):
     """Links a login (User) to the Client whose data it may see.
 
-    This is the identity layer on top of the multi-tenant data model: a client's
-    user sees only their own Client's leads. DOMINIO staff (is_staff=True) need NO
-    Membership — they see everything. A user with neither staff nor a membership
-    sees nothing (safe default, never another tenant's data).
+    This is the identity layer on top of the multi-tenant data model: a user
+    sees the leads of every Client they're a member of. DOMINIO staff
+    (is_staff=True) need NO Membership — they see everything. A user with neither
+    staff nor a membership sees nothing (safe default, never another tenant's data).
 
-    One user belongs to one Client; a Client can have several users (employees).
+    A user can belong to SEVERAL clients (one login managing multiple agents), and
+    a client can have several users — so this is a plain many-to-many bridge,
+    unique per (user, client).
     """
-    user = models.OneToOneField(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='membership')
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='memberships')
     client = models.ForeignKey(
         Client, on_delete=models.CASCADE, related_name='members')
-    # True right after auto-provisioning: the user still has the emailed temp
-    # password. The dashboard forces a change before showing anything else.
+    # True right after auto-provisioning a brand-new login: the user still has the
+    # emailed temp password. The dashboard forces a change before showing anything.
     must_change_password = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'client'],
+                                    name='uniq_membership_user_client'),
+        ]
 
     def __str__(self):
         return f'{self.user} → {self.client.slug}'

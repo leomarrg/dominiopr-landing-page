@@ -48,6 +48,11 @@
                         {% csrf_token %}
                         <button type="submit" class="edit-btn toggle-btn">{% if c.is_active %}Pause{% else %}Activate{% endif %}</button>
                     </form>
+                    <form method="post" action="{% url 'client_resend_onboarding' c.pk %}" style="display:inline;"
+                          onsubmit="return confirm('Resend the install email + a new dashboard password to {{ c.notify_email|escapejs }}?');">
+                        {% csrf_token %}
+                        <button type="submit" class="edit-btn">Resend email</button>
+                    </form>
                 </div>
             </div>
             <div class="agent-meta">
