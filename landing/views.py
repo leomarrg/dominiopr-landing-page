@@ -852,11 +852,6 @@ def _luminance(rgb):
     return 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2])
 
 
-def _on(rgb):
-    """Legible text (#0f1f2e or #fff) on a background, by WCAG luminance."""
-    return '#0f1f2e' if _luminance(rgb) > 0.179 else '#ffffff'
-
-
 def _mix(rgb, target, t):
     return tuple(round(c + (tc - c) * t) for c, tc in zip(rgb, target))
 
@@ -865,38 +860,133 @@ def _hexs(rgb):
     return '#%02x%02x%02x' % tuple(rgb)
 
 
+def _contrast(a, b):
+    la, lb = _luminance(a), _luminance(b)
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _on(rgb, dark=(15, 31, 46), light=(255, 255, 255)):
+    """Pick the text color (near-black or white) with the MOST contrast on `rgb`
+    — measured, not by a luminance threshold, so mid-tones never fall short."""
+    return dark if _contrast(dark, rgb) >= _contrast(light, rgb) else light
+
+
+def _rgb_hsl(rgb):
+    r, g, b = (c / 255 for c in rgb)
+    mx, mn = max(r, g, b), min(r, g, b)
+    l = (mx + mn) / 2
+    if mx == mn:
+        return (0.0, 0.0, l)
+    d = mx - mn
+    s = d / (2 - mx - mn) if l > 0.5 else d / (mx + mn)
+    if mx == r:
+        h = (g - b) / d + (6 if g < b else 0)
+    elif mx == g:
+        h = (b - r) / d + 2
+    else:
+        h = (r - g) / d + 4
+    return (h / 6, s, l)
+
+
+def _hsl_rgb(hsl):
+    h, s, l = hsl
+    if s == 0:
+        v = round(l * 255)
+        return (v, v, v)
+
+    def hue(p, q, t):
+        t %= 1
+        if t < 1 / 6:
+            return p + (q - p) * 6 * t
+        if t < 1 / 2:
+            return q
+        if t < 2 / 3:
+            return p + (q - p) * (2 / 3 - t) * 6
+        return p
+    q = l * (1 + s) if l < 0.5 else l + s - l * s
+    p = 2 * l - q
+    return tuple(round(hue(p, q, h + o) * 255) for o in (1 / 3, 0, -1 / 3))
+
+
+def _derive_text(panel_rgb):
+    """Text tinted with the panel's hue. Starts at a soft extreme (L .16/.97) for
+    a premium look and only hardens toward pure black/white as much as needed to
+    reach AA 4.5:1 — so mid-tone panels stay legible without looking harsh."""
+    h, s, _ = _rgb_hsl(panel_rgb)
+    s_text = min(s, 0.18)
+    # Pick the direction whose PURE extreme can reach the most contrast.
+    go_dark = _contrast(_hsl_rgb((h, s_text, 0.0)), panel_rgb) >= \
+        _contrast(_hsl_rgb((h, s_text, 1.0)), panel_rgb)
+    L = 0.16 if go_dark else 0.97
+    step = -0.01 if go_dark else 0.01
+    cand = _hsl_rgb((h, s_text, L))
+    guard = 0
+    while _contrast(cand, panel_rgb) < 4.5 and 0.0 <= L + step <= 1.0 and guard < 100:
+        L += step
+        cand = _hsl_rgb((h, s_text, L))
+        guard += 1
+    return cand
+
+
+def _derive_alt(panel_rgb, dark):
+    """Bubble/input surface: shift LIGHTNESS in HSL (keep hue) so colored panels
+    stay clean instead of muddying toward black."""
+    h, s, l = _rgb_hsl(panel_rgb)
+    s_alt = min(s, 0.5)
+    delta = 0.07
+    if l > 0.92:
+        nl = l - delta
+    elif l < 0.10:
+        nl = l + delta
+    else:
+        nl = l + delta if dark else l - delta
+    return _hsl_rgb((h, s_alt, max(0.0, min(1.0, nl))))
+
+
+def _derive_muted(text_rgb, panel_rgb):
+    """Muted text from the text color mixed toward the panel, guarded at 3:1."""
+    m = _mix(text_rgb, panel_rgb, 0.40)
+    if _contrast(m, panel_rgb) < 3.0:
+        m = _mix(text_rgb, panel_rgb, 0.25)
+    return m
+
+
+def _border(text_rgb, op):
+    return 'rgba(%d,%d,%d,%s)' % (text_rgb[0], text_rgb[1], text_rgb[2], op)
+
+
 def _widget_theme(client):
-    """Widget color tokens from just two pickers: accent + background. The
-    background's luminance decides light vs dark; every text/surface is derived
-    for guaranteed contrast, so the owner can never pick an illegible pair.
+    """Widget color tokens from three pickers (accent + background + header).
+    Everything else is derived in HSL — text tinted with the panel hue at a soft
+    extreme, surfaces shifted by lightness (no muddy mixing), borders neutral —
+    so any combination looks polished and stays AA legible.
     """
     accent_rgb = _hex_rgb(getattr(client, 'primary_color', '') or '#34d6c8')
     accent = _hexs(accent_rgb)
-    on_accent = _on(accent_rgb)
+    on_accent = _hexs(_on(accent_rgb))
 
     panel_rgb = _hex_rgb(getattr(client, 'surface_color', '') or '#12304a',
                          fallback=(0x12, 0x30, 0x4a))
     dark = _luminance(panel_rgb) < 0.4
-    # Header / input / assistant-bubble surface = a step darker than the panel so
-    # they separate without a hard border (deeper on dark, soft grey on light).
-    alt_rgb = _mix(panel_rgb, (0, 0, 0), 0.32 if dark else 0.06)
-    text = _on(panel_rgb)
-    text_is_light = text == '#ffffff'
-    muted = 'rgba(255,255,255,.55)' if text_is_light else 'rgba(15,31,46,.6)'
-    bubble_a_text = 'rgba(255,255,255,.92)' if text_is_light else 'rgba(15,31,46,.92)'
+    alt_rgb = _derive_alt(panel_rgb, dark)
+    text_rgb = _derive_text(panel_rgb)
+    text = _hexs(text_rgb)
+    muted = _hexs(_derive_muted(text_rgb, panel_rgb))
 
-    # Header is its own pick (falls back to the derived alt surface). Its text is
-    # derived for contrast either way.
     header_rgb = _hex_rgb(getattr(client, 'header_color', '') or _hexs(alt_rgb),
                           fallback=alt_rgb)
+    header_text = _hexs(_derive_text(header_rgb))
 
     return {
         'accent': accent, 'accent_rgb': '%d,%d,%d' % accent_rgb, 'on_accent': on_accent,
         'panel': _hexs(panel_rgb), 'surface_alt': _hexs(alt_rgb),
-        # FAB = brand accent (the launcher is the most branded element).
         'fab_bg': accent, 'fab_text': on_accent,
-        'header_bg': _hexs(header_rgb), 'header_text': _on(header_rgb),
-        'text': text, 'muted': muted, 'bubble_a_text': bubble_a_text,
+        'header_bg': _hexs(header_rgb), 'header_text': header_text,
+        'text': text, 'muted': muted, 'bubble_a_text': text,
+        'border': _border(text_rgb, '0.12'),
+        'border_soft': _border(text_rgb, '0.10'),
+        'border_bubble': _border(text_rgb, '0.14'),
     }
 
 
@@ -928,6 +1018,9 @@ def widget_js(request):
         'header_text': t['header_text'],
         'fab_bg': t['fab_bg'],
         'fab_text': t['fab_text'],
+        'border': t['border'],
+        'border_soft': t['border_soft'],
+        'border_bubble': t['border_bubble'],
         'api_url': request.build_absolute_uri(reverse('chat_api')),
     }
     resp = HttpResponse(render_to_string('landing/widget.js', ctx),
