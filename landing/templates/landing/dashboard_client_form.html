@@ -25,27 +25,74 @@
         .cancel-btn{color:var(--muted);text-decoration:none;padding:12px 8px;font-size:.88rem}
         .chk{display:flex;align-items:center;gap:8px}
         .chk input{width:auto}
+
+        /* Form + live preview side by side */
+        .cform-layout{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap}
+        .cform{flex:1 1 460px}
+        .wpv{flex:0 0 300px;position:sticky;top:90px}
+        .wpv-label{color:var(--muted);font-size:.74rem;text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px}
+        /* Mock of the embeddable chat widget — mirrors widget.js look */
+        .wpv-panel{width:100%;border-radius:18px;overflow:hidden;background:#12304a;border:1px solid rgba(52,214,200,.3);box-shadow:0 20px 50px rgba(0,0,0,.4);font-family:system-ui,sans-serif}
+        .wpv-head{display:flex;align-items:center;justify-content:space-between;padding:13px 15px;background:#0a1c2e;border-bottom:1px solid rgba(52,214,200,.18)}
+        .wpv-head b{color:#fff;font-size:14px;display:block}
+        .wpv-head small{color:rgba(255,255,255,.55);font-size:11px}
+        .wpv-x{color:rgba(255,255,255,.6);font-size:19px;line-height:1}
+        .wpv-log{padding:14px;display:flex;flex-direction:column;gap:9px;min-height:150px}
+        .wpv-b{max-width:86%;padding:9px 12px;border-radius:13px;font-size:13px;line-height:1.45;white-space:pre-wrap;word-wrap:break-word}
+        .wpv-a{align-self:flex-start;background:#0a1c2e;color:rgba(255,255,255,.92);border:1px solid rgba(52,214,200,.16);border-bottom-left-radius:4px}
+        .wpv-u{align-self:flex-end;background:#34d6c8;color:#0a1c2e;font-weight:500;border-bottom-right-radius:4px}
+        .wpv-form{display:flex;gap:8px;padding:10px 12px;border-top:1px solid rgba(52,214,200,.14);align-items:center}
+        .wpv-input{flex:1;padding:9px 13px;border-radius:999px;border:1px solid rgba(52,214,200,.25);background:#0a1c2e;color:rgba(255,255,255,.5);font-size:12px}
+        .wpv-send{flex:0 0 auto;width:34px;height:34px;border-radius:50%;background:#34d6c8;color:#0a1c2e;display:inline-flex;align-items:center;justify-content:center;font-size:14px}
+        .wpv-fab{margin-top:14px;display:inline-flex;align-items:center;gap:8px;padding:11px 17px;border-radius:999px;background:#34d6c8;color:#0a1c2e;font-weight:600;font-size:14px}
+        .wpv-fab svg{width:18px;height:18px}
+        @media(max-width:900px){.wpv{position:static;flex:1 1 100%;max-width:340px}}
     </style>
 </head>
 <body class="dash-body">
     {% include 'landing/_dash_nav.html' with active='agents' %}
     <main class="dash-main">
         <h1 class="dash-h1">{% if instance %}Edit “{{ instance.name }}”{% else %}New agent{% endif %}</h1>
-        <form class="cform" method="post" novalidate>
-            {% csrf_token %}
-            {% for field in form %}
-            <div class="cfield {% if field.name == 'is_active' %}chk{% endif %}">
-                <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-                {{ field }}
-                {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
-                {% if field.errors %}<div class="errors">{{ field.errors|striptags }}</div>{% endif %}
-            </div>
-            {% endfor %}
-            <div class="cactions">
-                <button type="submit" class="save-btn">Save agent</button>
-                <a href="{% url 'clients_list' %}" class="cancel-btn">Cancel</a>
-            </div>
-        </form>
+        <div class="cform-layout">
+            <form class="cform" method="post" novalidate>
+                {% csrf_token %}
+                {% for field in form %}
+                <div class="cfield {% if field.name == 'is_active' %}chk{% endif %}">
+                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+                    {% if field.errors %}<div class="errors">{{ field.errors|striptags }}</div>{% endif %}
+                </div>
+                {% endfor %}
+                <div class="cactions">
+                    <button type="submit" class="save-btn">Save agent</button>
+                    <a href="{% url 'clients_list' %}" class="cancel-btn">Cancel</a>
+                </div>
+            </form>
+
+            <aside class="wpv" aria-hidden="true">
+                <div class="wpv-label">Live preview</div>
+                <div class="wpv-panel" data-accent-border=".3">
+                    <div class="wpv-head" data-accent-border=".18">
+                        <div><b class="wpv-name">Your agent</b><small>AI assistant</small></div>
+                        <span class="wpv-x">&times;</span>
+                    </div>
+                    <div class="wpv-log">
+                        <div class="wpv-b wpv-a wpv-greet" data-accent-border=".16">Hi! How can I help you today?</div>
+                        <div class="wpv-b wpv-u" data-accent>Do you take reservations?</div>
+                        <div class="wpv-b wpv-a" data-accent-border=".16">Yes — tell me the date and time and I'll set it up.</div>
+                    </div>
+                    <div class="wpv-form" data-accent-border=".14">
+                        <span class="wpv-input" data-accent-border=".25">Type your question…</span>
+                        <span class="wpv-send" data-accent>&#10148;</span>
+                    </div>
+                </div>
+                <div class="wpv-fab" data-accent>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.6-.8L3 21l1.9-5.4A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z"/></svg>
+                    <span>Chat</span>
+                </div>
+            </aside>
+        </div>
     </main>
     <script>
         // Live-preview the slug from the name as you type. The server still
@@ -67,6 +114,41 @@
             nameEl.addEventListener('input', function () {
                 if (!slugLocked) slugEl.value = slugify(nameEl.value);
             });
+        })();
+
+        // Live widget preview: re-theme the mock as you pick the color / name /
+        // greeting, using the same brand palette the server applies to the widget.
+        (function () {
+            var pv = document.querySelector('.wpv');
+            if (!pv) return;
+            var colorEl = document.getElementById('id_primary_color');
+            var nameEl = document.getElementById('id_name');
+            var greetEl = document.getElementById('id_greeting');
+            var nameOut = pv.querySelector('.wpv-name');
+            var greetOut = pv.querySelector('.wpv-greet');
+            var accentEls = pv.querySelectorAll('[data-accent]');
+            var borderEls = pv.querySelectorAll('[data-accent-border]');
+
+            function palette(hex) {
+                hex = (hex || '#34d6c8').replace('#', '');
+                if (hex.length === 3) hex = hex.split('').map(function (c) { return c + c; }).join('');
+                var r = parseInt(hex.substr(0, 2), 16), g = parseInt(hex.substr(2, 2), 16), b = parseInt(hex.substr(4, 2), 16);
+                if (isNaN(r) || isNaN(g) || isNaN(b)) { r = 52; g = 214; b = 200; }
+                function lin(c) { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+                var L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+                return { accent: 'rgb(' + r + ',' + g + ',' + b + ')', rgb: r + ',' + g + ',' + b, on: L > 0.179 ? '#0a1c2e' : '#ffffff' };
+            }
+            function apply() {
+                var p = palette(colorEl ? colorEl.value : '#34d6c8');
+                accentEls.forEach(function (el) { el.style.background = p.accent; el.style.color = p.on; });
+                borderEls.forEach(function (el) {
+                    el.style.borderColor = 'rgba(' + p.rgb + ',' + (el.getAttribute('data-accent-border') || '.2') + ')';
+                });
+                if (nameOut) nameOut.textContent = (nameEl && nameEl.value.trim()) || 'Your agent';
+                if (greetOut) greetOut.textContent = (greetEl && greetEl.value.trim()) || 'Hi! How can I help you today?';
+            }
+            [colorEl, nameEl, greetEl].forEach(function (el) { if (el) el.addEventListener('input', apply); });
+            apply();
         })();
     </script>
 </body>

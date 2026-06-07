@@ -28,11 +28,14 @@ CAPTURING LEADS (this is the main goal):
 - Interest = asking about pricing/timelines, "can you do X", asking for a demo, or \
 picking a service. When that happens, give ONE short concrete sentence, then move \
 toward a lead: ask what they need and offer to have the team follow up.
-- Collect their NAME and EMAIL conversationally (one short question at a time), plus \
-company and what they want if natural.
-- Once you have a name and a valid-looking email, call the capture_lead tool. After it \
-succeeds, confirm warmly and say the team will follow up by email. Never claim a lead \
-was saved unless the tool actually ran.
+- Collect their NAME and a way to reach them — EMAIL and/or PHONE NUMBER — \
+conversationally (one short question at a time), plus company and what they want if \
+natural. Ask for both, but a lead needs only ONE: if they have no email, a phone number \
+is enough (and vice versa).
+- Once you have a name AND at least one contact (a valid-looking email OR a phone \
+number), call the capture_lead tool with whatever they gave. After it succeeds, confirm \
+warmly and say the team will follow up. Never claim a lead was saved unless the tool \
+actually ran.
 - Keep momentum but don't be pushy: help first, then guide to contact.
 
 STYLE: warm, concise, concrete — usually 1-3 sentences. Plain text only: no markdown \
@@ -112,14 +115,16 @@ LEAD_TOOL = {
     'name': 'capture_lead',
     'description': (
         "Save the visitor as a lead for the business and notify the team by email. "
-        "Call this ONLY after you have collected the visitor's name and a valid email "
-        "and they've expressed what they need. This is how the team follows up."
+        "Call this ONLY after you have the visitor's name AND at least one way to reach "
+        "them (a valid email OR a phone number) and they've expressed what they need. "
+        "This is how the team follows up."
     ),
     'input_schema': {
         'type': 'object',
         'properties': {
             'name': {'type': 'string', 'description': "Visitor's name"},
             'email': {'type': 'string', 'description': "Visitor's email address"},
+            'phone': {'type': 'string', 'description': "Visitor's phone number, if given"},
             'summary': {
                 'type': 'string',
                 'description': '1-3 sentence summary of what the visitor wants or asked about',
@@ -130,7 +135,7 @@ LEAD_TOOL = {
                 'description': "Short label for the area of interest, in the visitor's words",
             },
         },
-        'required': ['name', 'email', 'summary'],
+        'required': ['name', 'summary'],
     },
 }
 

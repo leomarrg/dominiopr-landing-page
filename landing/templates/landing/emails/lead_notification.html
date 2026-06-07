@@ -13,12 +13,22 @@
       <span style="color:#ffffff; font-size:15px;">{{ submission.name }}</span>
     </td>
   </tr>
+  {% if submission.email %}
   <tr>
     <td style="padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.08);">
       <span style="display:block; color:rgba(255,255,255,0.45); font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Email</span>
       <a href="mailto:{{ submission.email }}" style="color:#3bc0c7; font-size:15px; text-decoration:none;">{{ submission.email }}</a>
     </td>
   </tr>
+  {% endif %}
+  {% if submission.phone %}
+  <tr>
+    <td style="padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.08);">
+      <span style="display:block; color:rgba(255,255,255,0.45); font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Phone</span>
+      <a href="tel:{{ submission.phone }}" style="color:#3bc0c7; font-size:15px; text-decoration:none;">{{ submission.phone }}</a>
+    </td>
+  </tr>
+  {% endif %}
   {% if submission.company %}
   <tr>
     <td style="padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.08);">
@@ -48,6 +58,7 @@
   <p style="margin:0; color:#ffffff; font-size:15px; line-height:1.7; white-space:pre-line;">{{ submission.message }}</p>
 </div>
 
+{% if submission.email %}
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:30px;">
   <tr>
     <td style="border-radius:8px; background:#3bc0c7;">
@@ -58,4 +69,8 @@
     </td>
   </tr>
 </table>
+{% elif submission.phone %}
+<p style="margin:30px 0 0; color:rgba(255,255,255,0.82); font-size:15px;">No email — call {{ submission.name }} at
+  <a href="tel:{{ submission.phone }}" style="color:#3bc0c7; text-decoration:none;">{{ submission.phone }}</a>.</p>
+{% endif %}
 {% endblock %}

@@ -82,7 +82,10 @@ class ContactSubmission(models.Model):
     ]
 
     name = models.CharField(max_length=120)
-    email = models.EmailField()
+    # A lead needs at least one way to reach them — email OR phone (enforced in
+    # the form / capture handlers), so either may be blank on its own.
+    email = models.EmailField(blank=True)
+    phone = models.CharField(max_length=30, blank=True)
     company = models.CharField(max_length=160, blank=True)
     service = models.CharField(max_length=40, choices=SERVICE_CHOICES)
     budget = models.CharField(max_length=40, choices=BUDGET_CHOICES, blank=True)

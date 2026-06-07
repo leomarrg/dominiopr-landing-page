@@ -1,4 +1,4 @@
-{% load static %}
+{% load static landing_extras %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -59,7 +59,11 @@
                             {% if lead.company %}<div class="dash-sub">{{ lead.company }}</div>{% endif %}
                             {% if lead.message %}<div class="dash-sub dash-preview">{{ lead.message|truncatechars:64 }}</div>{% endif %}
                         </td>
-                        <td><div class="dash-email">{{ lead.email }}</div></td>
+                        <td>
+                            {% if lead.email %}<div class="dash-email">{{ lead.email }}</div>{% endif %}
+                            {% if lead.phone %}<div class="dash-sub">{{ lead.phone|format_phone }}</div>{% endif %}
+                            {% if not lead.email and not lead.phone %}<div class="dash-sub">—</div>{% endif %}
+                        </td>
                         <td>{{ lead.get_service_display|default:"—" }}</td>
                         <td><span class="dash-badge dash-badge--{{ lead.source }}">{{ lead.get_source_display }}</span></td>
                         <td onclick="event.stopPropagation();">
@@ -80,7 +84,8 @@
                         <td colspan="7">
                             <dl class="dash-detail__grid">
                                 <dt>Message</dt><dd>{{ lead.message|default:"—" }}</dd>
-                                <dt>Email</dt><dd>{{ lead.email }}</dd>
+                                {% if lead.email %}<dt>Email</dt><dd><a href="mailto:{{ lead.email }}">{{ lead.email }}</a></dd>{% endif %}
+                                {% if lead.phone %}<dt>Phone</dt><dd><a href="tel:{{ lead.phone }}">{{ lead.phone|format_phone }}</a></dd>{% endif %}
                                 {% if lead.company %}<dt>Company</dt><dd>{{ lead.company }}</dd>{% endif %}
                                 {% if lead.get_budget_display %}<dt>Budget</dt><dd>{{ lead.get_budget_display }}</dd>{% endif %}
                                 <dt>Source</dt><dd>{{ lead.get_source_display }}</dd>
@@ -88,6 +93,10 @@
                             </dl>
 
                             <div class="dash-reply">
+                                {% if not lead.email and lead.phone %}
+                                <a href="tel:{{ lead.phone }}" class="dash-reply-toggle">Call {{ lead.phone|format_phone }}</a>
+                                {% endif %}
+                                {% if lead.email %}
                                 <button type="button" class="dash-reply-toggle" data-reply="reply-{{ lead.pk }}">Reply by email</button>
                                 <form class="dash-reply-form" id="reply-{{ lead.pk }}" method="post" action="{% url 'lead_email' lead.pk %}">
                                     {% csrf_token %}
@@ -99,6 +108,7 @@
                                         {% if default_from %}<span class="dash-reply-hint">Sent from {{ default_from }}</span>{% endif %}
                                     </div>
                                 </form>
+                                {% endif %}
                             </div>
                         </td>
                     </tr>

@@ -502,9 +502,13 @@
                     </div>
                     <div class="form-row">
                         <input type="text" name="name" placeholder="Name" value="{{ form.name.value|default:'' }}" required>
-                        <input type="email" name="email" placeholder="Email" value="{{ form.email.value|default:'' }}" required>
+                        <input type="email" name="email" placeholder="Email" value="{{ form.email.value|default:'' }}">
                     </div>
-                    <input type="text" name="company" placeholder="Company / Organization" value="{{ form.company.value|default:'' }}">
+                    <div class="form-row">
+                        <input type="text" name="company" placeholder="Company / Organization" value="{{ form.company.value|default:'' }}">
+                        <input type="tel" name="phone" placeholder="Phone" inputmode="tel" value="{{ form.phone.value|default:'' }}">
+                    </div>
+                    <p style="color:rgba(255,255,255,.5);font-size:.78rem;margin:-6px 0 0;">Leave an email or a phone — whichever works for you.</p>
                     <div class="form-row">
                         <select name="service" required>
                             <option value="">Service needed</option>

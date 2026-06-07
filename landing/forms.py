@@ -60,9 +60,20 @@ class ContactForm(forms.ModelForm):
 
     class Meta:
         model = ContactSubmission
-        fields = ['name', 'email', 'company', 'service', 'budget', 'message']
+        fields = ['name', 'email', 'phone', 'company', 'service', 'budget', 'message']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Email is no longer required on its own — a phone is enough (see clean()).
+        self.fields['email'].required = False
 
     def clean_website(self):
         if self.cleaned_data.get('website'):
             raise forms.ValidationError('Spam detected.')
         return ''
+
+    def clean(self):
+        cleaned = super().clean()
+        if not cleaned.get('email') and not cleaned.get('phone'):
+            raise forms.ValidationError('Please leave an email or a phone number so we can reach you.')
+        return cleaned

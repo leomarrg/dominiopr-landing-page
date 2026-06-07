@@ -2,7 +2,8 @@ NEW LEAD — {{ business|default:"DOMINIO" }}
 Received {{ submission.created_at|date:"M j, Y \a\t g:i A" }}
 
 Name:    {{ submission.name }}
-Email:   {{ submission.email }}
+Email:   {{ submission.email|default:"-" }}
+Phone:   {{ submission.phone|default:"-" }}
 Company: {{ submission.company|default:"-" }}
 Service: {{ submission.get_service_display }}
 Budget:  {{ submission.get_budget_display|default:"-" }}

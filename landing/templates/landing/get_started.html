@@ -111,9 +111,10 @@
                 {% if errors.company %}<div class="err">{{ errors.company }}</div>{% endif %}
                 <div class="gs-row">
                     <input type="email" name="email" placeholder="Email" value="{{ form.email|default:'' }}" required>
-                    <input type="text" name="website_url" placeholder="Website (optional)" value="{{ form.website_url|default:'' }}">
+                    <input type="tel" name="phone" placeholder="Phone" inputmode="tel" value="{{ form.phone|default:'' }}">
                 </div>
                 {% if errors.email %}<div class="err">{{ errors.email }}</div>{% endif %}
+                <input type="text" name="website_url" placeholder="Website (optional)" value="{{ form.website_url|default:'' }}">
                 <select name="plan" id="planSelect">
                     <option value="">Choose a plan</option>
                     {% for p in plans %}<option value="{{ p.id }}" {% if form.plan == p.id %}selected{% endif %}>{{ p.name }}{% if p.price != "Let's talk" %} — {{ p.price }}/mo{% endif %}</option>{% endfor %}

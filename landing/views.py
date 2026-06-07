@@ -147,18 +147,20 @@ def _send_lead_emails(submission, notify_to=None):
             html_template='landing/emails/lead_notification.html',
             txt_template='landing/emails/lead_notification.txt',
             context=context,
-            reply_to=[submission.email],
+            reply_to=[submission.email] if submission.email else None,
         )
 
-    # 2) Confirmation to the person who submitted the form.
-    _send_html_email(
-        subject=f'We received your request — {business}',
-        to=[submission.email],
-        html_template='landing/emails/lead_confirmation.html',
-        txt_template='landing/emails/lead_confirmation.txt',
-        context=context,
-        reply_to=[notify_to] if notify_to else None,
-    )
+    # 2) Confirmation to the person who submitted the form — only if they left an
+    # email (phone-only leads can't be emailed; the team follows up by phone).
+    if submission.email:
+        _send_html_email(
+            subject=f'We received your request — {business}',
+            to=[submission.email],
+            html_template='landing/emails/lead_confirmation.html',
+            txt_template='landing/emails/lead_confirmation.txt',
+            context=context,
+            reply_to=[notify_to] if notify_to else None,
+        )
 
 
 def _send_booking_emails(booking, notify_to=None, business='DOMINIO'):
@@ -316,12 +318,15 @@ def _chat_lead_handler(request, client_obj=None):
     def handle(data):
         name = (data.get('name') or '').strip()[:120]
         email = (data.get('email') or '').strip()[:254]
-        if not name or not email:
-            raise ValueError('Missing name or email.')
-        try:
-            validate_email(email)
-        except ValidationError:
-            raise ValueError('Invalid email.')
+        phone = (data.get('phone') or '').strip()[:30]
+        # A lead needs a name and at least one way to reach them (email OR phone).
+        if not name or (not email and not phone):
+            raise ValueError('Missing name, and an email or phone.')
+        if email:
+            try:
+                validate_email(email)
+            except ValidationError:
+                raise ValueError('Invalid email.')
 
         # Per-IP cap: a bot can't flood the inbox or abuse our SMTP to relay
         # confirmation emails to arbitrary third parties.
@@ -339,6 +344,7 @@ def _chat_lead_handler(request, client_obj=None):
             client=client_obj,
             name=name,
             email=email,
+            phone=phone,
             company=(data.get('company') or '').strip()[:160],
             service=service,
             message=('[Captured by the AI chat assistant] '
@@ -618,6 +624,7 @@ def get_started(request):
         company = (request.POST.get('company') or '').strip()[:160]
         name = (request.POST.get('name') or '').strip()[:120]
         email = (request.POST.get('email') or '').strip()[:254]
+        phone = (request.POST.get('phone') or '').strip()[:30]
         website = (request.POST.get('website_url') or '').strip()[:200]
         plan = (request.POST.get('plan') or '').strip()[:40]
         details = (request.POST.get('message') or '').strip()[:3000]
@@ -637,7 +644,7 @@ def get_started(request):
 
         submission = ContactSubmission(
             client=Client.objects.filter(slug='dominio').first(),
-            name=name, email=email, company=company, service='ai-automation',
+            name=name, email=email, phone=phone, company=company, service='ai-automation',
             source='signup', status='new',
             message=(f'[AGENT SIGNUP — Plan: {plan_names.get(plan, plan or "—")}]\n'
                      f'Website: {website or "—"}\n\n{details}'),
@@ -695,6 +702,7 @@ def dashboard(request):
         qs = qs.filter(
             Q(name__icontains=q)
             | Q(email__icontains=q)
+            | Q(phone__icontains=q)
             | Q(company__icontains=q)
             | Q(message__icontains=q)
         )
