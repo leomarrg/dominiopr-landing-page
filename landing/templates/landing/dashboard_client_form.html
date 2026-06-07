@@ -124,6 +124,7 @@
             if (!pv) return;
             var colorEl = document.getElementById('id_primary_color');
             var surfEl = document.getElementById('id_surface_color');
+            var headEl = document.getElementById('id_header_color');
             var nameEl = document.getElementById('id_name');
             var greetEl = document.getElementById('id_greeting');
             var q = function (s) { return pv.querySelector(s); };
@@ -143,14 +144,15 @@
                 var accent = rgb(colorEl ? colorEl.value : '#34d6c8', [52, 214, 200]);
                 var panel = rgb(surfEl ? surfEl.value : '#12304a', [18, 48, 74]);
                 var dark = lum(panel) < 0.4;
-                var header = mix(panel, [0, 0, 0], dark ? 0.32 : 0.06);
+                var alt = mix(panel, [0, 0, 0], dark ? 0.32 : 0.06);
+                var head = rgb(headEl ? headEl.value : '#0c2132', alt);
                 var text = on(panel), lightText = text === '#ffffff';
                 return {
                     accent: hexs(accent), rgb: accent.join(','), onAccent: on(accent),
-                    panel: hexs(panel), alt: hexs(header), text: text,
+                    panel: hexs(panel), alt: hexs(alt), text: text,
                     muted: lightText ? 'rgba(255,255,255,.55)' : 'rgba(15,31,46,.6)',
                     bubA: lightText ? 'rgba(255,255,255,.92)' : 'rgba(15,31,46,.92)',
-                    headerBg: hexs(header), headerText: on(header),
+                    headerBg: hexs(head), headerText: on(head),
                     fabBg: hexs(accent), fabText: on(accent),
                 };
             }
@@ -171,7 +173,7 @@
                 q('.wpv-name').textContent = (nameEl && nameEl.value.trim()) || 'Your agent';
                 q('.wpv-greet').textContent = (greetEl && greetEl.value.trim()) || 'Hi! How can I help you today?';
             }
-            [colorEl, surfEl, nameEl, greetEl].forEach(function (el) {
+            [colorEl, surfEl, headEl, nameEl, greetEl].forEach(function (el) {
                 if (el) el.addEventListener('input', apply);
             });
             apply();

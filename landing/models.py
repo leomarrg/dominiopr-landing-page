@@ -35,8 +35,11 @@ class Client(models.Model):
     # Accent = launcher, user bubble, send button, links.
     primary_color = models.CharField('Accent color', max_length=9, default='#34d6c8')
     # Background = the chat panel. Its luminance decides light vs dark automatically
-    # (light bg → dark text, dark bg → light text), so it's the only other control.
+    # (light bg → dark text, dark bg → light text).
     surface_color = models.CharField('Background color', max_length=9, default='#12304a')
+    # Header / top bar color (own pick for a two-tone look). Text on it is derived
+    # for contrast. Default matches the dark panel's derived header.
+    header_color = models.CharField('Header color', max_length=9, default='#0c2132')
 
     # When on, the agent can take reservations/appointments (the create_booking tool).
     enable_bookings = models.BooleanField(

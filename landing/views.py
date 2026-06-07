@@ -880,19 +880,22 @@ def _widget_theme(client):
     # Header / input / assistant-bubble surface = a step darker than the panel so
     # they separate without a hard border (deeper on dark, soft grey on light).
     alt_rgb = _mix(panel_rgb, (0, 0, 0), 0.32 if dark else 0.06)
-    alt_text = _on(alt_rgb)
     text = _on(panel_rgb)
     text_is_light = text == '#ffffff'
     muted = 'rgba(255,255,255,.55)' if text_is_light else 'rgba(15,31,46,.6)'
     bubble_a_text = 'rgba(255,255,255,.92)' if text_is_light else 'rgba(15,31,46,.92)'
 
+    # Header is its own pick (falls back to the derived alt surface). Its text is
+    # derived for contrast either way.
+    header_rgb = _hex_rgb(getattr(client, 'header_color', '') or _hexs(alt_rgb),
+                          fallback=alt_rgb)
+
     return {
         'accent': accent, 'accent_rgb': '%d,%d,%d' % accent_rgb, 'on_accent': on_accent,
         'panel': _hexs(panel_rgb), 'surface_alt': _hexs(alt_rgb),
-        # FAB = brand accent (the launcher is the most branded element); header is
-        # the sober alt surface — matches the original look at the default colors.
+        # FAB = brand accent (the launcher is the most branded element).
         'fab_bg': accent, 'fab_text': on_accent,
-        'header_bg': _hexs(alt_rgb), 'header_text': alt_text,
+        'header_bg': _hexs(header_rgb), 'header_text': _on(header_rgb),
         'text': text, 'muted': muted, 'bubble_a_text': bubble_a_text,
     }
 
