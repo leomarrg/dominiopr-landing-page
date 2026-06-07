@@ -13,9 +13,10 @@
         .cfield{margin-bottom:18px}
         .cfield label{display:block;color:var(--white);font-size:.85rem;font-weight:600;margin-bottom:6px}
         .cfield .help{color:var(--muted);font-size:.76rem;margin-top:5px}
-        .cform input[type=text],.cform input[type=email],.cform input[type=url],.cform textarea,.cform input:not([type]){
+        .cform input[type=text],.cform input[type=email],.cform input[type=url],.cform textarea,.cform select,.cform input:not([type]){
             width:100%;box-sizing:border-box;padding:11px 14px;border-radius:9px;border:1px solid var(--line);
             background:var(--primary);color:var(--white);font-family:inherit;font-size:.9rem}
+        .cform select option{background:var(--primary);color:var(--white)}
         .cform textarea{resize:vertical}
         .cform input:focus,.cform textarea:focus{outline:none;border-color:var(--accent)}
         .cform input[type=color]{width:54px;height:40px;padding:3px;cursor:pointer}
@@ -116,38 +117,63 @@
             });
         })();
 
-        // Live widget preview: re-theme the mock as you pick the color / name /
-        // greeting, using the same brand palette the server applies to the widget.
+        // Live widget preview: re-theme the mock from accent/theme/surface/header,
+        // mirroring the server's _widget_theme so what you see is what ships.
         (function () {
             var pv = document.querySelector('.wpv');
             if (!pv) return;
             var colorEl = document.getElementById('id_primary_color');
+            var surfEl = document.getElementById('id_surface_color');
             var nameEl = document.getElementById('id_name');
             var greetEl = document.getElementById('id_greeting');
-            var nameOut = pv.querySelector('.wpv-name');
-            var greetOut = pv.querySelector('.wpv-greet');
-            var accentEls = pv.querySelectorAll('[data-accent]');
-            var borderEls = pv.querySelectorAll('[data-accent-border]');
+            var q = function (s) { return pv.querySelector(s); };
 
-            function palette(hex) {
-                hex = (hex || '#34d6c8').replace('#', '');
+            function rgb(hex, fb) {
+                hex = (hex || '').trim().replace('#', '');
                 if (hex.length === 3) hex = hex.split('').map(function (c) { return c + c; }).join('');
                 var r = parseInt(hex.substr(0, 2), 16), g = parseInt(hex.substr(2, 2), 16), b = parseInt(hex.substr(4, 2), 16);
-                if (isNaN(r) || isNaN(g) || isNaN(b)) { r = 52; g = 214; b = 200; }
-                function lin(c) { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
-                var L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-                return { accent: 'rgb(' + r + ',' + g + ',' + b + ')', rgb: r + ',' + g + ',' + b, on: L > 0.179 ? '#0a1c2e' : '#ffffff' };
+                return (isNaN(r) || isNaN(g) || isNaN(b)) ? fb : [r, g, b];
             }
+            function lum(c) { var L = c.map(function (x) { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }); return 0.2126 * L[0] + 0.7152 * L[1] + 0.0722 * L[2]; }
+            function on(c) { return lum(c) > 0.179 ? '#0f1f2e' : '#ffffff'; }
+            function mix(c, t, f) { return c.map(function (x, i) { return Math.round(x + (t[i] - x) * f); }); }
+            function hexs(c) { return '#' + c.map(function (x) { return ('0' + x.toString(16)).slice(-2); }).join(''); }
+
+            function tokens() {
+                var accent = rgb(colorEl ? colorEl.value : '#34d6c8', [52, 214, 200]);
+                var panel = rgb(surfEl ? surfEl.value : '#12304a', [18, 48, 74]);
+                var dark = lum(panel) < 0.4;
+                var header = mix(panel, [0, 0, 0], dark ? 0.32 : 0.06);
+                var text = on(panel), lightText = text === '#ffffff';
+                return {
+                    accent: hexs(accent), rgb: accent.join(','), onAccent: on(accent),
+                    panel: hexs(panel), alt: hexs(header), text: text,
+                    muted: lightText ? 'rgba(255,255,255,.55)' : 'rgba(15,31,46,.6)',
+                    bubA: lightText ? 'rgba(255,255,255,.92)' : 'rgba(15,31,46,.92)',
+                    headerBg: hexs(header), headerText: on(header),
+                    fabBg: hexs(accent), fabText: on(accent),
+                };
+            }
+            function bord(a, op) { return '1px solid rgba(' + a + ',' + op + ')'; }
             function apply() {
-                var p = palette(colorEl ? colorEl.value : '#34d6c8');
-                accentEls.forEach(function (el) { el.style.background = p.accent; el.style.color = p.on; });
-                borderEls.forEach(function (el) {
-                    el.style.borderColor = 'rgba(' + p.rgb + ',' + (el.getAttribute('data-accent-border') || '.2') + ')';
-                });
-                if (nameOut) nameOut.textContent = (nameEl && nameEl.value.trim()) || 'Your agent';
-                if (greetOut) greetOut.textContent = (greetEl && greetEl.value.trim()) || 'Hi! How can I help you today?';
+                var t = tokens();
+                var panel = q('.wpv-panel'); panel.style.background = t.panel; panel.style.border = bord(t.rgb, '.3');
+                var head = q('.wpv-head'); head.style.background = t.headerBg; head.style.borderBottom = bord(t.rgb, '.18');
+                q('.wpv-name').style.color = t.headerText;
+                head.querySelector('small').style.color = t.headerText;
+                q('.wpv-x').style.color = t.headerText;
+                pv.querySelectorAll('.wpv-a').forEach(function (el) { el.style.background = t.alt; el.style.color = t.bubA; el.style.border = bord(t.rgb, '.16'); });
+                pv.querySelectorAll('.wpv-u').forEach(function (el) { el.style.background = t.accent; el.style.color = t.onAccent; });
+                var form = q('.wpv-form'); form.style.borderTop = bord(t.rgb, '.14');
+                var inp = q('.wpv-input'); inp.style.background = t.alt; inp.style.color = t.muted; inp.style.border = bord(t.rgb, '.25');
+                var send = q('.wpv-send'); send.style.background = t.accent; send.style.color = t.onAccent;
+                var fab = q('.wpv-fab'); fab.style.background = t.fabBg; fab.style.color = t.fabText;
+                q('.wpv-name').textContent = (nameEl && nameEl.value.trim()) || 'Your agent';
+                q('.wpv-greet').textContent = (greetEl && greetEl.value.trim()) || 'Hi! How can I help you today?';
             }
-            [colorEl, nameEl, greetEl].forEach(function (el) { if (el) el.addEventListener('input', apply); });
+            [colorEl, surfEl, nameEl, greetEl].forEach(function (el) {
+                if (el) el.addEventListener('input', apply);
+            });
             apply();
         })();
     </script>

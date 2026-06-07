@@ -31,7 +31,13 @@ class Client(models.Model):
         blank=True,
         help_text='Comma-separated domains allowed to embed the widget, e.g. example.com, www.example.com')
 
-    primary_color = models.CharField(max_length=9, default='#34d6c8')
+    # --- Widget appearance (two color pickers; everything else auto-derived) ---
+    # Accent = launcher, user bubble, send button, links.
+    primary_color = models.CharField('Accent color', max_length=9, default='#34d6c8')
+    # Background = the chat panel. Its luminance decides light vs dark automatically
+    # (light bg → dark text, dark bg → light text), so it's the only other control.
+    surface_color = models.CharField('Background color', max_length=9, default='#12304a')
+
     # When on, the agent can take reservations/appointments (the create_booking tool).
     enable_bookings = models.BooleanField(
         default=False, help_text='Let the agent take reservations / appointments.')

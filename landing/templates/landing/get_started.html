@@ -110,7 +110,7 @@
                 </div>
                 {% if errors.company %}<div class="err">{{ errors.company }}</div>{% endif %}
                 <div class="gs-row">
-                    <input type="email" name="email" placeholder="Email" value="{{ form.email|default:'' }}" required>
+                    <input type="email" name="email" placeholder="Email" value="{{ form.email|default:'' }}">
                     <input type="tel" name="phone" placeholder="Phone" inputmode="tel" value="{{ form.phone|default:'' }}">
                 </div>
                 {% if errors.email %}<div class="err">{{ errors.email }}</div>{% endif %}

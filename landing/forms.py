@@ -15,13 +15,16 @@ class ClientForm(forms.ModelForm):
         model = Client
         fields = [
             'name', 'slug', 'system_prompt', 'greeting', 'notify_email',
-            'allowed_origins', 'primary_color', 'enable_bookings', 'is_active',
+            'allowed_origins', 'primary_color', 'surface_color',
+            'enable_bookings', 'is_active',
         ]
         widgets = {
             'system_prompt': forms.Textarea(attrs={'rows': 10}),
             'greeting': forms.Textarea(attrs={'rows': 2}),
             'allowed_origins': forms.Textarea(attrs={'rows': 2}),
+            # Both colors use the native RGB color picker.
             'primary_color': forms.TextInput(attrs={'type': 'color'}),
+            'surface_color': forms.TextInput(attrs={'type': 'color'}),
         }
 
     def __init__(self, *args, **kwargs):

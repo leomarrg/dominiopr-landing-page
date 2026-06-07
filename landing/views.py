@@ -634,10 +634,14 @@ def get_started(request):
             errors['name'] = 'Required.'
         if not company:
             errors['company'] = 'Required.'
-        try:
-            validate_email(email)
-        except ValidationError:
-            errors['email'] = 'Enter a valid email.'
+        # Email OR phone — a phone-only signup is fine.
+        if email:
+            try:
+                validate_email(email)
+            except ValidationError:
+                errors['email'] = 'Enter a valid email.'
+        if not email and not phone:
+            errors['email'] = 'Leave an email or a phone so we can reach you.'
         if errors:
             return render(request, 'landing/get_started.html',
                           {'plans': PLANS, 'form': request.POST, 'errors': errors})
@@ -765,6 +769,11 @@ def lead_email(request, pk):
     if not url_has_allowed_host_and_scheme(ref, allowed_hosts={request.get_host()}):
         ref = reverse('dashboard')
 
+    # Phone-only leads have no email to reply to — never send to an empty address.
+    if not lead.email:
+        messages.error(request, 'This lead has no email — reach them by phone instead.')
+        return redirect(ref)
+
     if not subject or not body:
         messages.error(request, 'Subject and message are both required.')
         return redirect(ref)
@@ -825,30 +834,67 @@ def password_change(request):
 # AGENT FACTORY — embeddable widget + client management
 # ============================================================
 
-def _brand_palette(hex_color):
-    """Derive a widget palette from one brand color so the widget matches the
-    client's brand (Pro: 'Matched to your brand & colors').
-
-    Returns (accent, accent_rgb, on_accent): the hex accent, its 'r,g,b' string
-    for tinted borders, and #0a1c2e-or-#ffffff text chosen by WCAG luminance so
-    it stays legible on any brand color (dark brands get white text, not navy).
-    Invalid input falls back to DOMINIO teal.
-    """
+def _hex_rgb(hex_color, fallback=(0x34, 0xd6, 0xc8)):
+    """Parse a 3/6-digit hex (with/without #) to an (r, g, b) tuple."""
     raw = (hex_color or '').strip().lstrip('#')
     if len(raw) == 3:
         raw = ''.join(c * 2 for c in raw)
     try:
-        r, g, b = (int(raw[i:i + 2], 16) for i in (0, 2, 4))
+        return tuple(int(raw[i:i + 2], 16) for i in (0, 2, 4))
     except (ValueError, IndexError):
-        r, g, b = 0x34, 0xd6, 0xc8  # DOMINIO teal fallback
+        return fallback
 
-    def _lin(c):
+
+def _luminance(rgb):
+    def lin(c):
         c /= 255
         return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    return 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2])
 
-    luminance = 0.2126 * _lin(r) + 0.7152 * _lin(g) + 0.0722 * _lin(b)
-    on_accent = '#0a1c2e' if luminance > 0.179 else '#ffffff'
-    return f'#{r:02x}{g:02x}{b:02x}', f'{r},{g},{b}', on_accent
+
+def _on(rgb):
+    """Legible text (#0f1f2e or #fff) on a background, by WCAG luminance."""
+    return '#0f1f2e' if _luminance(rgb) > 0.179 else '#ffffff'
+
+
+def _mix(rgb, target, t):
+    return tuple(round(c + (tc - c) * t) for c, tc in zip(rgb, target))
+
+
+def _hexs(rgb):
+    return '#%02x%02x%02x' % tuple(rgb)
+
+
+def _widget_theme(client):
+    """Widget color tokens from just two pickers: accent + background. The
+    background's luminance decides light vs dark; every text/surface is derived
+    for guaranteed contrast, so the owner can never pick an illegible pair.
+    """
+    accent_rgb = _hex_rgb(getattr(client, 'primary_color', '') or '#34d6c8')
+    accent = _hexs(accent_rgb)
+    on_accent = _on(accent_rgb)
+
+    panel_rgb = _hex_rgb(getattr(client, 'surface_color', '') or '#12304a',
+                         fallback=(0x12, 0x30, 0x4a))
+    dark = _luminance(panel_rgb) < 0.4
+    # Header / input / assistant-bubble surface = a step darker than the panel so
+    # they separate without a hard border (deeper on dark, soft grey on light).
+    alt_rgb = _mix(panel_rgb, (0, 0, 0), 0.32 if dark else 0.06)
+    alt_text = _on(alt_rgb)
+    text = _on(panel_rgb)
+    text_is_light = text == '#ffffff'
+    muted = 'rgba(255,255,255,.55)' if text_is_light else 'rgba(15,31,46,.6)'
+    bubble_a_text = 'rgba(255,255,255,.92)' if text_is_light else 'rgba(15,31,46,.92)'
+
+    return {
+        'accent': accent, 'accent_rgb': '%d,%d,%d' % accent_rgb, 'on_accent': on_accent,
+        'panel': _hexs(panel_rgb), 'surface_alt': _hexs(alt_rgb),
+        # FAB = brand accent (the launcher is the most branded element); header is
+        # the sober alt surface — matches the original look at the default colors.
+        'fab_bg': accent, 'fab_text': on_accent,
+        'header_bg': _hexs(alt_rgb), 'header_text': alt_text,
+        'text': text, 'muted': muted, 'bubble_a_text': bubble_a_text,
+    }
 
 
 def widget_js(request):
@@ -862,14 +908,23 @@ def widget_js(request):
     if not client_obj:
         return HttpResponse('/* DOMINIO: unknown or inactive client key */',
                             content_type='application/javascript')
-    accent, accent_rgb, on_accent = _brand_palette(client_obj.primary_color)
+    t = _widget_theme(client_obj)
     ctx = {
         'slug': client_obj.slug,
         'name': client_obj.name,
         'greeting': client_obj.greeting or agent.DEFAULT_GREETING,
-        'color': accent,
-        'color_rgb': accent_rgb,
-        'on_color': on_accent,
+        'color': t['accent'],
+        'color_rgb': t['accent_rgb'],
+        'on_color': t['on_accent'],
+        'panel': t['panel'],
+        'surface_alt': t['surface_alt'],
+        'text': t['text'],
+        'muted': t['muted'],
+        'bubble_a_text': t['bubble_a_text'],
+        'header_bg': t['header_bg'],
+        'header_text': t['header_text'],
+        'fab_bg': t['fab_bg'],
+        'fab_text': t['fab_text'],
         'api_url': request.build_absolute_uri(reverse('chat_api')),
     }
     resp = HttpResponse(render_to_string('landing/widget.js', ctx),
