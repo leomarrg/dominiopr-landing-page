@@ -1778,7 +1778,7 @@ section > .container > .section-tag {
         transform 620ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.reveal-section.is-visible .reveal-item {
+.reveal-section .reveal-item.is-visible {
     opacity: 1;
     transform: translateY(0);
 }
@@ -1796,10 +1796,10 @@ section > .container > .section-tag {
         transform 720ms cubic-bezier(0.16, 1, 0.3, 1),
         filter 560ms cubic-bezier(0.16, 1, 0.3, 1);
 }
-.reveal-section.is-visible .section-tag.reveal-item,
-.reveal-section.is-visible .section-title.reveal-item,
-.reveal-section.is-visible .section-intro.reveal-item,
-.reveal-section.is-visible .nosotros-text.reveal-item {
+.reveal-section .section-tag.reveal-item.is-visible,
+.reveal-section .section-title.reveal-item.is-visible,
+.reveal-section .section-intro.reveal-item.is-visible,
+.reveal-section .nosotros-text.reveal-item.is-visible {
     transform: translateY(0);
     filter: blur(0);
 }
@@ -1815,24 +1815,25 @@ section > .container > .section-tag {
         opacity 560ms cubic-bezier(0.16, 1, 0.3, 1),
         transform 560ms cubic-bezier(0.16, 1, 0.3, 1);
 }
-.reveal-section.is-visible .problem-card.reveal-item,
-.reveal-section.is-visible .process-step.reveal-item,
-.reveal-section.is-visible .product-card.reveal-item,
-.reveal-section.is-visible .ai-use-card.reveal-item {
+.reveal-section .problem-card.reveal-item.is-visible,
+.reveal-section .process-step.reveal-item.is-visible,
+.reveal-section .product-card.reveal-item.is-visible,
+.reveal-section .ai-use-card.reveal-item.is-visible {
     transform: translateY(0) scale(1);
 }
 
-/* Stagger: gently decelerating increments (~70→100ms), capped ~620ms, so a row
-   feels orchestrated rather than metronomic. */
-.reveal-section.is-visible .reveal-item[data-delay="0"] { transition-delay: 0ms; }
-.reveal-section.is-visible .reveal-item[data-delay="1"] { transition-delay: 70ms; }
-.reveal-section.is-visible .reveal-item[data-delay="2"] { transition-delay: 145ms; }
-.reveal-section.is-visible .reveal-item[data-delay="3"] { transition-delay: 225ms; }
-.reveal-section.is-visible .reveal-item[data-delay="4"] { transition-delay: 310ms; }
-.reveal-section.is-visible .reveal-item[data-delay="5"] { transition-delay: 400ms; }
-.reveal-section.is-visible .reveal-item[data-delay="6"] { transition-delay: 490ms; }
-.reveal-section.is-visible .reveal-item[data-delay="7"] { transition-delay: 555ms; }
-.reveal-section.is-visible .reveal-item[data-delay="8"] { transition-delay: 620ms; }
+/* Stagger: now only a MICRO-cascade between neighbours that enter together (a row
+   of cards, or tag+title+intro). Trigger is per-item, so big delays would just
+   stall items that enter alone in a column — capped at ~250ms. */
+.reveal-section .reveal-item.is-visible[data-delay="0"] { transition-delay: 0ms; }
+.reveal-section .reveal-item.is-visible[data-delay="1"] { transition-delay: 60ms; }
+.reveal-section .reveal-item.is-visible[data-delay="2"] { transition-delay: 110ms; }
+.reveal-section .reveal-item.is-visible[data-delay="3"] { transition-delay: 150ms; }
+.reveal-section .reveal-item.is-visible[data-delay="4"] { transition-delay: 185ms; }
+.reveal-section .reveal-item.is-visible[data-delay="5"] { transition-delay: 210ms; }
+.reveal-section .reveal-item.is-visible[data-delay="6"] { transition-delay: 230ms; }
+.reveal-section .reveal-item.is-visible[data-delay="7"] { transition-delay: 245ms; }
+.reveal-section .reveal-item.is-visible[data-delay="8"] { transition-delay: 250ms; }
 
 /* Mobile: drop the text blur (paint-heavy on mobile GPUs) and shorten travel. */
 @media (max-width: 768px) {
@@ -1855,7 +1856,7 @@ section > .container > .section-tag {
     .reveal-section .ai-use-card.reveal-item {
         transform: translateY(16px) scale(0.99);
     }
-    .reveal-section.is-visible .reveal-item {
+    .reveal-section .reveal-item.is-visible {
         transform: translateY(0) scale(1);
     }
     /* Slightly tighter pip build on mobile (each card still fires on its own). */
@@ -2481,15 +2482,15 @@ select:focus-visible {
     }
 
     /* Reduce stagger so mobile reveal doesn't feel slow */
-    .reveal-section.is-visible .reveal-item[data-delay="0"],
-    .reveal-section.is-visible .reveal-item[data-delay="1"],
-    .reveal-section.is-visible .reveal-item[data-delay="2"],
-    .reveal-section.is-visible .reveal-item[data-delay="3"],
-    .reveal-section.is-visible .reveal-item[data-delay="4"],
-    .reveal-section.is-visible .reveal-item[data-delay="5"],
-    .reveal-section.is-visible .reveal-item[data-delay="6"],
-    .reveal-section.is-visible .reveal-item[data-delay="7"],
-    .reveal-section.is-visible .reveal-item[data-delay="8"] {
+    .reveal-section .reveal-item.is-visible[data-delay="0"],
+    .reveal-section .reveal-item.is-visible[data-delay="1"],
+    .reveal-section .reveal-item.is-visible[data-delay="2"],
+    .reveal-section .reveal-item.is-visible[data-delay="3"],
+    .reveal-section .reveal-item.is-visible[data-delay="4"],
+    .reveal-section .reveal-item.is-visible[data-delay="5"],
+    .reveal-section .reveal-item.is-visible[data-delay="6"],
+    .reveal-section .reveal-item.is-visible[data-delay="7"],
+    .reveal-section .reveal-item.is-visible[data-delay="8"] {
         transition-delay: 0ms;
     }
 

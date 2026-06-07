@@ -514,32 +514,36 @@ document.addEventListener('DOMContentLoaded', () => {
         window.addEventListener('touchend', endDrag);
     }
 
-    // ===== SECTION REVEAL SYSTEM =====
-    (function initSectionReveals() {
-        const sections = document.querySelectorAll('.reveal-section');
-        if (!sections.length) return;
+    // ===== PER-ITEM REVEAL SYSTEM =====
+    // Each reveal-item mounts when THAT element clearly enters the viewport — not
+    // when its (tall) parent section first peeks in — so items low in a section
+    // don't animate while still below the fold. The .reveal-section ancestor only
+    // carries the hidden initial state (content stays hidden pre-JS / no-JS).
+    (function initItemReveals() {
+        const items = document.querySelectorAll('.reveal-section .reveal-item');
+        if (!items.length) return;
 
         if (REDUCE_MOTION) {
-            sections.forEach((s) => s.classList.add('is-visible'));
+            items.forEach((el) => el.classList.add('is-visible'));
             return;
         }
 
-        const sectionObserver = new IntersectionObserver(
+        const itemObserver = new IntersectionObserver(
             (entries) => {
                 entries.forEach((entry) => {
                     if (entry.isIntersecting) {
                         entry.target.classList.add('is-visible');
-                        sectionObserver.unobserve(entry.target);
+                        itemObserver.unobserve(entry.target);
                     }
                 });
             },
-            // Fire when the section is ~20% into the viewport (not the instant its
-            // bottom edge peeks in) so the reveal happens where the eye is looking
-            // — otherwise it finishes off-screen and content looks "already there".
-            { threshold: 0, rootMargin: '0px 0px -20% 0px' }
+            // Fire as the item crosses into the viewport (minus a small bottom
+            // band so it reveals just as it reaches the screen). threshold 0 so
+            // items at the very bottom of the page still reveal at max scroll.
+            { threshold: 0, rootMargin: '0px 0px -10% 0px' }
         );
 
-        sections.forEach((section) => sectionObserver.observe(section));
+        items.forEach((el) => itemObserver.observe(el));
     })();
 
     // ===== PER-CARD PIP REVEAL =====
