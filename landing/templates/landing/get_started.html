@@ -15,14 +15,15 @@
         .gs-top h1{color:var(--white);font-family:'Space Grotesk',sans-serif;font-size:2.4rem;line-height:1.1;margin:6px 0 14px}
         .gs-top p{color:rgba(255,255,255,.72);font-size:1.05rem;line-height:1.6}
         .gs-back{display:inline-block;color:var(--accent);font-size:.88rem;margin-bottom:20px;text-decoration:none}
-        .plans{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:48px}
+        .plans{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:48px}
         .plan{background:var(--primary-light);border:1px solid rgba(52,214,200,.16);border-radius:18px;padding:28px 24px;display:flex;flex-direction:column}
         .plan--featured{border-color:var(--accent);box-shadow:0 14px 40px rgba(0,0,0,.3)}
         .plan__tag{align-self:flex-start;background:var(--accent);color:var(--primary);font-size:.7rem;font-weight:700;padding:4px 10px;border-radius:999px;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em}
         .plan h3{color:var(--white);font-size:1.2rem;margin:0 0 4px}
         .plan .price{color:var(--white);font-family:'Space Grotesk',sans-serif;font-size:2rem;font-weight:700}
         .plan .price span{font-size:.9rem;color:var(--muted,#8aa0b5);font-weight:400}
-        .plan .setup{color:rgba(255,255,255,.5);font-size:.8rem;margin:2px 0 16px}
+        .plan .setup{color:rgba(255,255,255,.5);font-size:.8rem;margin:2px 0 6px}
+        .plan .annual{color:var(--accent);font-size:.78rem;font-weight:500;margin:0 0 14px}
         .plan ul{list-style:none;padding:0;margin:0 0 8px;flex:1}
         .plan li{color:rgba(255,255,255,.78);font-size:.88rem;padding:6px 0 6px 22px;position:relative}
         .plan li::before{content:"";position:absolute;left:0;top:12px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
@@ -58,7 +59,9 @@
         #demoInput:focus{outline:none;border-color:var(--accent)}
         .gs-demo__form .btn-primary{flex:0 0 auto;padding:13px 22px;white-space:nowrap}
         .gs-demo__form .btn-primary:disabled{opacity:.5;cursor:default}
-        @media (max-width:860px){.plans{grid-template-columns:1fr}.gs-top h1{font-size:1.9rem}.gs-row{flex-direction:column}.gs-demo{padding:22px 18px}.gs-demo__form{flex-direction:column}.gs-demo__form .btn-primary{width:100%}}
+        @media (max-width:1040px){.plans{grid-template-columns:repeat(2,1fr)}}
+        @media (max-width:860px){.gs-top h1{font-size:1.9rem}.gs-row{flex-direction:column}.gs-demo{padding:22px 18px}.gs-demo__form{flex-direction:column}.gs-demo__form .btn-primary{width:100%}}
+        @media (max-width:560px){.plans{grid-template-columns:1fr}}
     </style>
 </head>
 <body>
@@ -91,6 +94,7 @@
                 <h3>{{ p.name }}</h3>
                 <div class="price">{{ p.price }}{% if p.price != "Let's talk" %}<span>/mo</span>{% endif %}</div>
                 <div class="setup">{{ p.setup }}</div>
+                {% if p.annual %}<div class="annual">{{ p.annual }}</div>{% endif %}
                 <ul>{% for f in p.features %}<li>{{ f }}</li>{% endfor %}</ul>
                 <button type="button" class="plan__pick" data-plan="{{ p.id }}">Choose {{ p.name }}</button>
             </div>
@@ -122,7 +126,7 @@
                 </select>
                 <textarea name="message" rows="4" placeholder="What does your business do, and what should the agent help with?">{{ form.message|default:'' }}</textarea>
                 <button type="submit" class="btn-primary">Request my agent</button>
-                <p class="gs-note">Setup and your first month are billed once your agent is live — securely via Stripe.</p>
+                <p class="gs-note">Founding clients get setup free — you're only billed the monthly plan once your agent is live, securely via Stripe.</p>
             </form>
         </div>
     </div>
@@ -158,10 +162,22 @@
         if (!form) return;
         var history = [];
 
+        // Escape HTML, then render the small markdown subset the model emits.
+        function renderRich(text){
+            var esc = String(text)
+                .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            return esc
+                .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+                .replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<em>$2</em>')
+                .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+                    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+        }
+
         function bubble(text, kind){
             var d = document.createElement('div');
             d.className = 'gs-demo__b gs-demo__b--' + kind;
-            d.textContent = text;
+            if (kind === 'assistant') d.innerHTML = renderRich(text);
+            else d.textContent = text;
             log.appendChild(d);
             log.scrollTop = log.scrollHeight;
             return d;
@@ -187,7 +203,7 @@
             }).then(function(r){ return r.json().then(function(data){ return {ok: r.ok, data: data}; }); })
             .then(function(res){
                 if (res.ok && res.data.reply){
-                    thinking.textContent = res.data.reply;
+                    thinking.innerHTML = renderRich(res.data.reply);
                     history.push({role:'assistant', content: res.data.reply});
                 } else {
                     thinking.className = 'gs-demo__b gs-demo__b--err';

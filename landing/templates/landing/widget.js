@@ -87,10 +87,23 @@
         sendBtn = root.querySelector('.dmn-send'),
         xBtn = root.querySelector('.dmn-x');
 
+    // Escape HTML, then render the small markdown subset the model emits:
+    // **bold**, *italic*, [text](url). Newlines render via the .dmn-b pre-wrap.
+    function renderRich(text) {
+        var esc = String(text)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return esc
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+            .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+                '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    }
+
     function bubble(role, text) {
         var d = document.createElement('div');
         d.className = 'dmn-b ' + (role === 'user' ? 'dmn-u' : 'dmn-a');
-        d.textContent = text;
+        if (role === 'user') d.textContent = text;
+        else d.innerHTML = renderRich(text);
         log.appendChild(d); log.scrollTop = log.scrollHeight; return d;
     }
     function open() {

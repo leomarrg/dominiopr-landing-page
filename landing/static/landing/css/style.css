@@ -1700,6 +1700,40 @@ section > .container > .section-tag {
         transform: rotateY(180deg);
     }
 
+    /* Mobile: backface-visibility is unreliable on mobile WebKit/Chromium
+       (especially when a face is in normal flow + the container height is
+       JS-animated), so the rotated-away face bleeds through and the front/back
+       text looks "mixed". Emulate backface-visibility instead: flip each face's
+       opacity instantly at the rotation midpoint (90deg) so exactly one face is
+       ever visible, in both directions. Delay = half the flip duration. */
+    .bento-flip-front,
+    .bento-flip-back {
+        transition: opacity 0s linear 0.45s; /* half of the 0.9s bento flip */
+    }
+    .bento-flip-back {
+        opacity: 0;
+    }
+    .bento-item--flippable.flipped .bento-flip-back {
+        opacity: 1;
+    }
+    .bento-item--flippable.flipped .bento-flip-front {
+        opacity: 0;
+    }
+
+    .visual-flip-front,
+    .visual-flip-back {
+        transition: opacity 0s linear 0.3s; /* half of the 0.6s visual flip */
+    }
+    .visual-flip-back {
+        opacity: 0;
+    }
+    .visual-card.flipped .visual-flip-back {
+        opacity: 1;
+    }
+    .visual-card.flipped .visual-flip-front {
+        opacity: 0;
+    }
+
     /* Extra smooth height transition when flipping */
     .visual-card {
         transition: min-height 1.2s cubic-bezier(0.22, 0.61, 0.36, 1);

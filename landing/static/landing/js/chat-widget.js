@@ -78,10 +78,23 @@
         fab.setAttribute('aria-expanded', 'false');
     }
 
+    // Escape HTML, then render a tiny, safe subset of markdown the model emits:
+    // **bold**, *italic*, and [text](url) links. Newlines render via CSS pre-wrap.
+    function renderRich(text) {
+        var esc = String(text)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return esc
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+            .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+                '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    }
+
     function addBubble(role, text) {
         var bubble = document.createElement('div');
         bubble.className = 'chat-bubble chat-bubble--' + role;
-        bubble.textContent = text;
+        if (role === 'assistant') bubble.innerHTML = renderRich(text);
+        else bubble.textContent = text;
         log.appendChild(bubble);
         log.scrollTop = log.scrollHeight;
         return bubble;
