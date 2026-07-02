@@ -92,8 +92,8 @@
             <div class="plan {% if p.featured %}plan--featured{% endif %}">
                 {% if p.featured %}<span class="plan__tag">Más popular</span>{% endif %}
                 <h3>{{ p.name }}</h3>
-                <div class="price">{{ p.price }}{% if p.price != "Let's talk" %}<span>/mes</span>{% endif %}</div>
-                <div class="setup">{{ p.setup }}</div>
+                <div class="price">{{ p.price }}{% if p.price != "Hablemos" %}<span>/mes</span>{% endif %}</div>
+                {% if p.setup %}<div class="setup">{{ p.setup }}</div>{% endif %}
                 {% if p.annual %}<div class="annual">{{ p.annual }}</div>{% endif %}
                 <ul>{% for f in p.features %}<li>{{ f }}</li>{% endfor %}</ul>
                 <button type="button" class="plan__pick" data-plan="{{ p.id }}">Elegir {{ p.name }}</button>
@@ -122,11 +122,11 @@
                 <input type="text" name="website_url" placeholder="Página web (opcional)" value="{{ form.website_url|default:'' }}">
                 <select name="plan" id="planSelect">
                     <option value="">Elige un plan</option>
-                    {% for p in plans %}<option value="{{ p.id }}" {% if form.plan == p.id %}selected{% endif %}>{{ p.name }}{% if p.price != "Let's talk" %} — {{ p.price }}/mes{% endif %}</option>{% endfor %}
+                    {% for p in plans %}<option value="{{ p.id }}" {% if form.plan == p.id %}selected{% endif %}>{{ p.name }}{% if p.price != "Hablemos" %} — {{ p.price }}/mes{% endif %}</option>{% endfor %}
                 </select>
                 <textarea name="message" rows="4" placeholder="¿Qué hace tu negocio y en qué quieres que ayude el agente?">{{ form.message|default:'' }}</textarea>
                 <button type="submit" class="btn-primary">Solicitar mi agente</button>
-                <p class="gs-note">Los clientes fundadores no pagan configuración — solo se te cobra el plan mensual cuando tu agente esté en vivo, de forma segura por Stripe.</p>
+                <p class="gs-note">Solo se te cobra el plan mensual cuando tu agente esté en vivo, de forma segura por Stripe.</p>
             </form>
         </div>
     </div>

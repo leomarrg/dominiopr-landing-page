@@ -607,19 +607,19 @@ def demo_api(request):
 # ============================================================
 
 PLANS = [
-    {'id': 'starter', 'name': 'Starter', 'price': '$99', 'setup': 'Instalación gratis — clientes fundadores',
+    {'id': 'starter', 'name': 'Starter', 'price': '$99',
      'annual': '$990/año — 2 meses gratis',
      'features': ['Agente de IA en tu página web', 'Contesta las preguntas de tus clientes 24/7',
                   'Convierte visitantes en leads — directo a tu inbox',
                   'Dashboard privado para ver cada lead']},
-    {'id': 'pro', 'name': 'Pro', 'price': '$249', 'setup': 'Instalación gratis — clientes fundadores', 'featured': True,
+    {'id': 'pro', 'name': 'Pro', 'price': '$249', 'featured': True,
      'annual': '$2,490/año — 2 meses gratis',
      'features': ['Todo lo de Starter', 'Califica los leads antes de que te lleguen',
                   'Agenda citas y reservaciones automáticamente',
                   'Responde a los leads desde tu dashboard',
                   'Ajustado a tu marca y colores',
                   'Afinamos tu agente todos los meses']},
-    {'id': 'scale', 'name': 'Scale', 'price': '$499', 'setup': 'Instalación gratis — clientes fundadores',
+    {'id': 'scale', 'name': 'Scale', 'price': '$499',
      'annual': '$4,990/año — 2 meses gratis',
      'features': ['Todo lo de Pro', 'WhatsApp y multicanal',
                   'Hasta 3 locales o marcas', 'Se conecta a tu CRM y calendario',
