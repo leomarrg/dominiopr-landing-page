@@ -607,19 +607,19 @@ def demo_api(request):
 # ============================================================
 
 PLANS = [
-    {'id': 'starter', 'name': 'Starter', 'price': '$99', 'setup': 'Free setup — founding clients',
+    {'id': 'starter', 'name': 'Starter', 'price': '$99',
      'annual': '$990/yr — 2 months free',
      'features': ['AI agent on your website', 'Answers customer questions 24/7',
                   'Turns visitors into leads — straight to your inbox',
                   'Private dashboard to see every lead']},
-    {'id': 'pro', 'name': 'Pro', 'price': '$249', 'setup': 'Free setup — founding clients', 'featured': True,
+    {'id': 'pro', 'name': 'Pro', 'price': '$249', 'featured': True,
      'annual': '$2,490/yr — 2 months free',
      'features': ['Everything in Starter', 'Qualifies leads before they reach you',
                   'Books appointments & reservations automatically',
                   'Reply to leads right from your dashboard',
                   'Matched to your brand & colors',
                   'We fine-tune your agent every month']},
-    {'id': 'scale', 'name': 'Scale', 'price': '$499', 'setup': 'Free setup — founding clients',
+    {'id': 'scale', 'name': 'Scale', 'price': '$499',
      'annual': '$4,990/yr — 2 months free',
      'features': ['Everything in Pro', 'WhatsApp & multi-channel',
                   'Up to 3 locations or brands', 'Connects to your CRM & calendar',

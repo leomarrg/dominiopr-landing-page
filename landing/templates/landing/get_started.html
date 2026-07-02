@@ -93,7 +93,7 @@
                 {% if p.featured %}<span class="plan__tag">Most popular</span>{% endif %}
                 <h3>{{ p.name }}</h3>
                 <div class="price">{{ p.price }}{% if p.price != "Let's talk" %}<span>/mo</span>{% endif %}</div>
-                <div class="setup">{{ p.setup }}</div>
+                {% if p.setup %}<div class="setup">{{ p.setup }}</div>{% endif %}
                 {% if p.annual %}<div class="annual">{{ p.annual }}</div>{% endif %}
                 <ul>{% for f in p.features %}<li>{{ f }}</li>{% endfor %}</ul>
                 <button type="button" class="plan__pick" data-plan="{{ p.id }}">Choose {{ p.name }}</button>
@@ -126,7 +126,7 @@
                 </select>
                 <textarea name="message" rows="4" placeholder="What does your business do, and what should the agent help with?">{{ form.message|default:'' }}</textarea>
                 <button type="submit" class="btn-primary">Request my agent</button>
-                <p class="gs-note">Founding clients get setup free — you're only billed the monthly plan once your agent is live, securely via Stripe.</p>
+                <p class="gs-note">You're only billed the monthly plan once your agent is live, securely via Stripe.</p>
             </form>
         </div>
     </div>
