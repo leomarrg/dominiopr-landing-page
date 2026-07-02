@@ -56,7 +56,7 @@ def _rate_limited(prefix, limit, window):
             count = cache.get(key, 0)
             if count >= limit:
                 resp = JsonResponse(
-                    {'error': 'Too many requests. Please slow down.'}, status=429)
+                    {'error': 'Demasiadas solicitudes. Baja un poco la velocidad.'}, status=429)
                 resp['Retry-After'] = str(window)
                 return resp
             # Fixed window: first hit sets the TTL; subsequent hits just increment.
@@ -292,10 +292,10 @@ def index(request):
             _send_lead_emails(submission)
             messages.success(
                 request,
-                'Thank you. We received your message and will get back to you soon.',
+                '¡Gracias! Recibimos tu mensaje y te contactamos pronto.',
             )
             return redirect(reverse('index') + '#contact')
-        messages.error(request, 'Please review the highlighted fields and try again.')
+        messages.error(request, 'Revisa los campos marcados y trata de nuevo.')
     else:
         form = ContactForm()
     return render(request, 'landing/index.html', {'form': form})
@@ -343,7 +343,7 @@ def _chat_lead_handler(request, client_obj=None):
         cap_key = f'leadcap:{ip}'
         if cache.get(cap_key, 0) >= 5:
             logger.warning('Chat lead cap reached for IP %s', ip)
-            return 'Noted — the team already has your request and will follow up by email.'
+            return 'Anotado — el equipo ya tiene tu solicitud y te dará seguimiento por email.'
 
         service = data.get('service')
         if service not in valid_services:
@@ -366,7 +366,7 @@ def _chat_lead_handler(request, client_obj=None):
         _send_lead_emails(submission, notify_to=notify_to)
         cache.set(cap_key, cache.get(cap_key, 0) + 1, 3600)  # 1-hour window
         logger.info('Lead captured via chat: %s <%s>', name, email)
-        return f'Lead saved and the {business_name} team has been notified by email.'
+        return f'Lead guardado y el equipo de {business_name} fue notificado por email.'
 
     return handle
 
@@ -398,7 +398,7 @@ def _booking_handler(request, client_obj=None):
         ip = _client_ip(request) or 'unknown'
         cap_key = f'bookcap:{ip}'
         if cache.get(cap_key, 0) >= 5:
-            return 'Noted — the team will follow up to confirm your time.'
+            return 'Anotado — el equipo te dará seguimiento para confirmar tu hora.'
 
         # Parse the requested time; the backend decides validity, not the model.
         try:
@@ -422,13 +422,13 @@ def _booking_handler(request, client_obj=None):
                     start=start, status='pending',
                 )
         except IntegrityError:
-            return 'That time slot is already taken. Offer the visitor a different time.'
+            return 'Esa hora ya está ocupada. Ofrécele al visitante otra hora.'
 
         cache.set(cap_key, cache.get(cap_key, 0) + 1, 3600)
         _send_booking_emails(booking, notify_to=notify_to, business=business_name)
         local = timezone.localtime(start)
         logger.info('Booking created: %s <%s> at %s', name, email, local)
-        return f'Booked for {local:%A %b %d at %I:%M %p}. A confirmation was emailed.'
+        return f'Reservado para {local:%A %b %d a las %I:%M %p}. Se envió una confirmación por email.'
 
     return handle
 
@@ -445,16 +445,16 @@ def chat_api(request):
     daily cap, per-IP lead cap, body-size cap, and a per-client origin allowlist.
     """
     if request.method != 'POST':
-        return JsonResponse({'error': 'Method not allowed.'}, status=405)
+        return JsonResponse({'error': 'Método no permitido.'}, status=405)
 
     # Reject oversized bodies before parsing them into memory.
     if len(request.body) > MAX_CHAT_BODY_BYTES:
-        return JsonResponse({'error': 'Request too large.'}, status=413)
+        return JsonResponse({'error': 'La solicitud es demasiado grande.'}, status=413)
 
     try:
         payload = json.loads(request.body or b'{}')
     except (ValueError, UnicodeDecodeError):
-        return JsonResponse({'error': 'Invalid request.'}, status=400)
+        return JsonResponse({'error': 'Solicitud inválida.'}, status=400)
 
     # Resolve which business this agent represents (multi-tenant). The widget
     # sends its public "client" slug; DOMINIO's own site defaults to 'dominio'.
@@ -469,11 +469,11 @@ def chat_api(request):
         allowed = set(client_obj.origin_list())
         o = urlparse(origin)
         if o.netloc.lower() not in allowed and (o.hostname or '').lower() not in allowed:
-            return JsonResponse({'error': 'This domain is not allowed.'}, status=403)
+            return JsonResponse({'error': 'Este dominio no está permitido.'}, status=403)
 
     raw = payload.get('messages')
     if not isinstance(raw, list) or not raw:
-        return JsonResponse({'error': 'No messages provided.'}, status=400)
+        return JsonResponse({'error': 'No se enviaron mensajes.'}, status=400)
 
     # Sanitize: keep only well-formed user/assistant turns with non-empty text,
     # then trim to the most recent N turns to bound cost.
@@ -496,7 +496,7 @@ def chat_api(request):
     while history and history[0]['role'] != 'user':
         history.pop(0)
     if not history or history[-1]['role'] != 'user':
-        return JsonResponse({'error': 'No question to answer.'}, status=400)
+        return JsonResponse({'error': 'No hay pregunta que contestar.'}, status=400)
 
     # Global daily ceiling across ALL IPs — the defense per-IP limits can't give:
     # caps worst-case daily API spend even under a distributed/botnet attack.
@@ -506,8 +506,8 @@ def chat_api(request):
     if used >= daily_cap:
         logger.warning('Daily chat cap (%s) reached', daily_cap)
         return JsonResponse(
-            {'error': 'Our assistant is resting for now. Please use the contact form '
-                      'and the team will get right back to you.'},
+            {'error': 'Nuestro asistente está descansando por ahora. Usa el formulario de '
+                      'contacto y el equipo te responde enseguida.'},
             status=503,
         )
     if used == 0:
@@ -526,17 +526,17 @@ def chat_api(request):
         reply = agent.answer(history, business_prompt=business_prompt, handlers=handlers)
     except agent.AgentNotConfigured:
         return JsonResponse(
-            {'error': 'The assistant is not available right now.'}, status=503
+            {'error': 'El asistente no está disponible ahora mismo.'}, status=503
         )
     except anthropic.RateLimitError:
         return JsonResponse(
-            {'error': 'We are getting a lot of questions right now — please try again in a moment.'},
+            {'error': 'Estamos recibiendo muchas preguntas ahora mismo — trata de nuevo en un momento.'},
             status=429,
         )
     except anthropic.APIError:
         logger.exception('Anthropic API error in chat_api')
         return JsonResponse(
-            {'error': 'Something went wrong reaching the assistant. Please try again, or use the contact form.'},
+            {'error': 'Algo salió mal al conectar con el asistente. Trata de nuevo o usa el formulario de contacto.'},
             status=502,
         )
 
@@ -550,17 +550,17 @@ def demo_api(request):
     the agent answers using it (ephemeral, nothing saved, no lead capture). Shares
     the same daily budget cap and rate limits as the live chat to bound cost."""
     if request.method != 'POST':
-        return JsonResponse({'error': 'Method not allowed.'}, status=405)
+        return JsonResponse({'error': 'Método no permitido.'}, status=405)
     if len(request.body) > MAX_CHAT_BODY_BYTES * 2:
-        return JsonResponse({'error': 'Too much text. Trim it down a bit.'}, status=413)
+        return JsonResponse({'error': 'Demasiado texto. Recórtalo un poco.'}, status=413)
     try:
         payload = json.loads(request.body or b'{}')
     except (ValueError, UnicodeDecodeError):
-        return JsonResponse({'error': 'Invalid request.'}, status=400)
+        return JsonResponse({'error': 'Solicitud inválida.'}, status=400)
 
     context = (payload.get('context') or '').strip()[:6000]
     if not context:
-        return JsonResponse({'error': 'Add a few lines about your business first.'}, status=400)
+        return JsonResponse({'error': 'Añade unas líneas sobre tu negocio primero.'}, status=400)
 
     history = []
     for item in (payload.get('messages') or []):
@@ -573,14 +573,14 @@ def demo_api(request):
     while history and history[0]['role'] != 'user':
         history.pop(0)
     if not history or history[-1]['role'] != 'user':
-        return JsonResponse({'error': 'No question to answer.'}, status=400)
+        return JsonResponse({'error': 'No hay pregunta que contestar.'}, status=400)
 
     # Shared daily ceiling (same budget guard as the live chat).
     daily_cap = getattr(settings, 'DOMINIO_AGENT_DAILY_CAP', 2000)
     day_key = 'chat:global:' + timezone.now().strftime('%Y%m%d')
     used = cache.get(day_key, 0)
     if used >= daily_cap:
-        return JsonResponse({'error': 'The demo is busy right now. Try again later.'}, status=503)
+        return JsonResponse({'error': 'El demo está ocupado ahora mismo. Trata más tarde.'}, status=503)
     if used == 0:
         cache.set(day_key, 1, 60 * 60 * 26)
     else:
@@ -592,12 +592,12 @@ def demo_api(request):
     try:
         reply = agent.answer(history, business_prompt=context, handlers={})
     except agent.AgentNotConfigured:
-        return JsonResponse({'error': 'The demo is not available right now.'}, status=503)
+        return JsonResponse({'error': 'El demo no está disponible ahora mismo.'}, status=503)
     except anthropic.RateLimitError:
-        return JsonResponse({'error': 'Busy — please try again in a moment.'}, status=429)
+        return JsonResponse({'error': 'Ocupado — trata de nuevo en un momento.'}, status=429)
     except anthropic.APIError:
         logger.exception('Anthropic API error in demo_api')
-        return JsonResponse({'error': 'Something went wrong. Please try again.'}, status=502)
+        return JsonResponse({'error': 'Algo salió mal. Trata de nuevo.'}, status=502)
 
     return JsonResponse({'reply': reply})
 
@@ -607,26 +607,26 @@ def demo_api(request):
 # ============================================================
 
 PLANS = [
-    {'id': 'starter', 'name': 'Starter', 'price': '$99', 'setup': 'Free setup — founding clients',
-     'annual': '$990/yr — 2 months free',
-     'features': ['AI agent on your website', 'Answers customer questions 24/7',
-                  'Turns visitors into leads — straight to your inbox',
-                  'Private dashboard to see every lead']},
-    {'id': 'pro', 'name': 'Pro', 'price': '$249', 'setup': 'Free setup — founding clients', 'featured': True,
-     'annual': '$2,490/yr — 2 months free',
-     'features': ['Everything in Starter', 'Qualifies leads before they reach you',
-                  'Books appointments & reservations automatically',
-                  'Reply to leads right from your dashboard',
-                  'Matched to your brand & colors',
-                  'We fine-tune your agent every month']},
-    {'id': 'scale', 'name': 'Scale', 'price': '$499', 'setup': 'Free setup — founding clients',
-     'annual': '$4,990/yr — 2 months free',
-     'features': ['Everything in Pro', 'WhatsApp & multi-channel',
-                  'Up to 3 locations or brands', 'Connects to your CRM & calendar',
-                  'Priority support']},
-    {'id': 'custom', 'name': 'Custom', 'price': "Let's talk", 'setup': 'Quote',
-     'features': ['Everything in Scale', 'Unlimited locations & channels',
-                  'Custom integrations & workflows', 'Dedicated onboarding']},
+    {'id': 'starter', 'name': 'Starter', 'price': '$99', 'setup': 'Instalación gratis — clientes fundadores',
+     'annual': '$990/año — 2 meses gratis',
+     'features': ['Agente de IA en tu página web', 'Contesta las preguntas de tus clientes 24/7',
+                  'Convierte visitantes en leads — directo a tu inbox',
+                  'Dashboard privado para ver cada lead']},
+    {'id': 'pro', 'name': 'Pro', 'price': '$249', 'setup': 'Instalación gratis — clientes fundadores', 'featured': True,
+     'annual': '$2,490/año — 2 meses gratis',
+     'features': ['Todo lo de Starter', 'Califica los leads antes de que te lleguen',
+                  'Agenda citas y reservaciones automáticamente',
+                  'Responde a los leads desde tu dashboard',
+                  'Ajustado a tu marca y colores',
+                  'Afinamos tu agente todos los meses']},
+    {'id': 'scale', 'name': 'Scale', 'price': '$499', 'setup': 'Instalación gratis — clientes fundadores',
+     'annual': '$4,990/año — 2 meses gratis',
+     'features': ['Todo lo de Pro', 'WhatsApp y multicanal',
+                  'Hasta 3 locales o marcas', 'Se conecta a tu CRM y calendario',
+                  'Soporte prioritario']},
+    {'id': 'custom', 'name': 'Custom', 'price': 'Hablemos', 'setup': 'Cotización',
+     'features': ['Todo lo de Scale', 'Locales y canales ilimitados',
+                  'Integraciones y flujos a la medida', 'Onboarding dedicado']},
 ]
 
 
@@ -647,21 +647,21 @@ def get_started(request):
 
         errors = {}
         if not name:
-            errors['name'] = 'Required.'
+            errors['name'] = 'Requerido.'
         if not company:
-            errors['company'] = 'Required.'
+            errors['company'] = 'Requerido.'
         # Email OR phone — a phone-only signup is fine, but a given phone must be valid.
         if email:
             try:
                 validate_email(email)
             except ValidationError:
-                errors['email'] = 'Enter a valid email.'
+                errors['email'] = 'Escribe un email válido.'
         phone = normalize_phone(phone)
         if phone is None:
-            errors['phone'] = 'Enter a valid phone number, e.g. (787) 123-4567.'
+            errors['phone'] = 'Escribe un número de teléfono válido, ej. (787) 123-4567.'
             phone = ''
         if not email and not phone:
-            errors['email'] = 'Leave an email or a phone so we can reach you.'
+            errors['email'] = 'Déjanos un email o un teléfono para poder contactarte.'
         if errors:
             return render(request, 'landing/get_started.html',
                           {'plans': PLANS, 'form': request.POST, 'errors': errors})
@@ -679,7 +679,7 @@ def get_started(request):
         _send_lead_emails(submission)
         messages.success(
             request,
-            'Got it! We will email you shortly to set up your agent and payment.')
+            '¡Listo! Te escribimos por email en breve para montar tu agente y el pago.')
         return redirect(reverse('get_started') + '#done')
 
     return render(request, 'landing/get_started.html',
@@ -707,7 +707,7 @@ def dashboard(request):
     # First sign-in on an auto-provisioned account: force the temp password out
     # of circulation before showing any data.
     if Membership.objects.filter(user=request.user, must_change_password=True).exists():
-        messages.info(request, 'Please set a new password to finish setting up your account.')
+        messages.info(request, 'Crea una nueva contraseña para terminar de configurar tu cuenta.')
         return redirect('password_change')
 
     scoped = leads_for(request.user)
@@ -791,18 +791,18 @@ def lead_email(request, pk):
 
     # Phone-only leads have no email to reply to — never send to an empty address.
     if not lead.email:
-        messages.error(request, 'This lead has no email — reach them by phone instead.')
+        messages.error(request, 'Este lead no tiene email — contáctalo por teléfono.')
         return redirect(ref)
 
     if not subject or not body:
-        messages.error(request, 'Subject and message are both required.')
+        messages.error(request, 'El asunto y el mensaje son requeridos.')
         return redirect(ref)
 
     # Per-user daily cap: every reply goes out through DOMINIO's single shared
     # Gmail (reputation + ~500/day quota). One tenant must not be able to burn it.
     cap_key = f'mailcap:{request.user.pk}'
     if cache.get(cap_key, 0) >= 50:
-        messages.error(request, 'Daily email limit reached. Please try again tomorrow.')
+        messages.error(request, 'Llegaste al límite de emails de hoy. Trata de nuevo mañana.')
         return redirect(ref)
 
     business = lead.client.name if lead.client else 'DOMINIO'
@@ -821,11 +821,11 @@ def lead_email(request, pk):
         if lead.status == 'new':
             lead.status = 'contacted'
             lead.save(update_fields=['status'])
-        messages.success(request, f'Email sent to {lead.email}.')
+        messages.success(request, f'Email enviado a {lead.email}.')
     else:
         messages.error(
             request,
-            f'Could not send the email to {lead.email}. Check the mail settings and try again.')
+            f'No se pudo enviar el email a {lead.email}. Revisa la configuración de correo y trata de nuevo.')
     return redirect(ref)
 
 
@@ -843,7 +843,7 @@ def password_change(request):
             # Clear the first-login gate across all of the user's agents.
             Membership.objects.filter(user=request.user, must_change_password=True) \
                 .update(must_change_password=False)
-            messages.success(request, 'Your password has been updated.')
+            messages.success(request, 'Tu contraseña se actualizó.')
             return redirect('dashboard')
     else:
         form = PasswordChangeForm(request.user)
@@ -1071,7 +1071,7 @@ def client_toggle_active(request, pk):
     client = get_object_or_404(Client, pk=pk)
     client.is_active = not client.is_active
     client.save(update_fields=['is_active'])
-    state = 'reactivated' if client.is_active else 'paused'
+    state = 'reactivado' if client.is_active else 'pausado'
     messages.success(request, f'{client.name} {state}.')
     return redirect('clients_list')
 
@@ -1100,11 +1100,11 @@ def client_resend_onboarding(request, pk):
     sent = _send_onboarding_email(client, embed, login=login)
     Client.objects.filter(pk=client.pk).update(onboarding_sent=True)
     if sent:
-        messages.success(request, f'Install email resent to {client.notify_email}.')
+        messages.success(request, f'Email de instalación reenviado a {client.notify_email}.')
     else:
         messages.error(
             request,
-            f'Could not send to {client.notify_email} — check the mail settings.')
+            f'No se pudo enviar a {client.notify_email} — revisa la configuración de correo.')
     return redirect('clients_list')
 
 
@@ -1122,7 +1122,7 @@ def client_form(request, pk=None):
                 obj = form.save()
             except IntegrityError:
                 # Slug is deduped in the form; this only fires on a rare race.
-                form.add_error('slug', 'That key was just taken — try saving again.')
+                form.add_error('slug', 'Esa llave se acaba de ocupar — trata de guardar otra vez.')
                 return render(request, 'landing/dashboard_client_form.html',
                               {'form': form, 'instance': instance})
             # Auto-write the widget greeting from the agent's knowledge when left
@@ -1157,25 +1157,25 @@ def client_form(request, pk=None):
                         }
                     elif obj.notify_email:
                         # Only happens when the email is a staff account.
-                        login_note = (f' (no dashboard login — {obj.notify_email} is a '
-                                      f'staff account)')
+                        login_note = (f' (sin acceso al dashboard — {obj.notify_email} es una '
+                                      f'cuenta de staff)')
                 except Exception:
                     logger.exception('Failed to provision login for client %s', obj.slug)
-                    login_note = ' (dashboard login could not be created)'
+                    login_note = ' (no se pudo crear el acceso al dashboard)'
                 sent = _send_onboarding_email(obj, embed, login=login)
                 Client.objects.filter(pk=obj.pk).update(onboarding_sent=True)
                 if sent:
                     messages.success(
                         request,
-                        f'{obj.name} is live — install email sent to '
+                        f'{obj.name} está activo — email de instalación enviado a '
                         f'{obj.notify_email}{login_note}.')
                 else:
                     messages.error(
                         request,
-                        f'{obj.name} is live, but the install email to '
-                        f'{obj.notify_email} could not be sent — check the mail settings.')
+                        f'{obj.name} está activo, pero no se pudo enviar el email de instalación '
+                        f'a {obj.notify_email} — revisa la configuración de correo.')
             else:
-                messages.success(request, f'Agent for {obj.name} saved.')
+                messages.success(request, f'Agente de {obj.name} guardado.')
             return redirect('clients_list')
     else:
         form = ClientForm(instance=instance)

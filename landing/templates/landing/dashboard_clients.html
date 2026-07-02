@@ -1,10 +1,10 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DOMINIO — Agents</title>
+    <title>DOMINIO — Agentes</title>
     <meta name="robots" content="noindex, nofollow">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'landing/css/dashboard.css' %}">
@@ -44,8 +44,8 @@
     {% include 'landing/_dash_nav.html' with active='agents' %}
     <main class="dash-main">
         <div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 22px;">
-            <h1 class="dash-h1" style="margin:0;">Agent factory</h1>
-            <a href="{% url 'client_create' %}" class="new-btn">+ New agent</a>
+            <h1 class="dash-h1" style="margin:0;">Fábrica de agentes</h1>
+            <a href="{% url 'client_create' %}" class="new-btn">+ Nuevo agente</a>
         </div>
 
         {% for c in clients %}
@@ -56,31 +56,31 @@
                     <span class="slug">key: {{ c.slug }}</span>
                 </div>
                 <div class="agent-actions">
-                    {% if c.is_active %}<span class="badge-on">Active</span>{% else %}<span class="badge-off">Paused</span>{% endif %}
-                    <a href="{% url 'client_edit' c.pk %}" class="edit-btn">Edit</a>
+                    {% if c.is_active %}<span class="badge-on">Activo</span>{% else %}<span class="badge-off">Pausado</span>{% endif %}
+                    <a href="{% url 'client_edit' c.pk %}" class="edit-btn">Editar</a>
                     <form method="post" action="{% url 'client_toggle_active' c.pk %}" style="display:inline;">
                         {% csrf_token %}
-                        <button type="submit" class="edit-btn toggle-btn">{% if c.is_active %}Pause{% else %}Activate{% endif %}</button>
+                        <button type="submit" class="edit-btn toggle-btn">{% if c.is_active %}Pausar{% else %}Activar{% endif %}</button>
                     </form>
                     <form method="post" action="{% url 'client_resend_onboarding' c.pk %}" style="display:inline;"
-                          onsubmit="return confirm('Resend the install email + a new dashboard password to {{ c.notify_email|escapejs }}?');">
+                          onsubmit="return confirm('¿Reenviar el correo de instalación + una nueva contraseña del dashboard a {{ c.notify_email|escapejs }}?');">
                         {% csrf_token %}
-                        <button type="submit" class="edit-btn">Resend email</button>
+                        <button type="submit" class="edit-btn">Reenviar correo</button>
                     </form>
                 </div>
             </div>
             <div class="agent-meta">
                 <span><b>{{ c.lead_count }}</b> leads</span>
-                <span>Notifies: {{ c.notify_email }}</span>
+                <span>Notifica a: {{ c.notify_email }}</span>
             </div>
-            <p style="color:var(--muted);font-size:.8rem;margin:0 0 8px;">Install — paste this one line into the site, before &lt;/body&gt;:</p>
+            <p style="color:var(--muted);font-size:.8rem;margin:0 0 8px;">Instalación — pega esta línea en el sitio, antes de &lt;/body&gt;:</p>
             <div class="snippet">
                 <code id="embed-{{ c.pk }}">{{ c.embed }}</code>
-                <button type="button" class="copy-btn" data-copy="embed-{{ c.pk }}">Copy</button>
+                <button type="button" class="copy-btn" data-copy="embed-{{ c.pk }}">Copiar</button>
             </div>
         </div>
         {% empty %}
-        <div class="dash-empty" style="background:var(--primary-light);border:1px solid var(--line);border-radius:14px;">No agents yet. Click “New agent” to create your first one.</div>
+        <div class="dash-empty" style="background:var(--primary-light);border:1px solid var(--line);border-radius:14px;">Todavía no hay agentes. Haz clic en “Nuevo agente” para crear el primero.</div>
         {% endfor %}
     </main>
     <script>
@@ -88,7 +88,7 @@
             b.addEventListener('click', function () {
                 var el = document.getElementById(b.getAttribute('data-copy'));
                 navigator.clipboard.writeText(el.textContent).then(function () {
-                    var t = b.textContent; b.textContent = 'Copied'; setTimeout(function () { b.textContent = t; }, 1500);
+                    var t = b.textContent; b.textContent = 'Copiado'; setTimeout(function () { b.textContent = t; }, 1500);
                 });
             });
         });

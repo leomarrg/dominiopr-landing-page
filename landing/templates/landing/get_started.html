@@ -1,10 +1,10 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Get your AI agent — DOMINIO</title>
+    <title>Crea tu agente de IA — DOMINIO</title>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'landing/css/style.css' %}">
     <link rel="icon" type="image/png" href="{% static 'landing/images/logo/profile_pic@4x.PNG' %}">
@@ -67,50 +67,50 @@
 <body>
 <div class="gs-wrap">
     <div class="container">
-        <a href="{% url 'index' %}" class="gs-back">&larr; Back to DOMINIO</a>
+        <a href="{% url 'index' %}" class="gs-back">&larr; Volver a DOMINIO</a>
         <div class="gs-top">
-            <p class="section-tag">Get started</p>
-            <h1>Your own AI agent, answering customers 24/7</h1>
-            <p>Trained on your business. It answers questions, captures leads, and books appointments 24/7 — live on your site with one line of code.</p>
+            <p class="section-tag">Crea tu agente</p>
+            <h1>Tu propio agente de IA, contestando clientes 24/7</h1>
+            <p>Entrenado con tu negocio. Contesta preguntas, captura leads y agenda citas 24/7 — en vivo en tu sitio con una sola línea de código.</p>
         </div>
 
         <div class="gs-demo" id="demo">
             <div class="gs-demo__head">
-                <h2>Try your own agent — free</h2>
-                <p>Paste what your business does, then ask it anything. This is exactly what your customers would get.</p>
+                <h2>Prueba tu propio agente — gratis</h2>
+                <p>Escribe lo que hace tu negocio y pregúntale lo que sea. Esto es exactamente lo que verían tus clientes.</p>
             </div>
-            <textarea id="demoContext" class="gs-demo__ctx" rows="4" placeholder="e.g. We're Pizzeria Napoli in San Juan. Wood-fired pizzas, pastas, and salads. Open Tue–Sun 11am–10pm. Delivery through our website. We take reservations for groups of 6 or more."></textarea>
+            <textarea id="demoContext" class="gs-demo__ctx" rows="4" placeholder="Ej. Somos Pizzería Napoli en San Juan. Pizzas al horno de leña, pastas y ensaladas. Abrimos de martes a domingo de 11am a 10pm. Delivery por nuestra página. Tomamos reservaciones para grupos de 6 o más."></textarea>
             <div class="gs-demo__log" id="demoLog"></div>
             <form class="gs-demo__form" id="demoForm">
-                <input type="text" id="demoInput" placeholder="Ask your agent something…" autocomplete="off" maxlength="2000">
-                <button type="submit" class="btn-primary">Send</button>
+                <input type="text" id="demoInput" placeholder="Pregúntale algo a tu agente…" autocomplete="off" maxlength="2000">
+                <button type="submit" class="btn-primary">Enviar</button>
             </form>
         </div>
 
         <div class="plans">
             {% for p in plans %}
             <div class="plan {% if p.featured %}plan--featured{% endif %}">
-                {% if p.featured %}<span class="plan__tag">Most popular</span>{% endif %}
+                {% if p.featured %}<span class="plan__tag">Más popular</span>{% endif %}
                 <h3>{{ p.name }}</h3>
-                <div class="price">{{ p.price }}{% if p.price != "Let's talk" %}<span>/mo</span>{% endif %}</div>
+                <div class="price">{{ p.price }}{% if p.price != "Let's talk" %}<span>/mes</span>{% endif %}</div>
                 <div class="setup">{{ p.setup }}</div>
                 {% if p.annual %}<div class="annual">{{ p.annual }}</div>{% endif %}
                 <ul>{% for f in p.features %}<li>{{ f }}</li>{% endfor %}</ul>
-                <button type="button" class="plan__pick" data-plan="{{ p.id }}">Choose {{ p.name }}</button>
+                <button type="button" class="plan__pick" data-plan="{{ p.id }}">Elegir {{ p.name }}</button>
             </div>
             {% endfor %}
         </div>
 
         <div class="gs-form-wrap" id="request">
             {% if messages %}{% for m in messages %}<div class="gs-success" id="done">{{ m }}</div>{% endfor %}{% endif %}
-            <h2>Request your agent</h2>
-            <p class="sub">Tell us about your business. We'll set up your agent and email you a secure Stripe link for the monthly plan — then your agent goes live.</p>
+            <h2>Solicita tu agente</h2>
+            <p class="sub">Cuéntanos de tu negocio. Configuramos tu agente y te enviamos por email un enlace seguro de Stripe para el plan mensual — y ahí tu agente sale en vivo.</p>
             <form class="gs-form" method="post" action="{% url 'get_started' %}#request" novalidate>
                 {% csrf_token %}
                 <div style="position:absolute;left:-9999px" aria-hidden="true"><input type="text" name="hp" tabindex="-1" autocomplete="off"></div>
                 <div class="gs-row">
-                    <input type="text" name="company" placeholder="Business name" value="{{ form.company|default:'' }}" required>
-                    <input type="text" name="name" placeholder="Your name" value="{{ form.name|default:'' }}" required>
+                    <input type="text" name="company" placeholder="Nombre del negocio" value="{{ form.company|default:'' }}" required>
+                    <input type="text" name="name" placeholder="Tu nombre" value="{{ form.name|default:'' }}" required>
                 </div>
                 {% if errors.company %}<div class="err">{{ errors.company }}</div>{% endif %}
                 <div class="gs-row">
@@ -119,14 +119,14 @@
                 </div>
                 {% if errors.email %}<div class="err">{{ errors.email }}</div>{% endif %}
                 {% if errors.phone %}<div class="err">{{ errors.phone }}</div>{% endif %}
-                <input type="text" name="website_url" placeholder="Website (optional)" value="{{ form.website_url|default:'' }}">
+                <input type="text" name="website_url" placeholder="Página web (opcional)" value="{{ form.website_url|default:'' }}">
                 <select name="plan" id="planSelect">
-                    <option value="">Choose a plan</option>
-                    {% for p in plans %}<option value="{{ p.id }}" {% if form.plan == p.id %}selected{% endif %}>{{ p.name }}{% if p.price != "Let's talk" %} — {{ p.price }}/mo{% endif %}</option>{% endfor %}
+                    <option value="">Elige un plan</option>
+                    {% for p in plans %}<option value="{{ p.id }}" {% if form.plan == p.id %}selected{% endif %}>{{ p.name }}{% if p.price != "Let's talk" %} — {{ p.price }}/mes{% endif %}</option>{% endfor %}
                 </select>
-                <textarea name="message" rows="4" placeholder="What does your business do, and what should the agent help with?">{{ form.message|default:'' }}</textarea>
-                <button type="submit" class="btn-primary">Request my agent</button>
-                <p class="gs-note">Founding clients get setup free — you're only billed the monthly plan once your agent is live, securely via Stripe.</p>
+                <textarea name="message" rows="4" placeholder="¿Qué hace tu negocio y en qué quieres que ayude el agente?">{{ form.message|default:'' }}</textarea>
+                <button type="submit" class="btn-primary">Solicitar mi agente</button>
+                <p class="gs-note">Los clientes fundadores no pagan configuración — solo se te cobra el plan mensual cuando tu agente esté en vivo, de forma segura por Stripe.</p>
             </form>
         </div>
     </div>
@@ -207,12 +207,12 @@
                     history.push({role:'assistant', content: res.data.reply});
                 } else {
                     thinking.className = 'gs-demo__b gs-demo__b--err';
-                    thinking.textContent = (res.data && res.data.error) || 'Something went wrong. Try again.';
+                    thinking.textContent = (res.data && res.data.error) || 'Algo salió mal. Intenta de nuevo.';
                     history.pop();
                 }
             }).catch(function(){
                 thinking.className = 'gs-demo__b gs-demo__b--err';
-                thinking.textContent = 'Network error. Try again.';
+                thinking.textContent = 'Error de conexión. Intenta de nuevo.';
                 history.pop();
             }).finally(function(){
                 input.disabled = false; btn.disabled = false; input.focus();

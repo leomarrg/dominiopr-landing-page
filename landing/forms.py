@@ -34,8 +34,8 @@ class ClientForm(forms.ModelForm):
         # The slug is derived from the name; the user never has to invent one.
         self.fields['slug'].required = False
         self.fields['slug'].help_text = (
-            'The public ?key= in your embed snippet. Leave blank to auto-generate '
-            'from the name — it will be made unique automatically.')
+            'El ?key= público de tu snippet de instalación. Déjalo en blanco para '
+            'generarlo automáticamente del nombre — se hace único por sí solo.')
 
     def clean_slug(self):
         # Normalize whatever was typed (spaces, accents, casing). Blank is OK:
@@ -74,18 +74,18 @@ class ContactForm(forms.ModelForm):
 
     def clean_website(self):
         if self.cleaned_data.get('website'):
-            raise forms.ValidationError('Spam detected.')
+            raise forms.ValidationError('Se detectó spam.')
         return ''
 
     def clean_phone(self):
         # Normalize to E.164, or reject garbage. Blank stays blank (optional).
         normalized = normalize_phone(self.cleaned_data.get('phone', ''))
         if normalized is None:
-            raise forms.ValidationError('Enter a valid phone number, e.g. (787) 123-4567.')
+            raise forms.ValidationError('Escribe un número de teléfono válido, ej. (787) 123-4567.')
         return normalized
 
     def clean(self):
         cleaned = super().clean()
         if not cleaned.get('email') and not cleaned.get('phone'):
-            raise forms.ValidationError('Please leave an email or a phone number so we can reach you.')
+            raise forms.ValidationError('Déjanos un email o un número de teléfono para poder contactarte.')
         return cleaned

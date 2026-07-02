@@ -72,10 +72,10 @@
         + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.6-.8L3 21l1.9-5.4A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z"/></svg>'
         + '<span>Chat</span></button>'
         + '<div class="dmn-panel" role="dialog" aria-label="Chat">'
-        + '<div class="dmn-head"><div><b></b><small>AI assistant</small></div><button class="dmn-x" aria-label="Close">&times;</button></div>'
+        + '<div class="dmn-head"><div><b></b><small>Asistente de IA</small></div><button class="dmn-x" aria-label="Cerrar">&times;</button></div>'
         + '<div class="dmn-log"></div>'
-        + '<form class="dmn-form"><input class="dmn-input" type="text" maxlength="2000" placeholder="Type your question..." autocomplete="off"><button class="dmn-send" type="submit" aria-label="Send">&#10148;</button></form>'
-        + '<p class="dmn-foot">AI assistant</p></div>';
+        + '<form class="dmn-form"><input class="dmn-input" type="text" maxlength="2000" placeholder="Escribe tu pregunta..." autocomplete="off"><button class="dmn-send" type="submit" aria-label="Enviar">&#10148;</button></form>'
+        + '<p class="dmn-foot">Asistente de IA</p></div>';
     document.body.appendChild(root);
     root.querySelector('.dmn-head b').textContent = CFG.name;
 
@@ -129,9 +129,9 @@
             .then(function (x) {
                 typing(false);
                 if (x.ok && x.d.reply) { bubble('assistant', x.d.reply); messages.push({ role: 'assistant', content: x.d.reply }); }
-                else { bubble('assistant', x.d.error || 'Sorry, something went wrong.'); }
+                else { bubble('assistant', x.d.error || 'Perdona, algo salió mal.'); }
             })
-            .catch(function () { typing(false); bubble('assistant', 'Connection issue — please try again.'); })
+            .catch(function () { typing(false); bubble('assistant', 'Problema de conexión — trata de nuevo.'); })
             .then(function () { setBusy(false); input.focus(); });
     }
 

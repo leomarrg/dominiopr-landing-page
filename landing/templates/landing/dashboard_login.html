@@ -1,10 +1,10 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DOMINIO — Sign in</title>
+    <title>DOMINIO — Iniciar sesión</title>
     <meta name="robots" content="noindex, nofollow">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,16 +15,16 @@
 <body class="dash-login-body">
     <div class="dash-login-card">
         <img src="{% static 'landing/images/logo/logo_home.PNG' %}" alt="DOMINIO">
-        <h1>Leads Dashboard</h1>
-        <p>Sign in to manage your leads</p>
+        <h1>Dashboard de Leads</h1>
+        <p>Inicia sesión para administrar tus leads</p>
         {% if form.errors %}
-        <div class="dash-login-error">Incorrect username or password. Try again.</div>
+        <div class="dash-login-error">Usuario o contraseña incorrectos. Intenta de nuevo.</div>
         {% endif %}
         <form method="post">
             {% csrf_token %}
-            <input type="text" name="username" placeholder="Username" autocomplete="username" required autofocus>
-            <input type="password" name="password" placeholder="Password" autocomplete="current-password" required>
-            <button type="submit">Sign in</button>
+            <input type="text" name="username" placeholder="Usuario" autocomplete="username" required autofocus>
+            <input type="password" name="password" placeholder="Contraseña" autocomplete="current-password" required>
+            <button type="submit">Iniciar sesión</button>
         </form>
     </div>
 </body>
