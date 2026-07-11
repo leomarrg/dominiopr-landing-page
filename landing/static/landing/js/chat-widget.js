@@ -23,17 +23,16 @@
     var greeted = false;
     var busy = false;
 
-    var GREETING = "Hi, welcome to DOMINIO. What are you looking to build? " +
-        "Pick one to get started, or just type your question. " +
-        "(Escríbeme en español si prefieres.)";
+    var GREETING = "¡Hola, bienvenido a DOMINIO! ¿Qué quieres construir? " +
+        "Escoge una opción para empezar, o escríbeme tu pregunta.";
 
     // Service quick-picks shown first, so visitors choose instead of typing.
     var SERVICE_OPTIONS = [
-        { label: 'Custom platform', message: "I'm interested in a custom operational platform." },
-        { label: 'Dashboards & data', message: "I'm interested in dashboards and reporting systems." },
-        { label: 'AI agent / automation', message: "I'm interested in an AI agent or automation." },
-        { label: 'Landing page & forms', message: "I need a landing page, forms, or a campaign system." },
-        { label: 'Strategy & consulting', message: "I'd like product strategy or technical consulting." }
+        { label: 'Plataforma a la medida', message: "Me interesa una plataforma operacional a la medida." },
+        { label: 'Dashboards y data', message: "Me interesan los dashboards y sistemas de reportes." },
+        { label: 'Agente de IA / automatización', message: "Me interesa un agente de IA o automatización." },
+        { label: 'Landing page y formularios', message: "Necesito una landing page, formularios o un sistema de campañas." },
+        { label: 'Estrategia y consultoría', message: "Me gustaría estrategia de producto o consultoría técnica." }
     ];
 
     function openPanel() {
@@ -147,13 +146,13 @@
                     messages.push({ role: 'assistant', content: r.data.reply });
                 } else {
                     addBubble('assistant', r.data.error ||
-                        'Sorry, something went wrong. Please try the contact form below.');
+                        'Perdona, algo salió mal. Usa el formulario de contacto aquí abajo.');
                 }
             })
             .catch(function () {
                 hideTyping();
                 addBubble('assistant',
-                    'Connection issue — please check your network or use the contact form.');
+                    'Problema de conexión — revisa tu red o usa el formulario de contacto.');
             })
             .then(function () {
                 setBusy(false);

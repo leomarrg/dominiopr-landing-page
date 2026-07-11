@@ -1671,8 +1671,13 @@ section > .container > .section-tag {
         margin-bottom: 4px;
     }
 
+    /* Mobile: rotate LINEARLY so the 90deg midpoint lands at exactly half the
+       duration (0.45s). The opacity backface-emulation below swaps faces at 0.45s,
+       so a non-linear ease-out (which crosses 90deg at ~0.18s) would hide the front
+       long before the back fades in — the card blanks out mid-flip. Linear keeps
+       the rotation and the opacity swap in sync. */
     .bento-item--flippable .bento-flip-inner {
-        transition: transform 0.9s cubic-bezier(0.22, 0.61, 0.36, 1);
+        transition: transform 0.9s linear;
     }
 
     .bento-item--flippable.flipped {
@@ -1694,6 +1699,12 @@ section > .container > .section-tag {
     /* Visual card flip: disable hover, use tap (.flipped) */
     .visual-card:hover .visual-flip-inner {
         transform: none;
+    }
+
+    /* Same as the bento flip: linear rotation so 90deg lands at half the duration
+       (0.3s), in sync with the opacity backface-emulation swap below. */
+    .visual-card .visual-flip-inner {
+        transition: transform 0.6s linear;
     }
 
     .visual-card.flipped .visual-flip-inner {

@@ -1,10 +1,10 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DOMINIO — {% if instance %}Edit agent{% else %}New agent{% endif %}</title>
+    <title>DOMINIO — {% if instance %}Editar agente{% else %}Nuevo agente{% endif %}</title>
     <meta name="robots" content="noindex, nofollow">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'landing/css/dashboard.css' %}">
@@ -53,7 +53,7 @@
 <body class="dash-body">
     {% include 'landing/_dash_nav.html' with active='agents' %}
     <main class="dash-main">
-        <h1 class="dash-h1">{% if instance %}Edit “{{ instance.name }}”{% else %}New agent{% endif %}</h1>
+        <h1 class="dash-h1">{% if instance %}Editar “{{ instance.name }}”{% else %}Nuevo agente{% endif %}</h1>
         <div class="cform-layout">
             <form class="cform" method="post" novalidate>
                 {% csrf_token %}
@@ -66,25 +66,25 @@
                 </div>
                 {% endfor %}
                 <div class="cactions">
-                    <button type="submit" class="save-btn">Save agent</button>
-                    <a href="{% url 'clients_list' %}" class="cancel-btn">Cancel</a>
+                    <button type="submit" class="save-btn">Guardar agente</button>
+                    <a href="{% url 'clients_list' %}" class="cancel-btn">Cancelar</a>
                 </div>
             </form>
 
             <aside class="wpv" aria-hidden="true">
-                <div class="wpv-label">Live preview</div>
+                <div class="wpv-label">Vista previa en vivo</div>
                 <div class="wpv-panel" data-accent-border=".3">
                     <div class="wpv-head" data-accent-border=".18">
-                        <div><b class="wpv-name">Your agent</b><small>AI assistant</small></div>
+                        <div><b class="wpv-name">Tu agente</b><small>Asistente AI</small></div>
                         <span class="wpv-x">&times;</span>
                     </div>
                     <div class="wpv-log">
-                        <div class="wpv-b wpv-a wpv-greet" data-accent-border=".16">Hi! How can I help you today?</div>
-                        <div class="wpv-b wpv-u" data-accent>Do you take reservations?</div>
-                        <div class="wpv-b wpv-a" data-accent-border=".16">Yes — tell me the date and time and I'll set it up.</div>
+                        <div class="wpv-b wpv-a wpv-greet" data-accent-border=".16">¡Hola! ¿En qué te puedo ayudar hoy?</div>
+                        <div class="wpv-b wpv-u" data-accent>¿Toman reservaciones?</div>
+                        <div class="wpv-b wpv-a" data-accent-border=".16">Sí — dime la fecha y la hora y te la coordino.</div>
                     </div>
                     <div class="wpv-form" data-accent-border=".14">
-                        <span class="wpv-input" data-accent-border=".25">Type your question…</span>
+                        <span class="wpv-input" data-accent-border=".25">Escribe tu pregunta…</span>
                         <span class="wpv-send" data-accent>&#10148;</span>
                     </div>
                 </div>
@@ -201,8 +201,8 @@
                 var inp = q('.wpv-input'); inp.style.background = t.alt; inp.style.color = t.muted; inp.style.border = '1px solid ' + t.borderBubble;
                 var send = q('.wpv-send'); send.style.background = t.accent; send.style.color = t.onAccent;
                 var fab = q('.wpv-fab'); fab.style.background = t.fabBg; fab.style.color = t.fabText;
-                q('.wpv-name').textContent = (nameEl && nameEl.value.trim()) || 'Your agent';
-                q('.wpv-greet').textContent = (greetEl && greetEl.value.trim()) || 'Hi! How can I help you today?';
+                q('.wpv-name').textContent = (nameEl && nameEl.value.trim()) || 'Tu agente';
+                q('.wpv-greet').textContent = (greetEl && greetEl.value.trim()) || '¡Hola! ¿En qué te puedo ayudar hoy?';
             }
             [colorEl, surfEl, headEl, nameEl, greetEl].forEach(function (el) {
                 if (el) el.addEventListener('input', apply);
