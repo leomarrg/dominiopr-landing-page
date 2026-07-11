@@ -55,3 +55,31 @@ class ContactFormTests(TestCase):
     def test_get_renders_form(self):
         resp = self.client.get(reverse('index'))
         self.assertEqual(resp.status_code, 200)
+
+    def test_page_url_captured_from_referer(self):
+        self.client.post(reverse('index'), VALID_PAYLOAD,
+                         HTTP_REFERER='https://dominiopr.com/#contact')
+        sub = ContactSubmission.objects.get()
+        self.assertEqual(sub.page_url, 'https://dominiopr.com/#contact')
+
+    def test_notification_email_links_to_dashboard(self):
+        self.client.post(reverse('index'), VALID_PAYLOAD)
+        notify = next(m for m in mail.outbox if m.to == ['leads@example.com'])
+        self.assertIn('/dashboard/', notify.body)
+
+    def test_it_services_choice_accepted(self):
+        payload = dict(VALID_PAYLOAD, service='it-services')
+        resp = self.client.post(reverse('index'), payload)
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(ContactSubmission.objects.get().service, 'it-services')
+
+
+class PageUrlHelperTests(TestCase):
+    def test_rejects_non_http_schemes_and_junk(self):
+        from .views import _page_url
+        self.assertEqual(_page_url('javascript:alert(1)'), '')
+        self.assertEqual(_page_url('data:text/html,x'), '')
+        self.assertEqual(_page_url(None), '')
+        self.assertEqual(_page_url(123), '')
+        self.assertEqual(_page_url('https://ok.example/page'), 'https://ok.example/page')
+        self.assertEqual(len(_page_url('https://ok.example/' + 'a' * 600)), 500)

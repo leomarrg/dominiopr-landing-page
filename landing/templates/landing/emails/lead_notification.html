@@ -51,6 +51,14 @@
     </td>
   </tr>
   {% endif %}
+  {% if submission.page_url %}
+  <tr>
+    <td style="padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.08);">
+      <span style="display:block; color:rgba(255,255,255,0.45); font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Page</span>
+      <a href="{{ submission.page_url }}" style="color:#3bc0c7; font-size:15px; text-decoration:none;">{{ submission.page_url|truncatechars:70 }}</a>
+    </td>
+  </tr>
+  {% endif %}
 </table>
 
 <div style="margin-top:24px; padding:20px 22px; background:rgba(59,192,199,0.06); border-radius:10px; border-left:3px solid #3bc0c7;">
@@ -67,10 +75,37 @@
         Reply to {{ submission.name }}
       </a>
     </td>
+    <td style="padding-left:12px;">
+      <a href="{{ dashboard_url }}"
+         style="display:inline-block; padding:12px 24px; font-family:'Helvetica Neue',Arial,sans-serif; color:#3bc0c7; font-size:14px; font-weight:700; text-decoration:none; border:1px solid rgba(59,192,199,0.5); border-radius:8px;">
+        View in dashboard
+      </a>
+    </td>
   </tr>
 </table>
 {% elif submission.phone %}
 <p style="margin:30px 0 0; color:rgba(255,255,255,0.82); font-size:15px;">No email — call {{ submission.name }} at
   <a href="tel:{{ submission.phone }}" style="color:#3bc0c7; text-decoration:none;">{{ submission.phone }}</a>.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:18px;">
+  <tr>
+    <td style="border-radius:8px; background:#3bc0c7;">
+      <a href="{{ dashboard_url }}"
+         style="display:inline-block; padding:13px 30px; font-family:'Helvetica Neue',Arial,sans-serif; color:#0b0d12; font-size:14px; font-weight:700; text-decoration:none;">
+        View in dashboard
+      </a>
+    </td>
+  </tr>
+</table>
+{% else %}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:30px;">
+  <tr>
+    <td style="border-radius:8px; background:#3bc0c7;">
+      <a href="{{ dashboard_url }}"
+         style="display:inline-block; padding:13px 30px; font-family:'Helvetica Neue',Arial,sans-serif; color:#0b0d12; font-size:14px; font-weight:700; text-decoration:none;">
+        View in dashboard
+      </a>
+    </td>
+  </tr>
+</table>
 {% endif %}
 {% endblock %}

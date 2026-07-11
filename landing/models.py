@@ -69,6 +69,7 @@ class ContactSubmission(models.Model):
         ('ai-automation', 'AI, Automation & Workflow Optimization'),
         ('landing-campaigns', 'Landing Pages, Forms & Campaign Systems'),
         ('consulting', 'Product Strategy & Technical Consulting'),
+        ('it-services', 'Technology Management & IT Support'),
     ]
     BUDGET_CHOICES = [
         ('under-1000', 'Under $1,000'),
@@ -109,6 +110,9 @@ class ContactSubmission(models.Model):
     # Where the lead came from, and how far along it is (mini-CRM).
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='contact_form', db_index=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new', db_index=True)
+    # Exact page the visitor was on when the lead was captured (widget sends
+    # location.href; forms fall back to the Referer header). Blank on old leads.
+    page_url = models.CharField(max_length=500, blank=True)
 
     # Metadata (captured server-side, not from the user)
     ip_address = models.GenericIPAddressField(null=True, blank=True)

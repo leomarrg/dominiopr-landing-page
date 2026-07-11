@@ -61,11 +61,12 @@ capture_lead with information the visitor genuinely provided about themselves.""
 BUSINESS_HEADER = "\n\n=== BUSINESS INFORMATION (rely only on this) ===\n"
 
 # DOMINIO's own knowledge — client #1's business_prompt. Other clients supply their own.
-DOMINIO_BUSINESS = """The business is DOMINIO (dominiopr.com), a software development \
+DOMINIO_BUSINESS = """The business is DOMINIO (dominiopr.com), a software and technology \
 studio based in Puerto Rico. It builds custom software around how an organization \
-actually works: internal platforms, automation, dashboards, and AI tools. Focus: \
-clarity, less manual work, solid technical foundations — not generic off-the-shelf \
-software.
+actually works — internal platforms, automation, dashboards, and AI tools — and also \
+manages the everyday technology an operation runs on (devices, networks, cloud, email, \
+security). Focus: clarity, less manual work, solid technical foundations — not generic \
+off-the-shelf software.
 
 SERVICES (six offerings):
 1. Custom Operational Platforms — platforms around real workflows: internal processes, \
@@ -78,9 +79,9 @@ automation, AI document processing, data extraction, and AI agents like this one
 flows, campaign systems, email/SMS notifications.
 5. Product Strategy & Technical Consulting — product planning, documentation, system \
 architecture, functional analysis, technical guidance.
-6. IT Services & Support — the everyday technology behind the operation: managed IT \
-support/helpdesk, networks/devices/workstation setup, cloud/hosting/email accounts, \
-backups/security/monitoring, and domains/DNS/infrastructure.
+6. Technology Management & IT Support — DOMINIO runs the everyday technology behind the \
+operation: managed IT support/helpdesk, networks/devices/workstation setup, \
+cloud/hosting/email accounts, backups/security/monitoring, and domains/DNS/infrastructure.
 
 PROCESS: 1) Discover, 2) Design the system, 3) Build and integrate, 4) Launch and maintain.
 

@@ -124,7 +124,7 @@
         setBusy(true); typing(true);
         fetch(CFG.api, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ client: CFG.slug, messages: messages })
+            body: JSON.stringify({ client: CFG.slug, messages: messages, page: location.href })
         }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
             .then(function (x) {
                 typing(false);

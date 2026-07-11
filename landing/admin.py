@@ -44,7 +44,7 @@ class ContactSubmissionAdmin(admin.ModelAdmin):
     ordering = ('-created_at',)
     readonly_fields = (
         'name', 'email', 'company', 'service', 'budget', 'message',
-        'ip_address', 'user_agent', 'created_at',
+        'page_url', 'ip_address', 'user_agent', 'created_at',
     )
 
     # Leads are records: don't allow creating/editing them by hand in the admin.

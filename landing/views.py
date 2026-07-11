@@ -104,6 +104,17 @@ def _client_ip(request):
     return request.META.get('REMOTE_ADDR')
 
 
+def _page_url(raw):
+    """Normalize a visitor-page URL (widget location.href or Referer header):
+    only http(s), trimmed to the model's 500-char cap. Empty string otherwise."""
+    if not isinstance(raw, str):
+        return ''
+    raw = raw.strip()
+    if not raw.lower().startswith(('http://', 'https://')):
+        return ''
+    return raw[:500]
+
+
 def _send_html_email(subject, to, html_template, txt_template, context, reply_to=None):
     """Send a multipart (text + HTML) email. Logs and swallows errors.
 
@@ -138,7 +149,13 @@ def _send_lead_emails(submission, notify_to=None):
     if notify_to is None:
         notify_to = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
     business = submission.client.name if submission.client else 'DOMINIO'
-    context = {'submission': submission, 'business': business}
+    context = {
+        'submission': submission,
+        'business': business,
+        # Direct link to the leads dashboard so the client can manage the lead
+        # (status, reply) right from the notification email.
+        'dashboard_url': settings.SITE_URL + reverse('dashboard'),
+    }
 
     # 1) Internal notification to the business inbox.
     if notify_to:
@@ -288,6 +305,7 @@ def index(request):
             submission.client = Client.objects.filter(slug='dominio').first()
             submission.ip_address = _client_ip(request)
             submission.user_agent = request.META.get('HTTP_USER_AGENT', '')[:300]
+            submission.page_url = _page_url(request.META.get('HTTP_REFERER', ''))
             submission.save()
             _send_lead_emails(submission)
             messages.success(
@@ -301,7 +319,7 @@ def index(request):
     return render(request, 'landing/index.html', {'form': form})
 
 
-def _chat_lead_handler(request, client_obj=None):
+def _chat_lead_handler(request, client_obj=None, page_url=''):
     """Build the callback the agent invokes when it captures a lead in chat.
 
     Saves a ContactSubmission linked to `client_obj` and emails that client's
@@ -361,6 +379,7 @@ def _chat_lead_handler(request, client_obj=None):
             source='chat',
             ip_address=ip if ip != 'unknown' else None,
             user_agent=request.META.get('HTTP_USER_AGENT', '')[:300],
+            page_url=page_url,
         )
         submission.save()
         _send_lead_emails(submission, notify_to=notify_to)
@@ -518,7 +537,11 @@ def chat_api(request):
         except ValueError:
             cache.set(day_key, 1, 60 * 60 * 26)
 
-    handlers = {'capture_lead': _chat_lead_handler(request, client_obj)}
+    # Page the visitor is chatting from (widget sends location.href) — lets the
+    # client see exactly which page produced the lead.
+    page = _page_url(payload.get('page'))
+
+    handlers = {'capture_lead': _chat_lead_handler(request, client_obj, page_url=page)}
     if client_obj and client_obj.enable_bookings:
         handlers['create_booking'] = _booking_handler(request, client_obj)
 
@@ -674,6 +697,7 @@ def get_started(request):
                      f'Website: {website or "—"}\n\n{details}'),
             ip_address=_client_ip(request),
             user_agent=request.META.get('HTTP_USER_AGENT', '')[:300],
+            page_url=_page_url(request.META.get('HTTP_REFERER', '')),
         )
         submission.save()
         _send_lead_emails(submission)

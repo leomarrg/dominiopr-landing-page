@@ -1,4 +1,4 @@
-NEW LEAD — {{ business|default:"DOMINIO" }}
+{% autoescape off %}NEW LEAD — {{ business|default:"DOMINIO" }}
 Received {{ submission.created_at|date:"M j, Y \a\t g:i A" }}
 
 Name:    {{ submission.name }}
@@ -7,10 +7,14 @@ Phone:   {{ submission.phone|default:"-" }}
 Company: {{ submission.company|default:"-" }}
 Service: {{ submission.get_service_display }}
 Budget:  {{ submission.get_budget_display|default:"-" }}
+Page:    {{ submission.page_url|default:"-" }}
 
 Message:
 {{ submission.message }}
 
+Manage this lead (status, reply, history) in your dashboard:
+{{ dashboard_url }}
+
 --
 Reply directly to this email to respond to {{ submission.name }}.
-{% if business and business != "DOMINIO" %}{{ business }} · Powered by DOMINIO{% else %}DOMINIO · dominiopr.com{% endif %}
+{% if business and business != "DOMINIO" %}{{ business }} · Powered by DOMINIO{% else %}DOMINIO · dominiopr.com{% endif %}{% endautoescape %}

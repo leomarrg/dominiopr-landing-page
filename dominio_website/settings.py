@@ -49,6 +49,9 @@ CSRF_TRUSTED_ORIGINS = [
     ).split(',') if o.strip()
 ]
 
+# Public base URL for links built OUTSIDE a request cycle (emails, jobs).
+SITE_URL = os.environ.get('DJANGO_SITE_URL', 'https://dominiopr.com').rstrip('/')
+
 
 # ============================================================
 # APPS / MIDDLEWARE

@@ -89,6 +89,7 @@
                                 {% if lead.company %}<dt>Company</dt><dd>{{ lead.company }}</dd>{% endif %}
                                 {% if lead.get_budget_display %}<dt>Budget</dt><dd>{{ lead.get_budget_display }}</dd>{% endif %}
                                 <dt>Source</dt><dd>{{ lead.get_source_display }}</dd>
+                                {% if lead.page_url %}<dt>Page</dt><dd><a href="{{ lead.page_url }}" target="_blank" rel="noopener">{{ lead.page_url|truncatechars:60 }}</a></dd>{% endif %}
                                 <dt>Received</dt><dd>{{ lead.created_at|date:"M d, Y · g:i A" }}</dd>
                             </dl>
 
