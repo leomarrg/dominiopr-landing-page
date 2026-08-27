@@ -329,6 +329,20 @@ class Subscription(models.Model):
     # For Stripe: mirrored from the subscription. For ATH/manual: set by hand —
     # the reconcile job warns before it expires and marks past_due after.
     current_period_end = models.DateTimeField(null=True, blank=True)
+    # What the card was actually charged on the FIRST invoice, in cents, copied
+    # from the Checkout Session at provisioning time. The printed receipt used
+    # to be derived from the price table, which silently ignored any promotion
+    # code — a customer paying $1.34 with a coupon was shown $667.89. Stored
+    # rather than fetched so the welcome page never waits on the Stripe API.
+    # NULL = provisioned before this existed (or ATH/manual): fall back to the
+    # price table.
+    initial_subtotal_cents = models.IntegerField(null=True, blank=True)
+    initial_discount_cents = models.IntegerField(null=True, blank=True)
+    initial_tax_cents = models.IntegerField(null=True, blank=True)
+    initial_total_cents = models.IntegerField(null=True, blank=True)
+    # Did this checkout include the one-time install fee? The welcome email
+    # must not offer "install it yourself" to someone who just paid us to do it.
+    setup_fee_charged = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

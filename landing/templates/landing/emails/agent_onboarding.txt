@@ -2,7 +2,7 @@ Your AI agent is live, {{ client.name }}.
 
 Install it on your website by pasting this one line just before </body>:
 
-{{ embed }}
+{% autoescape off %}{{ embed }}{% endautoescape %}
 
 That's it — your agent will appear on your site, answer visitors 24/7, and email you every lead.
 

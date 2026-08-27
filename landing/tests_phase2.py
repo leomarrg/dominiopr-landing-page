@@ -1920,6 +1920,78 @@ class ReceiptTests(TestCase):
         """'Custom' is quote-only — inventing a price would be a fake receipt."""
         self.assertIsNone(views._receipt(self._sub(plan='custom')))
 
+    @override_settings(STRIPE_PRICES={'starter:monthly': 'p', 'starter:setup': 's'})
+    def test_a_discounted_purchase_shows_what_was_really_paid(self):
+        """The bug this exists to stop: a real $1.34 coupon purchase printed a
+        $667.89 receipt, because the price table cannot see a promotion code and
+        allow_promotion_codes is on for every checkout."""
+        sub = self._sub(plan='starter')
+        Subscription.objects.filter(pk=sub.pk).update(
+            initial_subtotal_cents=59900, initial_discount_cents=59780,
+            initial_tax_cents=14, initial_total_cents=134)
+        sub.refresh_from_db()
+        with patch.object(payments, 'tax_percent', return_value=11.5):
+            r = views._receipt(sub)
+        self.assertEqual(r['subtotal'], '599.00')
+        self.assertEqual(r['discount'], '597.80')
+        self.assertEqual(r['total'], '1.34')
+
+    @override_settings(STRIPE_PRICES={'pro:monthly': 'p', 'pro:setup': 's'})
+    def test_no_discount_means_no_discount_line(self):
+        sub = self._sub()
+        Subscription.objects.filter(pk=sub.pk).update(
+            initial_subtotal_cents=129900, initial_discount_cents=0,
+            initial_tax_cents=14939, initial_total_cents=144839)
+        sub.refresh_from_db()
+        with patch.object(payments, 'tax_percent', return_value=11.5):
+            r = views._receipt(sub)
+        self.assertEqual(r['discount'], '')
+        self.assertEqual(r['total'], '1,448.39')
+
+    def test_charged_amounts_are_read_off_the_checkout_session(self):
+        got = views._charged_from_session({
+            'amount_subtotal': 59900, 'amount_total': 134,
+            'total_details': {'amount_discount': 59780, 'amount_tax': 14}})
+        self.assertEqual(got['initial_total_cents'], 134)
+        self.assertEqual(got['initial_discount_cents'], 59780)
+        # A session with no totals must not zero the record out.
+        self.assertEqual(views._charged_from_session({'id': 'cs_x'}), {})
+
+
+class WelcomeEmailInstallTests(TestCase):
+    """Someone who just paid $500-$2,500 for installation must not be handed
+    instructions to do it themselves — that reads as us returning the work."""
+
+    def setUp(self):
+        self.c = Client.objects.create(slug='acme', name='Acme PR', system_prompt='x',
+                                       notify_email='ana@acme.com')
+
+    def _send(self, setup_fee_charged):
+        mail.outbox = []
+        views._send_welcome_email(
+            self.c, 'Pro', None, 'https://x/instalar',
+            '<script src="https://dominiopr.com/widget.js?key=acme" async></script>',
+            setup_fee_charged=setup_fee_charged)
+        return mail.outbox[0].body
+
+    def test_paid_install_hides_the_do_it_yourself_snippet(self):
+        body = self._send(True)
+        self.assertIn('nosotros la hacemos', body)
+        self.assertNotIn('PLAN B', body)
+        self.assertNotIn('widget.js', body)
+
+    def test_without_a_setup_fee_the_snippet_stays(self):
+        body = self._send(False)
+        self.assertIn('PLAN B', body)
+        self.assertIn('widget.js', body)
+
+    def test_the_snippet_is_pasteable_not_html_escaped(self):
+        """The plain-text part used to render &lt;script ...&gt;, so anyone who
+        copied it from a text-only mail client pasted something inert."""
+        body = self._send(False)
+        self.assertIn('<script src="https://dominiopr.com/widget.js?key=acme"', body)
+        self.assertNotIn('&lt;script', body)
+
 
 class CheckoutTaxTests(TestCase):
     """IVU is charged ON TOP of the advertised price. The failure mode here is

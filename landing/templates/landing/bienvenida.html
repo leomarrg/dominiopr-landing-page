@@ -119,6 +119,9 @@
                     {% endfor %}
                     <hr class="rcpt-sep">
                     <div class="rcpt-row"><span>Subtotal</span><span>${{ receipt.subtotal }}</span></div>
+                    {% if receipt.discount %}
+                    <div class="rcpt-row"><span>Descuento</span><span>&minus;${{ receipt.discount }}</span></div>
+                    {% endif %}
                     {% if receipt.tax_label %}
                     <div class="rcpt-row"><span>{{ receipt.tax_label }}</span><span>${{ receipt.tax }}</span></div>
                     {% endif %}

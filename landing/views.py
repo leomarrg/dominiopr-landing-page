@@ -300,7 +300,8 @@ def _embed_snippet(base_url, slug):
     return f'<script src="{base_url.rstrip("/")}/widget.js?key={slug}" async></script>'
 
 
-def _send_welcome_email(client, plan_name, login, install_url, embed):
+def _send_welcome_email(client, plan_name, login, install_url, embed,
+                        setup_fee_charged=False):
     """Post-payment welcome: what was bought, dashboard credentials and the
     'tell us how to access your site' link. Replaces the old install email for
     self-serve clients (DOMINIO installs the widget; the 'live' email follows)."""
@@ -311,7 +312,8 @@ def _send_welcome_email(client, plan_name, login, install_url, embed):
         html_template='landing/emails/agent_welcome.html',
         txt_template='landing/emails/agent_welcome.txt',
         context={'client': client, 'plan_name': plan_name, 'login': login,
-                 'install_url': install_url, 'embed': embed, 'setup_hours': 48},
+                 'install_url': install_url, 'embed': embed, 'setup_hours': 48,
+                 'setup_fee_charged': setup_fee_charged},
         reply_to=[reply_to] if reply_to else None,
     )
 
@@ -1084,26 +1086,40 @@ def _receipt(sub):
     if plan.get('setup') and payments.setup_price_id_for(sub.plan):
         lines.append({'label': 'Instalación y configuración',
                       'detail': 'Cargo único', 'amount': plan['setup']})
-    subtotal = Decimal(sum(li['amount'] for li in lines))
-    pct = payments.tax_percent()
-    # Match Stripe exactly: tax each line, round HALF UP, then add. Python's
-    # round() is banker's rounding on binary floats — 299 at 11.5% comes out a
-    # cent under what the card was charged, and a receipt that disagrees with
-    # the statement is worse than no receipt.
-    tax = Decimal('0')
-    if pct:
-        rate = Decimal(str(pct)) / 100
-        for li in lines:
-            tax += (Decimal(li['amount']) * rate).quantize(Decimal('0.01'), ROUND_HALF_UP)
     money = lambda v: f'{v:,.2f}'      # no humanize app just for a thousands sep
     for li in lines:
         li['amount_str'] = money(li['amount'])
+    pct = payments.tax_percent()
+    discount = Decimal('0')
+
+    if sub.initial_total_cents is not None:
+        # What Stripe actually charged. Authoritative, and the only version that
+        # survives a promotion code.
+        cents = lambda v: Decimal(v or 0) / 100
+        subtotal = cents(sub.initial_subtotal_cents)
+        discount = cents(sub.initial_discount_cents)
+        tax = cents(sub.initial_tax_cents)
+        total = cents(sub.initial_total_cents)
+    else:
+        # Older rows (and ATH/manual) have no stored amounts: fall back to the
+        # price table. Match Stripe exactly — tax each line, round HALF UP, then
+        # add. Python's round() is banker's rounding on binary floats and leaves
+        # $299 at 11.5% a cent under what the card was charged.
+        subtotal = Decimal(sum(li['amount'] for li in lines))
+        tax = Decimal('0')
+        if pct:
+            rate = Decimal(str(pct)) / 100
+            for li in lines:
+                tax += (Decimal(li['amount']) * rate).quantize(Decimal('0.01'), ROUND_HALF_UP)
+        total = subtotal + tax
+
     return {
         'lines': lines,
         'subtotal': money(subtotal),
+        'discount': money(discount) if discount else '',
         'tax_label': f'IVU {pct:g}%' if pct else '',
-        'tax': money(tax) if pct else '',
-        'total': money(subtotal + tax),
+        'tax': money(tax) if (pct or tax) else '',
+        'total': money(total),
         'ref': (sub.checkout_session_id or '')[-8:].upper(),
         'date': sub.created_at,
         'period_label': 'Anual' if sub.period == 'annual' else 'Mensual',
@@ -1148,8 +1164,27 @@ def _origins_from_website(website):
     return f'{bare}, www.{bare}'
 
 
+def _charged_from_session(obj):
+    """What the card was really charged, straight off the Checkout Session.
+
+    Deriving this from the price table instead is what made a $1.34 coupon
+    purchase print a $667.89 receipt: the table cannot see a promotion code,
+    and `allow_promotion_codes` is on for every checkout.
+    """
+    td = obj.get('total_details') or {}
+    total = obj.get('amount_total')
+    if total is None:
+        return {}
+    return {
+        'initial_subtotal_cents': obj.get('amount_subtotal'),
+        'initial_discount_cents': td.get('amount_discount') or 0,
+        'initial_tax_cents': td.get('amount_tax') or 0,
+        'initial_total_cents': total,
+    }
+
+
 def _provision_paid_client(request, *, email, plan, period, meta, cust_id, sub_id,
-                           session_id=''):
+                           session_id='', charged=None, setup_fee_charged=False):
     """The self-serve alta: turn a paid Stripe checkout into a tenant.
 
     Three cases, keyed on the payer's email:
@@ -1171,7 +1206,9 @@ def _provision_paid_client(request, *, email, plan, period, meta, cust_id, sub_i
         'plan': plan, 'period': period, 'method': 'stripe', 'status': 'active',
         'stripe_customer_id': cust_id, 'stripe_subscription_id': sub_id,
         'checkout_session_id': (session_id or '')[:120],
+        'setup_fee_charged': bool(setup_fee_charged),
     }
+    sub_defaults.update({k: v for k, v in (charged or {}).items() if v is not None})
 
     meta = meta or {}
     company = _single_line(meta.get('company'), 160) or email.split('@')[0][:160]
@@ -1296,7 +1333,8 @@ def _provision_paid_client(request, *, email, plan, period, meta, cust_id, sub_i
     # The temp password exists in exactly one place: this email. If it does not
     # send, the buyer has paid and cannot get in — so the result is checked, not
     # discarded, and the ops alert below is escalated.
-    welcome_sent = _send_welcome_email(client, _plan_name(plan), login, install_url, embed)
+    welcome_sent = _send_welcome_email(client, _plan_name(plan), login, install_url, embed,
+                                       setup_fee_charged=bool(setup_fee_charged))
     if not welcome_sent:
         logger.error('Welcome email FAILED for %s <%s> — the customer cannot log in',
                      client.slug, email)
@@ -1568,7 +1606,9 @@ def _handle_stripe_event(request, event_type, obj):
             try:
                 new_client, created = _provision_paid_client(
                     request, email=email, plan=plan, period=period, meta=meta,
-                    cust_id=cust_id, sub_id=sub_id, session_id=session_id)
+                    cust_id=cust_id, sub_id=sub_id, session_id=session_id,
+                    charged=_charged_from_session(obj),
+                    setup_fee_charged=bool(payments.setup_price_id_for(plan)))
                 _audit(request, 'stripe.checkout.completed', client=new_client,
                        target=sub_id,
                        result=f'{plan}/{period} ' + ('provisionado' if created else 'vinculado'))

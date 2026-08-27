@@ -13,12 +13,16 @@ Correo: {{ login.username }}{% if login.password %}
 Contraseña temporera: {{ login.password }}
 (Por favor cámbiala después de tu primer inicio de sesión.){% endif %}
 {% endif %}
-PLAN B — INSTALARLO TÚ
+{% if setup_fee_charged %}LA INSTALACIÓN VA POR NUESTRA CUENTA
+Ya la pagaste con tu plan: nosotros la hacemos. No tienes que tocar código.
+
+Si tu webmaster prefiere ponerlo él mismo hoy, dínoslo al responder y le
+mandamos la línea de código.{% else %}PLAN B — INSTALARLO TÚ
 Si prefieres instalarlo tú mismo (o tu webmaster), pega esta línea antes de </body>:
 
-{{ embed }}
+{% autoescape off %}{{ embed }}{% endautoescape %}{# En texto plano no hay HTML que escapar: sin esto el cliente copiaba &lt;script...&gt; y pegaba algo inerte. #}
 
-Si tienes webmaster, reenvíale este correo.
+Si tienes webmaster, reenvíale este correo.{% endif %}
 
 ¿Dudas? Responde a este correo.
 
