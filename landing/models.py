@@ -343,6 +343,10 @@ class Subscription(models.Model):
     # Did this checkout include the one-time install fee? The welcome email
     # must not offer "install it yourself" to someone who just paid us to do it.
     setup_fee_charged = models.BooleanField(default=False)
+    # Our own order id (DOM-2026-0007), independent of Stripe's. Everything
+    # identifying a sale used to be a Stripe id, so changing processor — or just
+    # reconciling with an accountant — would leave nothing to point at.
+    order_number = models.CharField(max_length=24, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

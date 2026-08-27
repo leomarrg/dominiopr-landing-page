@@ -39,6 +39,10 @@ WEBHOOK_EVENTS = [
     'checkout.session.async_payment_succeeded',
     'customer.subscription.updated',
     'customer.subscription.deleted',
+    # Money leaving the account. Without these a refunded customer — or one who
+    # charged back — keeps a working agent forever and nothing in the app knows.
+    'charge.refunded',
+    'charge.dispute.created',
 ]
 
 OK, WARN = '  OK ', ' WARN'

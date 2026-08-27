@@ -395,6 +395,60 @@ class StripeWebhookTests(TestCase):
         self.assertEqual(sub.status, 'active')
         self.assertTrue(self.client_obj.is_active)
 
+    # -- refunds and disputes -------------------------------------------
+    # Nobody listened for these until 2026-08-27: you could refund a customer
+    # in Stripe and their agent kept running, with no trace anywhere in the app.
+
+    def _paid_sub(self, cust='cus_r1'):
+        sub = Subscription.objects.create(
+            client=self.client_obj, plan='pro', period='monthly', status='active',
+            stripe_customer_id=cust, stripe_subscription_id='sub_r1',
+            order_number='DOM-2026-0009')
+        Client.objects.filter(pk=self.client_obj.pk).update(is_active=True)
+        return sub
+
+    def test_full_refund_stops_the_service(self):
+        sub = self._paid_sub()
+        self._post({'id': 'evt_ref', 'type': 'charge.refunded',
+                    'data': {'object': {'customer': 'cus_r1', 'amount': 66789,
+                                        'amount_refunded': 66789}}})
+        sub.refresh_from_db()
+        self.client_obj.refresh_from_db()
+        self.assertEqual(sub.status, 'canceled')
+        self.assertFalse(self.client_obj.is_active)
+        self.assertTrue([m for m in mail.outbox if 'Reembolso' in m.subject])
+
+    def test_partial_refund_does_not_stop_the_service(self):
+        """A goodwill $20 back is not the end of the relationship. Cutting the
+        agent there would punish the customer for our own apology."""
+        sub = self._paid_sub()
+        self._post({'id': 'evt_part', 'type': 'charge.refunded',
+                    'data': {'object': {'customer': 'cus_r1', 'amount': 66789,
+                                        'amount_refunded': 2000}}})
+        sub.refresh_from_db()
+        self.client_obj.refresh_from_db()
+        self.assertEqual(sub.status, 'active')
+        self.assertTrue(self.client_obj.is_active)
+        self.assertTrue([m for m in mail.outbox if 'parcial' in m.subject])
+
+    def test_dispute_stops_the_service_and_says_to_fight_it(self):
+        sub = self._paid_sub()
+        self._post({'id': 'evt_dis', 'type': 'charge.dispute.created',
+                    'data': {'object': {'charge': {'customer': 'cus_r1'},
+                                        'amount': 66789}}})
+        sub.refresh_from_db()
+        self.client_obj.refresh_from_db()
+        self.assertEqual(sub.status, 'canceled')
+        self.assertFalse(self.client_obj.is_active)
+        alert = [m for m in mail.outbox if 'DISPUTA' in m.subject][0]
+        self.assertIn('evidencia', alert.body)
+
+    def test_refund_for_an_unknown_customer_is_not_an_error(self):
+        resp = self._post({'id': 'evt_ghostref', 'type': 'charge.refunded',
+                           'data': {'object': {'customer': 'cus_nope',
+                                               'amount': 100, 'amount_refunded': 100}}})
+        self.assertEqual(resp.status_code, 200)
+
     def test_cancellation_of_an_unknown_subscription_is_not_an_error(self):
         """A subscription created outside the app (or already purged) must not
         500 the endpoint — Stripe would retry it forever."""
@@ -1947,6 +2001,23 @@ class ReceiptTests(TestCase):
             r = views._receipt(sub)
         self.assertEqual(r['discount'], '')
         self.assertEqual(r['total'], '1,448.39')
+
+    @override_settings(STRIPE_PRICES={'pro:monthly': 'p'})
+    def test_the_receipt_shows_our_order_number_not_a_stripe_id(self):
+        """Everything identifying a sale used to be a Stripe id. Changing
+        processor — or just reconciling with an accountant — left nothing ours
+        to point at."""
+        sub = views._stamp_order_number(self._sub())
+        self.assertRegex(sub.order_number, r'^DOM-\d{4}-\d{4}$')
+        with patch.object(payments, 'tax_percent', return_value=None):
+            self.assertEqual(views._receipt(sub)['ref'], sub.order_number)
+
+    def test_order_number_is_stamped_once_and_never_moves(self):
+        sub = views._stamp_order_number(self._sub())
+        first = sub.order_number
+        views._stamp_order_number(sub)
+        sub.refresh_from_db()
+        self.assertEqual(sub.order_number, first)
 
     def test_charged_amounts_are_read_off_the_checkout_session(self):
         got = views._charged_from_session({

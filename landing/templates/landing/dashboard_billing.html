@@ -46,9 +46,9 @@
     <div class="bill-portal">
         <form method="post" action="{% url 'billing_portal' %}">
             {% csrf_token %}
-            <button type="submit" class="save-btn">Administrar pago y facturas</button>
+            <button type="submit" class="save-btn">Administrar o cancelar mi suscripción</button>
         </form>
-        <p>Cambia tu tarjeta, ve tus facturas o cancela — en la página segura de Stripe.</p>
+        <p>Cambia de plan, actualiza tu tarjeta, ve tus facturas o cancela — en la página segura de Stripe.</p>
     </div>
     {% else %}
     <div class="bill-portal">

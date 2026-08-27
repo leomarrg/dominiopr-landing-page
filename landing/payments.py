@@ -140,6 +140,15 @@ def create_checkout_session(plan, period, email, success_url, cancel_url,
         data['line_items[0][tax_rates][0]'] = tax_rate
         if setup_price:
             data['line_items[1][tax_rates][0]'] = tax_rate
+    # The cancellation and refund terms have to be visible BEFORE paying, not
+    # only in a page nobody opens. Kept as custom_text rather than
+    # consent_collection on purpose: that one needs a ToS url configured in the
+    # Stripe account, and if it were ever missing every checkout would fail.
+    data['custom_text[submit][message]'] = (
+        'Suscripción con renovación automática; puedes cancelarla cuando quieras '
+        'desde tu dashboard. La instalación es un cargo único. Términos y '
+        'reembolsos: dominiopr.com/terms/'
+    )
     meta = {'plan': plan, 'period': period}
     for k, v in (metadata or {}).items():
         if v is None or v == '':

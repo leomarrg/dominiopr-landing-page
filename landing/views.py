@@ -1120,7 +1120,9 @@ def _receipt(sub):
         'tax_label': f'IVU {pct:g}%' if pct else '',
         'tax': money(tax) if (pct or tax) else '',
         'total': money(total),
-        'ref': (sub.checkout_session_id or '')[-8:].upper(),
+        # Our order id when it exists; the Stripe session tail only as fallback
+        # for rows created before order numbers existed.
+        'ref': sub.order_number or (sub.checkout_session_id or '')[-8:].upper(),
         'date': sub.created_at,
         'period_label': 'Anual' if sub.period == 'annual' else 'Mensual',
     }
@@ -1162,6 +1164,20 @@ def _origins_from_website(website):
         return ''
     bare = host[4:] if host.startswith('www.') else host
     return f'{bare}, www.{bare}'
+
+
+def _stamp_order_number(sub):
+    """Give the sale an id of ours (DOM-2026-0007), once and for good.
+
+    Derived from the pk so it needs no counter and cannot collide; stored, not
+    computed, so it survives a change of processor or of this format.
+    """
+    if sub is None or sub.order_number:
+        return sub
+    number = f'DOM-{(sub.created_at or timezone.now()).year}-{sub.pk:04d}'
+    Subscription.objects.filter(pk=sub.pk).update(order_number=number)
+    sub.order_number = number
+    return sub
 
 
 def _charged_from_session(obj):
@@ -1263,7 +1279,8 @@ def _provision_paid_client(request, *, email, plan, period, meta, cust_id, sub_i
     if mode == 'link':
         limits = PLAN_LIMITS.get(plan, PLAN_LIMITS['starter'])
         with transaction.atomic():
-            Subscription.objects.update_or_create(client=existing, defaults=sub_defaults)
+            _stamp_order_number(
+                Subscription.objects.update_or_create(client=existing, defaults=sub_defaults)[0])
             # The tier they just paid for has to actually apply here too —
             # otherwise a linked client keeps whatever caps it happened to have.
             Client.objects.filter(pk=existing.pk).update(
@@ -1310,7 +1327,8 @@ def _provision_paid_client(request, *, email, plan, period, meta, cust_id, sub_i
                     # Slug race with a concurrent create — recompute and retry.
                     if attempt == 2:
                         raise
-            Subscription.objects.update_or_create(client=client, defaults=sub_defaults)
+            _stamp_order_number(
+                Subscription.objects.update_or_create(client=client, defaults=sub_defaults)[0])
             if lead is not None and lead.status != 'won':
                 ContactSubmission.objects.filter(pk=lead.pk).update(status='won')
             username, temp_password = _provision_client_login(client)
@@ -1626,6 +1644,57 @@ def _handle_stripe_event(request, event_type, obj):
                               f'Subscription: {sub_id}\nCheckout: {session_id}\n'
                               f'Metadata: {json.dumps(meta, ensure_ascii=False)}\n\n'
                               f'Crea el agente en el Factory con notify_email={email}.'))
+
+    elif event_type in ('charge.refunded', 'charge.dispute.created'):
+        # Money left the account. Until now nobody listened for these, so a
+        # refunded customer — or one who charged back — kept a working agent
+        # forever, and the only trace was in Stripe.
+        obj_cust = str(obj.get('customer') or '')[:80]
+        # A dispute wraps the charge; a refund IS the charge.
+        if event_type == 'charge.dispute.created' and not obj_cust:
+            charge = obj.get('charge')
+            if isinstance(charge, dict):
+                obj_cust = str(charge.get('customer') or '')[:80]
+        sub = (Subscription.objects.filter(stripe_customer_id=obj_cust)
+               .select_related('client').first()) if obj_cust else None
+        if sub is None:
+            logger.warning('%s for unknown customer %s', event_type, _id_tail(obj_cust))
+            return
+        disputed = event_type == 'charge.dispute.created'
+        # A partial refund is a goodwill gesture, not the end of the relationship
+        # — only a full one stops the service.
+        amount = obj.get('amount') or 0
+        full = disputed or (obj.get('amount_refunded') or 0) >= amount > 0
+        _audit(request, f'stripe.{event_type.rsplit(".", 1)[-1]}', client=sub.client,
+               target=sub.stripe_subscription_id,
+               result='disputa' if disputed else ('reembolso total' if full
+                                                  else 'reembolso parcial'))
+        if not full:
+            if ops_email:
+                _send_plain_email(
+                    subject=f'[Stripe] Reembolso parcial — {sub.client.slug}',
+                    to=[ops_email],
+                    body=(f'Se reembolsaron ${(obj.get("amount_refunded") or 0)/100:,.2f} '
+                          f'de ${amount/100:,.2f} a {sub.client.name} '
+                          f'({sub.order_number or sub.stripe_subscription_id}).\n\n'
+                          f'El agente sigue activo: un reembolso parcial no corta '
+                          f'el servicio. Si debe cortarse, hazlo a mano.'))
+            return
+        Subscription.objects.filter(pk=sub.pk).update(status='canceled')
+        Client.objects.filter(pk=sub.client_id).update(is_active=False)
+        if ops_email:
+            _send_plain_email(
+                subject=(f'[Stripe] {"DISPUTA" if disputed else "Reembolso"} — '
+                         f'{sub.client.slug}'),
+                to=[ops_email],
+                body=(f'{"Un chargeback" if disputed else "Un reembolso total"} entro '
+                      f'para {sub.client.name} '
+                      f'({sub.order_number or sub.stripe_subscription_id}).\n\n'
+                      f'El widget quedo pausado y la suscripcion marcada cancelada.\n'
+                      + ('Responde la disputa en Stripe con la evidencia: orden, '
+                         'pago, usuario, fecha y servicio entregado. Tienes dias '
+                         'contados.\n' if disputed else '')
+                      + f'\nCliente: {sub.client.notify_email}\nPlan: {sub.plan}/{sub.period}'))
 
     elif event_type in ('customer.subscription.updated', 'customer.subscription.deleted'):
         sub_id = str(obj.get('id') or '')[:80]
