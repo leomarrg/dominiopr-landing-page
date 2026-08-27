@@ -72,6 +72,32 @@ def _request(method, path, data=None):
         raise StripeError(str(e))
 
 
+def tax_percent():
+    """IVU percentage as a float, or None when no tax rate is configured.
+
+    Cached for a day: the rate never changes in place (Stripe tax rates are
+    immutable), and the welcome page must not spend a 15 s API call — with a
+    Stripe outage it would just render the receipt without the tax line.
+    """
+    rate_id = getattr(settings, 'STRIPE_TAX_RATE_ID', '')
+    if not rate_id or not stripe_enabled():
+        return None
+    from django.core.cache import cache
+    key = f'taxpct:{rate_id}'
+    cached = cache.get(key)
+    if cached is not None:
+        return cached or None          # '' is the cached "lookup failed"
+    try:
+        pct = float(_request('GET', '/v1/tax_rates/' + urllib.parse.quote(rate_id, safe=''))
+                    .get('percentage') or 0) or None
+    except (StripeError, TypeError, ValueError):
+        logger.exception('Could not read tax rate %s', rate_id)
+        cache.set(key, '', 60)
+        return None
+    cache.set(key, pct or '', 60 * 60 * 24)
+    return pct
+
+
 def retrieve_price(price_id):
     """Fetch one Price. Used by `manage.py preflight` to prove the amount Stripe
     will charge matches the amount the site advertises."""

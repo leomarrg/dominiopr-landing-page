@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import secrets
+from decimal import Decimal, ROUND_HALF_UP
 from functools import wraps
 from urllib.parse import urlparse
 
@@ -1062,6 +1063,53 @@ def _plan_name(plan):
     return PLAN_BY_ID.get(plan, {}).get('name') or (plan or 'Starter').title()
 
 
+def _receipt(sub):
+    """Summary of the first charge, for the printed receipt on /bienvenida/.
+
+    Built from the plan table rather than from Stripe: the welcome page must
+    render instantly and must not break when Stripe is slow. It is a summary,
+    not the fiscal document — Stripe emails the real invoice — so the template
+    says so. The setup fee is listed only when a Price id is configured for it,
+    the same condition under which the checkout actually charged it.
+    """
+    plan = PLAN_BY_ID.get(sub.plan)
+    if not plan or plan.get('monthly') is None:
+        return None
+    recurring = plan['annual'] if sub.period == 'annual' else plan['monthly']
+    lines = [{
+        'label': f"DOMINIO {plan['name']}",
+        'detail': 'Un año' if sub.period == 'annual' else 'Un mes',
+        'amount': recurring,
+    }]
+    if plan.get('setup') and payments.setup_price_id_for(sub.plan):
+        lines.append({'label': 'Instalación y configuración',
+                      'detail': 'Cargo único', 'amount': plan['setup']})
+    subtotal = Decimal(sum(li['amount'] for li in lines))
+    pct = payments.tax_percent()
+    # Match Stripe exactly: tax each line, round HALF UP, then add. Python's
+    # round() is banker's rounding on binary floats — 299 at 11.5% comes out a
+    # cent under what the card was charged, and a receipt that disagrees with
+    # the statement is worse than no receipt.
+    tax = Decimal('0')
+    if pct:
+        rate = Decimal(str(pct)) / 100
+        for li in lines:
+            tax += (Decimal(li['amount']) * rate).quantize(Decimal('0.01'), ROUND_HALF_UP)
+    money = lambda v: f'{v:,.2f}'      # no humanize app just for a thousands sep
+    for li in lines:
+        li['amount_str'] = money(li['amount'])
+    return {
+        'lines': lines,
+        'subtotal': money(subtotal),
+        'tax_label': f'IVU {pct:g}%' if pct else '',
+        'tax': money(tax) if pct else '',
+        'total': money(subtotal + tax),
+        'ref': (sub.checkout_session_id or '')[-8:].upper(),
+        'date': sub.created_at,
+        'period_label': 'Anual' if sub.period == 'annual' else 'Mensual',
+    }
+
+
 def _slug_for_company(company):
     """Public widget key for a new self-serve client: slugified company name,
     never 'dominio' (reserved for our own site), deduped with -2, -3..."""
@@ -1625,7 +1673,7 @@ def bienvenida(request):
     context = {'paid': False, 'email': '', 'client': None, 'plan_name': '',
                'dashboard_url': settings.SITE_URL + reverse('dashboard'),
                'install_url': settings.SITE_URL + reverse('install'),
-               'poll': False, 'poll_url': '', 'error': ''}
+               'poll': False, 'poll_url': '', 'error': '', 'receipt': None}
     error_msg = ('No pudimos confirmar el pago. Si ya pagaste, revisa tu email — '
                  'te escribimos con los próximos pasos.')
     if not _SESSION_ID_RE.match(session_id):
@@ -1639,6 +1687,7 @@ def bienvenida(request):
         context.update({
             'paid': True, 'email': known.client.notify_email, 'client': known.client,
             'plan_name': _plan_name(known.plan), 'poll': False,
+            'receipt': _receipt(known),
         })
         return render(request, 'landing/bienvenida.html', context)
 

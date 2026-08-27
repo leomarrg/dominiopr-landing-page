@@ -1846,6 +1846,66 @@ class SignupMisconfigurationTests(TestCase):
         self.assertEqual([m for m in mail.outbox if 'Falta configurar' in m.subject], [])
 
 
+class ReceiptTests(TestCase):
+    """The printed receipt on /bienvenida/ must show the number the card was
+    actually charged. It is built from the plan table, not from Stripe, so
+    nothing but a test keeps the two in agreement."""
+
+    def setUp(self):
+        self.c = Client.objects.create(slug='acme', name='Acme PR', system_prompt='x',
+                                       notify_email='ana@acme.com')
+
+    def _sub(self, plan='pro', period='monthly'):
+        return Subscription.objects.create(
+            client=self.c, plan=plan, period=period, status='active',
+            checkout_session_id='cs_test_abcdefghIJKLMNOP')
+
+    @override_settings(STRIPE_PRICES={'pro:monthly': 'p', 'pro:setup': 's'})
+    def test_total_matches_what_stripe_charged(self):
+        """Verified against a real sandbox charge: $299 + $1,000 at 11.5% is
+        $1,448.39. Rounding the subtotal, or using round(), gives .38 — a
+        receipt one cent off the customer's statement."""
+        with patch.object(payments, 'tax_percent', return_value=11.5):
+            r = views._receipt(self._sub())
+        self.assertEqual(r['subtotal'], '1,299.00')
+        self.assertEqual(r['tax'], '149.39')
+        self.assertEqual(r['total'], '1,448.39')
+        self.assertEqual(r['tax_label'], 'IVU 11.5%')
+
+    @override_settings(STRIPE_PRICES={'starter:monthly': 'p', 'starter:setup': 's'})
+    def test_starter_matches_too(self):
+        with patch.object(payments, 'tax_percent', return_value=11.5):
+            r = views._receipt(self._sub(plan='starter'))
+        self.assertEqual(r['total'], '667.89')
+
+    @override_settings(STRIPE_PRICES={'pro:monthly': 'p', 'pro:setup': 's'})
+    def test_no_tax_configured_shows_no_tax_line(self):
+        with patch.object(payments, 'tax_percent', return_value=None):
+            r = views._receipt(self._sub())
+        self.assertEqual(r['tax_label'], '')
+        self.assertEqual(r['total'], '1,299.00')
+
+    @override_settings(STRIPE_PRICES={'pro:monthly': 'p'})     # no setup price
+    def test_setup_fee_is_omitted_when_it_was_not_charged(self):
+        """Listing a $1,000 install the checkout never charged would be a
+        receipt for money that was not taken."""
+        with patch.object(payments, 'tax_percent', return_value=None):
+            r = views._receipt(self._sub())
+        self.assertEqual(len(r['lines']), 1)
+        self.assertEqual(r['total'], '299.00')
+
+    @override_settings(STRIPE_PRICES={'pro:annual': 'p'})
+    def test_annual_bills_the_year_not_the_month(self):
+        with patch.object(payments, 'tax_percent', return_value=None):
+            r = views._receipt(self._sub(period='annual'))
+        self.assertEqual(r['total'], '2,990.00')
+        self.assertEqual(r['period_label'], 'Anual')
+
+    def test_custom_plan_has_no_receipt(self):
+        """'Custom' is quote-only — inventing a price would be a fake receipt."""
+        self.assertIsNone(views._receipt(self._sub(plan='custom')))
+
+
 class CheckoutTaxTests(TestCase):
     """IVU is charged ON TOP of the advertised price. The failure mode here is
     silent: without the tax rate on the line items Stripe invoices the bare
