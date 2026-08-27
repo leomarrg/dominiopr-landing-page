@@ -326,6 +326,82 @@ class StripeWebhookTests(TestCase):
         self.client_obj.refresh_from_db()
         self.assertFalse(self.client_obj.is_active)
 
+    # -- cancellation ---------------------------------------------------
+    # This is the event the whole "failed payment -> Cancel the subscription"
+    # dashboard setting exists to produce. If it stops deactivating the tenant,
+    # people who quit paying keep a working agent and nothing anywhere errors.
+
+    def _active_sub(self, sub_id='sub_c1'):
+        sub = Subscription.objects.create(
+            client=self.client_obj, plan='pro', period='monthly',
+            status='active', stripe_subscription_id=sub_id)
+        Client.objects.filter(pk=self.client_obj.pk).update(is_active=True)
+        return sub
+
+    def test_subscription_deleted_cancels_and_suspends(self):
+        sub = self._active_sub()
+        self._post({'id': 'evt_del', 'type': 'customer.subscription.deleted',
+                    'data': {'object': {'id': 'sub_c1', 'status': 'canceled'}}})
+        sub.refresh_from_db()
+        self.client_obj.refresh_from_db()
+        self.assertEqual(sub.status, 'canceled')
+        self.assertFalse(self.client_obj.is_active)
+
+    def test_deleted_event_suspends_even_if_status_still_reads_active(self):
+        """Stripe does not always flip `status` in the deleted payload. Trusting
+        the field instead of the event type would leave the widget running."""
+        sub = self._active_sub()
+        self._post({'id': 'evt_del2', 'type': 'customer.subscription.deleted',
+                    'data': {'object': {'id': 'sub_c1', 'status': 'active'}}})
+        sub.refresh_from_db()
+        self.client_obj.refresh_from_db()
+        self.assertEqual(sub.status, 'canceled')
+        self.assertFalse(self.client_obj.is_active)
+
+    def test_cancel_at_period_end_keeps_the_agent_running(self):
+        """The customer portal cancels at period end: Stripe sends `updated`
+        with the subscription still active. The customer paid for this period,
+        so cutting them off now would be taking money for nothing."""
+        self._active_sub()
+        self._post({'id': 'evt_cape', 'type': 'customer.subscription.updated',
+                    'data': {'object': {'id': 'sub_c1', 'status': 'active',
+                                        'cancel_at_period_end': True}}})
+        self.client_obj.refresh_from_db()
+        self.assertTrue(self.client_obj.is_active)
+        self.assertEqual(Subscription.objects.get(stripe_subscription_id='sub_c1').status,
+                         'active')
+
+    def test_past_due_keeps_the_agent_up_while_stripe_retries(self):
+        """Deliberate grace period (widget_should_run): killing the agent on the
+        first failed retry punishes customers whose card merely expired."""
+        sub = self._active_sub()
+        self._post({'id': 'evt_pd', 'type': 'customer.subscription.updated',
+                    'data': {'object': {'id': 'sub_c1', 'status': 'past_due'}}})
+        sub.refresh_from_db()
+        self.client_obj.refresh_from_db()
+        self.assertEqual(sub.status, 'past_due')
+        self.assertTrue(self.client_obj.is_active)
+
+    def test_recovered_payment_reactivates_the_agent(self):
+        sub = self._active_sub()
+        self._post({'id': 'evt_unpaid', 'type': 'customer.subscription.updated',
+                    'data': {'object': {'id': 'sub_c1', 'status': 'unpaid'}}})
+        self.client_obj.refresh_from_db()
+        self.assertFalse(self.client_obj.is_active)
+        self._post({'id': 'evt_ok', 'type': 'customer.subscription.updated',
+                    'data': {'object': {'id': 'sub_c1', 'status': 'active'}}})
+        sub.refresh_from_db()
+        self.client_obj.refresh_from_db()
+        self.assertEqual(sub.status, 'active')
+        self.assertTrue(self.client_obj.is_active)
+
+    def test_cancellation_of_an_unknown_subscription_is_not_an_error(self):
+        """A subscription created outside the app (or already purged) must not
+        500 the endpoint — Stripe would retry it forever."""
+        resp = self._post({'id': 'evt_ghost', 'type': 'customer.subscription.deleted',
+                           'data': {'object': {'id': 'sub_nope', 'status': 'canceled'}}})
+        self.assertEqual(resp.status_code, 200)
+
 
 class SurveyTests(TestCase):
     """M-18: one rating per conversation, validated."""
