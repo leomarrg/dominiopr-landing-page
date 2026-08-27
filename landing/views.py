@@ -1,5 +1,7 @@
+import hmac
 import json
 import logging
+import re
 import secrets
 from functools import wraps
 from urllib.parse import urlparse
@@ -10,24 +12,29 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model, update_session_auth_hash
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.forms import PasswordChangeForm
+from django.contrib.auth.views import PasswordResetConfirmView
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.mail import EmailMultiAlternatives
-from django.core.validators import validate_email
+from django.core.validators import URLValidator, validate_email
 from django.db import IntegrityError, transaction
-from django.db.models import Q
-from django.http import HttpResponse, JsonResponse
+from django.db.models import F, Max, Q
+from django.http import Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
-from django.urls import reverse
+from django.urls import reverse, reverse_lazy
 from django.utils import timezone
+from django.utils.text import slugify
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from . import agent
+from . import agent, notify, payments
 from .forms import ContactForm
-from .models import Client, ContactSubmission, Membership
+from .models import (
+    AuditEvent, Booking, ChatMessage, Client, ContactSubmission, Conversation,
+    Membership, ProcessedWebhookEvent, Subscription, Survey,
+)
 from .phone import normalize_phone
 
 logger = logging.getLogger(__name__)
@@ -39,17 +46,25 @@ MAX_MESSAGE_CHARS = 2000
 MAX_CHAT_BODY_BYTES = 64 * 1024
 
 
-def _rate_limited(prefix, limit, window):
+def _rate_limited(prefix, limit, window, methods=None):
     """Per-IP fixed-window rate limit using the shared cache (no Redis).
 
     Returns a JSON 429 once `limit` requests from one IP occur within `window`
     seconds. Used to stop bots from burning the Anthropic budget / DoSing the box.
+
+    By default only state-changing requests count (GET/HEAD/OPTIONS page loads
+    are free). Pass `methods=('GET', 'POST')` to also throttle reads on views
+    whose GET does expensive work (e.g. a Stripe call per request).
     """
+    counted = tuple(m.upper() for m in methods) if methods else None
+
     def decorator(view):
         @wraps(view)
         def wrapper(request, *args, **kwargs):
-            # Only throttle state-changing requests; GET/HEAD page loads are free.
-            if request.method in ('GET', 'HEAD', 'OPTIONS'):
+            if counted is None:
+                if request.method in ('GET', 'HEAD', 'OPTIONS'):
+                    return view(request, *args, **kwargs)
+            elif request.method not in counted:
                 return view(request, *args, **kwargs)
             ip = _client_ip(request) or 'unknown'
             key = f'rl:{prefix}:{ip}'
@@ -97,11 +112,35 @@ def _cors_enabled(view):
 
 
 def _client_ip(request):
-    """Real client IP, honoring the Nginx X-Forwarded-For header."""
+    """Real client IP, honoring the Nginx X-Forwarded-For header.
+
+    Nginx sets the header with `$proxy_add_x_forwarded_for`, which APPENDS the
+    peer address to whatever the client sent, so the only trustworthy value is
+    the LAST one. Taking the first would let anyone spoof their way past every
+    per-IP rate limit.
+    """
     forwarded = request.META.get('HTTP_X_FORWARDED_FOR')
     if forwarded:
-        return forwarded.split(',')[0].strip()
+        last = forwarded.rsplit(',', 1)[-1].strip()
+        if last:
+            return last
     return request.META.get('REMOTE_ADDR')
+
+
+def _single_line(value, limit=None):
+    """Collapse CR/LF/tabs so user text can never inject email headers or
+    break a subject line. Optionally truncates."""
+    text = re.sub(r'[\r\n\t]+', ' ', str(value or '')).strip()
+    return text[:limit] if limit else text
+
+
+def _id_tail(value, keep=6):
+    """Last few chars of an opaque id for logs (enough to correlate, not to
+    replay or identify)."""
+    value = str(value or '')
+    if not value:
+        return '-'
+    return f'...{value[-keep:]}' if len(value) > keep else value
 
 
 def _page_url(raw):
@@ -115,12 +154,41 @@ def _page_url(raw):
     return raw[:500]
 
 
+def _audit(request, action, client=None, target='', result='ok'):
+    """M-17: record a critical admin action. Best-effort — auditing must never
+    break the action it describes."""
+    try:
+        AuditEvent.objects.create(
+            client=client,
+            user=request.user if getattr(request.user, 'is_authenticated', False) else None,
+            action=action[:60], target=str(target)[:200], result=str(result)[:200],
+            ip_address=_client_ip(request) or None,
+        )
+    except Exception:
+        logger.exception('Audit write failed for %s', action)
+
+
+def _send_plain_email(subject, to, body, reply_to=None):
+    """Plain-text one-off email (escalations, ops alerts). Logs and swallows
+    errors, same contract as _send_html_email."""
+    subject = ' '.join(str(subject).splitlines())
+    try:
+        msg = EmailMultiAlternatives(
+            subject, body, settings.DEFAULT_FROM_EMAIL, to, reply_to=reply_to)
+        msg.send(fail_silently=False)
+        return True
+    except Exception:
+        logger.exception('Failed to send email "%s" to %s', subject, to)
+        return False
+
+
 def _send_html_email(subject, to, html_template, txt_template, context, reply_to=None):
     """Send a multipart (text + HTML) email. Logs and swallows errors.
 
     Returns True on success, False on failure — automatic callers can ignore it,
     but manual flows (e.g. replying to a lead) use it to show real feedback.
     """
+    subject = ' '.join(str(subject).splitlines())
     try:
         html_body = render_to_string(html_template, context)
         text_body = render_to_string(txt_template, context)
@@ -225,6 +293,41 @@ def _send_onboarding_email(client, embed_snippet, login=None):
     )
 
 
+def _embed_snippet(base_url, slug):
+    """The one-line install snippet for a client. `base_url` is the site
+    origin (request.build_absolute_uri('/') or settings.SITE_URL)."""
+    return f'<script src="{base_url.rstrip("/")}/widget.js?key={slug}" async></script>'
+
+
+def _send_welcome_email(client, plan_name, login, install_url, embed):
+    """Post-payment welcome: what was bought, dashboard credentials and the
+    'tell us how to access your site' link. Replaces the old install email for
+    self-serve clients (DOMINIO installs the widget; the 'live' email follows)."""
+    reply_to = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
+    return _send_html_email(
+        subject=f'Pago recibido — tu agente de IA está en camino ({client.name})',
+        to=[client.notify_email],
+        html_template='landing/emails/agent_welcome.html',
+        txt_template='landing/emails/agent_welcome.txt',
+        context={'client': client, 'plan_name': plan_name, 'login': login,
+                 'install_url': install_url, 'embed': embed, 'setup_hours': 48},
+        reply_to=[reply_to] if reply_to else None,
+    )
+
+
+def _send_live_email(client, dashboard_url, site_url):
+    """Sent by the staff 'Marcar en vivo' action once the widget is installed."""
+    reply_to = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
+    return _send_html_email(
+        subject=f'Tu agente de IA está en vivo — {client.name}',
+        to=[client.notify_email],
+        html_template='landing/emails/agent_live.html',
+        txt_template='landing/emails/agent_live.txt',
+        context={'client': client, 'dashboard_url': dashboard_url, 'site_url': site_url},
+        reply_to=[reply_to] if reply_to else None,
+    )
+
+
 def _provision_client_login(client, reset_password=False):
     """Ensure `client` has a dashboard login, linking the notify_email's user to it.
 
@@ -319,7 +422,7 @@ def index(request):
     return render(request, 'landing/index.html', {'form': form})
 
 
-def _chat_lead_handler(request, client_obj=None, page_url=''):
+def _chat_lead_handler(request, client_obj=None, page_url='', conversation=None):
     """Build the callback the agent invokes when it captures a lead in chat.
 
     Saves a ContactSubmission linked to `client_obj` and emails that client's
@@ -382,10 +485,91 @@ def _chat_lead_handler(request, client_obj=None, page_url=''):
             page_url=page_url,
         )
         submission.save()
+        # M-02: tie the lead to its conversation so the transcript explains it.
+        if conversation is not None:
+            Conversation.objects.filter(pk=conversation.pk).update(lead=submission)
         _send_lead_emails(submission, notify_to=notify_to)
+        # M-06: optional WhatsApp/SMS ping on top of the email.
+        notify.notify_client(
+            client_obj,
+            f'DOMINIO Chat: nuevo lead para {business_name} — {name} '
+            f'({email or phone}). Revisa tu dashboard.')
         cache.set(cap_key, cache.get(cap_key, 0) + 1, 3600)  # 1-hour window
-        logger.info('Lead captured via chat: %s <%s>', name, email)
+        # Log the row id, not the person: journald is not covered by the
+        # retention policy that purges conversations.
+        logger.info('Lead captured via chat: submission=%s client=%s',
+                    submission.pk, client_obj.slug if client_obj else '-')
         return f'Lead guardado y el equipo de {business_name} fue notificado por email.'
+
+    return handle
+
+
+def _human_handler(request, client_obj=None, conversation=None, page_url=''):
+    """M-16: the request_human tool. Marks the conversation escalated with the
+    reason, saves whatever contact the visitor gave as a lead, and alerts the
+    team with the transcript context. Never promises a live chat."""
+    from django.core.exceptions import ValidationError
+    from django.core.validators import validate_email
+
+    notify_to = (client_obj.notify_email if client_obj else None) \
+        or getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
+    business_name = client_obj.name if client_obj else 'DOMINIO'
+
+    def handle(data):
+        reason = (data.get('reason') or '').strip()[:300] or 'El visitante pidió hablar con una persona.'
+        name = (data.get('name') or '').strip()[:120]
+        email = (data.get('email') or '').strip()[:254]
+        phone = normalize_phone((data.get('phone') or '').strip()[:30]) or ''
+        if email:
+            try:
+                validate_email(email)
+            except ValidationError:
+                email = ''
+
+        ip = _client_ip(request) or 'unknown'
+        cap_key = f'humancap:{ip}'
+        if cache.get(cap_key, 0) >= 5:
+            return 'Anotado — el equipo ya fue notificado y te dará seguimiento.'
+        cache.set(cap_key, cache.get(cap_key, 0) + 1, 3600)
+
+        lead = None
+        if name and (email or phone):
+            lead = ContactSubmission.objects.create(
+                client=client_obj, name=name, email=email, phone=phone,
+                service='ai-automation', source='chat',
+                message=f'[Escalado a humano por el chat] {reason}'[:5000],
+                ip_address=ip if ip != 'unknown' else None,
+                user_agent=request.META.get('HTTP_USER_AGENT', '')[:300],
+                page_url=page_url,
+            )
+
+        transcript = ''
+        if conversation is not None:
+            Conversation.objects.filter(pk=conversation.pk).update(
+                state='escalated', escalation_reason=reason,
+                **({'lead': lead} if lead else {}))
+            turns = conversation.chat_messages.order_by('position')[:40]
+            transcript = '\n'.join(
+                f'{"Visitante" if m.role == "user" else "Agente"}: {m.content}' for m in turns)
+
+        if notify_to:
+            body = (f'Una conversación del chat de {business_name} necesita atención humana.\n\n'
+                    f'Motivo: {reason}\n'
+                    f'Contacto: {name or "—"} {email or phone or "(sin contacto)"}\n'
+                    f'Página: {page_url or "—"}\n\n'
+                    f'--- Conversación ---\n{transcript or "(disponible en el dashboard)"}')
+            _send_plain_email(
+                subject=f'[Atención humana] Chat escalado — {business_name}',
+                to=[notify_to], body=body,
+                reply_to=[email] if email else None)
+        notify.notify_client(
+            client_obj,
+            f'DOMINIO Chat: un visitante de {business_name} pide atención humana. '
+            f'Motivo: {reason[:120]}')
+        logger.info('Conversation escalated for %s: %s',
+                    client_obj.slug if client_obj else 'dominio', reason)
+        return ('Escalado: el equipo fue notificado con el contexto y dará seguimiento. '
+                'No prometas un tiempo de respuesta específico.')
 
     return handle
 
@@ -432,6 +616,19 @@ def _booking_handler(request, client_obj=None):
         if start > now + dt.timedelta(days=120):
             raise ValueError('That date is too far out.')
 
+        # M-05: if the tenant configured working hours, the slot must fall inside
+        # them. No rules configured = same behavior as before (any future slot).
+        if client_obj is not None:
+            rules = list(client_obj.availability_rules.all())
+            if rules:
+                local = timezone.localtime(start)
+                day_rules = [r for r in rules if r.weekday == local.weekday()]
+                ok = any(r.open_time <= local.time() < r.close_time for r in day_rules)
+                if not ok:
+                    raise ValueError(
+                        'That time is outside business hours. Offer a time within '
+                        'the business schedule.')
+
         try:
             with transaction.atomic():
                 booking = Booking.objects.create(
@@ -446,7 +643,13 @@ def _booking_handler(request, client_obj=None):
         cache.set(cap_key, cache.get(cap_key, 0) + 1, 3600)
         _send_booking_emails(booking, notify_to=notify_to, business=business_name)
         local = timezone.localtime(start)
-        logger.info('Booking created: %s <%s> at %s', name, email, local)
+        notify.notify_client(
+            client_obj,
+            f'DOMINIO Chat: nueva cita para {business_name} — {name}, '
+            f'{local:%a %d %b, %I:%M %p}.')
+        # No visitor PII in the logs — journald outlives our retention policy.
+        logger.info('Booking created: booking=%s client=%s at %s',
+                    booking.pk, client_obj.slug, local)
         return f'Reservado para {local:%A %b %d a las %I:%M %p}. Se envió una confirmación por email.'
 
     return handle
@@ -480,14 +683,31 @@ def chat_api(request):
     slug = payload.get('client')
     slug = slug.strip()[:60] if isinstance(slug, str) else 'dominio'
     client_obj = Client.objects.filter(slug=slug or 'dominio', is_active=True).first()
-    business_prompt = client_obj.system_prompt if client_obj else None
+    # M-15: the agent's knowledge = manual prompt + active knowledge sources.
+    business_prompt = client_obj.compiled_prompt() if client_obj else None
+
+    # Authenticate the tenant. The slug is a public identifier, not a secret:
+    # it is slugify(company name) and /widget.js reveals which ones exist. The
+    # widget therefore presents `widget_token`, which /widget.js only hands to a
+    # page that already knows the key. DOMINIO's own first-party site is exempt
+    # because it embeds the widget directly, without going through widget.js.
+    if client_obj and client_obj.slug != 'dominio':
+        presented = payload.get('token')
+        presented = presented.strip()[:64] if isinstance(presented, str) else ''
+        expected = client_obj.widget_token
+        if not expected or not hmac.compare_digest(presented, expected):
+            return JsonResponse({'error': 'Agente no autorizado.'}, status=403)
 
     # Origin allowlist: the widget may only run on the client's own domains.
+    # A missing Origin header must NOT skip the check — that is exactly what a
+    # non-browser attacker sends. Browsers always attach it to a cross-origin
+    # POST, so requiring it costs a legitimate widget nothing.
     origin = request.META.get('HTTP_ORIGIN', '')
-    if client_obj and client_obj.allowed_origins and origin:
+    if client_obj and client_obj.allowed_origins:
         allowed = set(client_obj.origin_list())
-        o = urlparse(origin)
-        if o.netloc.lower() not in allowed and (o.hostname or '').lower() not in allowed:
+        o = urlparse(origin) if origin else None
+        if (o is None or (o.netloc.lower() not in allowed
+                          and (o.hostname or '').lower() not in allowed)):
             return JsonResponse({'error': 'Este dominio no está permitido.'}, status=403)
 
     raw = payload.get('messages')
@@ -517,6 +737,53 @@ def chat_api(request):
     if not history or history[-1]['role'] != 'user':
         return JsonResponse({'error': 'No hay pregunta que contestar.'}, status=400)
 
+    # M-04: per-tenant daily quota BEFORE the global cap — one noisy or attacked
+    # tenant degrades only its own widget, never everyone else's.
+    if client_obj is not None and client_obj.daily_message_cap:
+        today = timezone.now().strftime('%Y%m%d')
+
+        # No SINGLE visitor may spend the whole tenant's day. The widget key is
+        # public (it sits in the customer's page source), so without this one
+        # person — or a competitor — could drain a business's daily quota and
+        # leave its agent answering 503 to real customers until midnight.
+        # The per-minute IP limit does not prevent that: 12/min reaches a 200
+        # message cap in under 20 minutes.
+        visitor_cap = max(15, int(client_obj.daily_message_cap * 0.15))
+        visitor_key = f'chat:visitor:{client_obj.slug}:{_client_ip(request)}:{today}'
+        if cache.get(visitor_key, 0) >= visitor_cap:
+            logger.warning('Per-visitor cap reached on %s', client_obj.slug)
+            return JsonResponse(
+                {'error': 'Llegaste al límite de mensajes por hoy. Usa el formulario de '
+                          'contacto y el equipo te responde enseguida.'},
+                status=429,
+            )
+        if cache.get(visitor_key, 0) == 0:
+            cache.set(visitor_key, 1, 60 * 60 * 26)
+        else:
+            try:
+                cache.incr(visitor_key)
+            except ValueError:
+                cache.set(visitor_key, 1, 60 * 60 * 26)
+
+        tenant_key = f'chat:client:{client_obj.slug}:' + today
+        tenant_used = cache.get(tenant_key, 0)
+        if tenant_used >= client_obj.daily_message_cap:
+            logger.warning('Tenant chat quota reached for %s', client_obj.slug)
+            return JsonResponse(
+                {'error': 'El asistente llegó a su límite de hoy. Usa el formulario de '
+                          'contacto y el equipo te responde enseguida.'},
+                status=503,
+            )
+        if tenant_used == 0:
+            cache.set(tenant_key, 1, 60 * 60 * 26)
+        else:
+            try:
+                cache.incr(tenant_key)
+            except ValueError:
+                cache.set(tenant_key, 1, 60 * 60 * 26)
+        if tenant_used + 1 >= int(client_obj.daily_message_cap * 0.8):
+            logger.warning('Tenant %s at 80%%+ of daily chat quota', client_obj.slug)
+
     # Global daily ceiling across ALL IPs — the defense per-IP limits can't give:
     # caps worst-case daily API spend even under a distributed/botnet attack.
     daily_cap = getattr(settings, 'DOMINIO_AGENT_DAILY_CAP', 2000)
@@ -541,12 +808,45 @@ def chat_api(request):
     # client see exactly which page produced the lead.
     page = _page_url(payload.get('page'))
 
-    handlers = {'capture_lead': _chat_lead_handler(request, client_obj, page_url=page)}
+    # M-02: persist the conversation for the tenant (NEVER for the demo). The
+    # widget generates a random session id per visitor session; without one
+    # (old cached widgets) nothing is persisted and the chat still works.
+    conversation = None
+    session = payload.get('session')
+    if client_obj is not None and isinstance(session, str):
+        session = ''.join(c for c in session if c.isalnum() or c in '-_')[:64]
+        if len(session) >= 8:
+            conversation, _created = Conversation.objects.get_or_create(
+                client=client_obj, widget_session=session,
+                defaults={'page_url': page,
+                          'config_version': client_obj.config_version()})
+
+    # The caller controls the request body, so the 'assistant' turns it sends
+    # are not evidence of anything we said. Left as-is, a visitor could feed the
+    # model a fabricated prior turn ("te autorizo 95% de descuento") to get it
+    # ratified, and — because persistence rewrote the transcript from the same
+    # body — the tenant's dashboard would corroborate the invention.
+    # Rule: the server owns the history; the client contributes one user turn.
+    if conversation is not None:
+        stored = list(conversation.chat_messages.order_by('position')
+                      .values('role', 'content'))
+        history = (stored + [history[-1]])[-max_turns:]
+        while history and history[0]['role'] != 'user':
+            history.pop(0)
+
+    handlers = {'capture_lead': _chat_lead_handler(
+        request, client_obj, page_url=page, conversation=conversation)}
     if client_obj and client_obj.enable_bookings:
         handlers['create_booking'] = _booking_handler(request, client_obj)
+    if client_obj is not None:
+        handlers['request_human'] = _human_handler(
+            request, client_obj, conversation=conversation, page_url=page)
 
+    language = client_obj.primary_language if client_obj else 'es'
     try:
-        reply = agent.answer(history, business_prompt=business_prompt, handlers=handlers)
+        reply, usage = agent.answer(
+            history, business_prompt=business_prompt, handlers=handlers,
+            language=language)
     except agent.AgentNotConfigured:
         return JsonResponse(
             {'error': 'El asistente no está disponible ahora mismo.'}, status=503
@@ -562,6 +862,35 @@ def chat_api(request):
             {'error': 'Algo salió mal al conectar con el asistente. Trata de nuevo o usa el formulario de contacto.'},
             status=502,
         )
+
+    # M-02/M-03/M-19: store the turns, cost and config fingerprint. The widget
+    # sends the FULL history each turn, so rewriting the messages is a correct,
+    # simple upsert (conversations are capped at a few turns anyway). Handler
+    # side-effects (state, lead) were written with .update(), so nothing here
+    # can clobber them. Best-effort: a persistence failure must not lose the reply.
+    if conversation is not None:
+        try:
+            with transaction.atomic():
+                # Append only — never rewrite the stored transcript from the
+                # request body, or the record becomes whatever the last caller
+                # claimed it was.
+                next_pos = (conversation.chat_messages.aggregate(
+                    m=Max('position'))['m'] or -1) + 1
+                ChatMessage.objects.bulk_create([
+                    ChatMessage(conversation=conversation, role='user',
+                                content=history[-1]['content'][:MAX_MESSAGE_CHARS],
+                                position=next_pos),
+                    ChatMessage(conversation=conversation, role='assistant',
+                                content=reply[:MAX_MESSAGE_CHARS],
+                                position=next_pos + 1),
+                ])
+                Conversation.objects.filter(pk=conversation.pk).update(
+                    tokens_used=F('tokens_used')
+                    + usage['input_tokens'] + usage['output_tokens'],
+                    last_message_at=timezone.now(),
+                )
+        except Exception:
+            logger.exception('Failed to persist conversation %s', conversation.pk)
 
     return JsonResponse({'reply': reply})
 
@@ -598,22 +927,34 @@ def demo_api(request):
     if not history or history[-1]['role'] != 'user':
         return JsonResponse({'error': 'No hay pregunta que contestar.'}, status=400)
 
-    # Shared daily ceiling (same budget guard as the live chat).
-    daily_cap = getattr(settings, 'DOMINIO_AGENT_DAILY_CAP', 2000)
-    day_key = 'chat:global:' + timezone.now().strftime('%Y%m%d')
+    # The demo gets its OWN budget, separate from the tenants'. Sharing
+    # 'chat:global:' meant an anonymous visitor hammering this public endpoint
+    # could exhaust the ceiling and take every paying client's agent offline
+    # for the rest of the day — on DOMINIO's own token bill.
+    today = timezone.now().strftime('%Y%m%d')
+    ip_cap = getattr(settings, 'DOMINIO_DEMO_IP_DAILY_CAP', 20)
+    ip_key = f'demoip:{_client_ip(request)}:{today}'
+    if cache.get(ip_key, 0) >= ip_cap:
+        return JsonResponse(
+            {'error': 'Llegaste al límite del demo por hoy. Escríbenos y te montamos uno real.'},
+            status=429)
+
+    daily_cap = getattr(settings, 'DOMINIO_DEMO_DAILY_CAP', 150)
+    day_key = 'demo:global:' + today
     used = cache.get(day_key, 0)
     if used >= daily_cap:
         return JsonResponse({'error': 'El demo está ocupado ahora mismo. Trata más tarde.'}, status=503)
-    if used == 0:
-        cache.set(day_key, 1, 60 * 60 * 26)
-    else:
-        try:
-            cache.incr(day_key)
-        except ValueError:
-            cache.set(day_key, 1, 60 * 60 * 26)
+    for key in (day_key, ip_key):
+        if cache.get(key, 0) == 0:
+            cache.set(key, 1, 60 * 60 * 26)
+        else:
+            try:
+                cache.incr(key)
+            except ValueError:
+                cache.set(key, 1, 60 * 60 * 26)
 
     try:
-        reply = agent.answer(history, business_prompt=context, handlers={})
+        reply, _usage = agent.answer(history, business_prompt=context, handlers={})
     except agent.AgentNotConfigured:
         return JsonResponse({'error': 'El demo no está disponible ahora mismo.'}, status=503)
     except anthropic.RateLimitError:
@@ -625,32 +966,334 @@ def demo_api(request):
     return JsonResponse({'reply': reply})
 
 
+@csrf_exempt
+@_cors_enabled
+@_rate_limited('survey', limit=10, window=60)
+def survey_api(request):
+    """M-18: one optional CSAT rating per conversation, sent by the widget.
+    Identified by (client, session) — the same pair that keyed the conversation."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido.'}, status=405)
+    try:
+        payload = json.loads(request.body or b'{}')
+    except (ValueError, UnicodeDecodeError):
+        return JsonResponse({'error': 'Solicitud inválida.'}, status=400)
+
+    slug = payload.get('client')
+    slug = slug.strip()[:60] if isinstance(slug, str) else 'dominio'
+    session = payload.get('session')
+    session = (''.join(c for c in session if c.isalnum() or c in '-_')[:64]
+               if isinstance(session, str) else '')
+    try:
+        score = int(payload.get('score'))
+    except (TypeError, ValueError):
+        return JsonResponse({'error': 'Puntuación inválida.'}, status=400)
+    if not (1 <= score <= 5) or len(session) < 8:
+        return JsonResponse({'error': 'Puntuación inválida.'}, status=400)
+
+    conversation = Conversation.objects.filter(
+        client__slug=slug, widget_session=session).first()
+    if conversation is None:
+        return JsonResponse({'error': 'Conversación no encontrada.'}, status=404)
+
+    # Same tenant credential as chat_api: without it, a guessed slug + session
+    # lets anyone write a CSAT score into another business's dashboard.
+    if conversation.client.slug != 'dominio':
+        presented = payload.get('token')
+        presented = presented.strip()[:64] if isinstance(presented, str) else ''
+        expected = conversation.client.widget_token
+        if not expected or not hmac.compare_digest(presented, expected):
+            return JsonResponse({'error': 'Agente no autorizado.'}, status=403)
+
+    _survey, created = Survey.objects.get_or_create(
+        conversation=conversation,
+        defaults={'score': score,
+                  'comment': str(payload.get('comment') or '')[:1000]})
+    if not created:
+        return JsonResponse({'error': 'Esta conversación ya fue puntuada.'}, status=409)
+    return JsonResponse({'ok': True})
+
+
 # ============================================================
 # GET STARTED — public pricing + agent signup funnel (lean self-serve)
 # ============================================================
 
+# Launch pricing (ago-2026). `setup` is the one-time "instalación y configuración"
+# fee charged IN THE SAME CHECKOUT as the first period (Stripe one-time price
+# alongside the recurring one). Annual = 10x monthly ("2 meses gratis").
+# Custom has no self-serve checkout — it's a conversation.
 PLANS = [
-    {'id': 'starter', 'name': 'Starter', 'price': '$99',
-     'annual': '$990/año — 2 meses gratis',
+    {'id': 'starter', 'name': 'Starter', 'monthly': 99, 'annual': 990, 'setup': 500,
+     'tagline': 'Para empezar a capturar leads 24/7',
      'features': ['Agente de IA en tu página web', 'Contesta las preguntas de tus clientes 24/7',
                   'Convierte visitantes en leads — directo a tu inbox',
-                  'Dashboard privado para ver cada lead']},
-    {'id': 'pro', 'name': 'Pro', 'price': '$249', 'featured': True,
-     'annual': '$2,490/año — 2 meses gratis',
+                  'Dashboard privado para ver cada lead',
+                  'Instalación y configuración por DOMINIO']},
+    {'id': 'pro', 'name': 'Pro', 'monthly': 299, 'annual': 2990, 'setup': 1000, 'featured': True,
+     'tagline': 'Leads calificados y citas automáticas',
      'features': ['Todo lo de Starter', 'Califica los leads antes de que te lleguen',
                   'Agenda citas y reservaciones automáticamente',
                   'Responde a los leads desde tu dashboard',
                   'Ajustado a tu marca y colores',
                   'Afinamos tu agente todos los meses']},
-    {'id': 'scale', 'name': 'Scale', 'price': '$499',
-     'annual': '$4,990/año — 2 meses gratis',
+    {'id': 'scale', 'name': 'Scale', 'monthly': 499, 'annual': 4990, 'setup': 2500,
+     'tagline': 'Varios locales o marcas',
      'features': ['Todo lo de Pro', 'WhatsApp y multicanal',
                   'Hasta 3 locales o marcas', 'Se conecta a tu CRM y calendario',
                   'Soporte prioritario']},
-    {'id': 'custom', 'name': 'Custom', 'price': 'Hablemos', 'setup': 'Cotización',
+    {'id': 'custom', 'name': 'Custom', 'monthly': None, 'annual': None, 'setup': None,
+     'tagline': 'Integraciones y flujos a la medida',
      'features': ['Todo lo de Scale', 'Locales y canales ilimitados',
                   'Integraciones y flujos a la medida', 'Onboarding dedicado']},
 ]
+PLAN_BY_ID = {p['id']: p for p in PLANS}
+
+# What each paid tier unlocks on the tenant at provisioning time (webhook).
+# Kept next to PLANS so pricing copy and enforcement never drift apart.
+PLAN_LIMITS = {
+    'starter': {'daily_message_cap': 200, 'enable_bookings': False},
+    'pro': {'daily_message_cap': 500, 'enable_bookings': True},
+    'scale': {'daily_message_cap': 1500, 'enable_bookings': True},
+    'custom': {'daily_message_cap': 3000, 'enable_bookings': True},
+}
+
+
+def _plan_name(plan):
+    return PLAN_BY_ID.get(plan, {}).get('name') or (plan or 'Starter').title()
+
+
+def _slug_for_company(company):
+    """Public widget key for a new self-serve client: slugified company name,
+    never 'dominio' (reserved for our own site), deduped with -2, -3..."""
+    base = slugify(company or '')[:40] or 'cliente'
+    if base == 'dominio':
+        base = 'cliente'
+    slug, n = base, 2
+    while Client.objects.filter(slug=slug).exists():
+        slug = f'{base}-{n}'
+        n += 1
+    return slug
+
+
+def _normalize_website(raw):
+    """'acme.com' / 'https://www.acme.com/x' -> a valid http(s) URL or ''."""
+    raw = (raw or '').strip()[:200]
+    if not raw:
+        return ''
+    if not raw.lower().startswith(('http://', 'https://')):
+        raw = 'https://' + raw
+    try:
+        URLValidator(schemes=['http', 'https'])(raw)
+    except ValidationError:
+        return ''
+    return raw
+
+
+def _origins_from_website(website):
+    """Comma-separated allowlist (host + www variant) derived from a site URL.
+    Blank when nothing usable was given — the widget then runs anywhere."""
+    url = _normalize_website(website)
+    host = (urlparse(url).hostname or '').lower().strip('.') if url else ''
+    if not host or '.' not in host:
+        return ''
+    bare = host[4:] if host.startswith('www.') else host
+    return f'{bare}, www.{bare}'
+
+
+def _provision_paid_client(request, *, email, plan, period, meta, cust_id, sub_id,
+                           session_id=''):
+    """The self-serve alta: turn a paid Stripe checkout into a tenant.
+
+    Three cases, keyed on the payer's email:
+    - 'new': no Client with that email -> Client + Subscription + login;
+    - 'link': a Client exists but is NOT an active Stripe tenant (hand-made,
+      or a checkout that never activated) -> attach the subscription to it,
+      make sure it has a login;
+    - 'second': a Client exists AND already pays through Stripe -> a second
+      business for the same owner. A brand-new tenant is created and the
+      existing one is never touched (a new checkout can't relink or reactivate
+      it). The login is shared: one login, many agents.
+    The welcome (credentials + install link) and the ops alert go out in every
+    case. Returns (client, created). DOMINIO installs the widget, so a new
+    client starts 'pending' and staff flips it to 'live' from the factory.
+    """
+    plan = plan if plan in dict(Subscription.PLAN_CHOICES) else 'starter'
+    period = 'annual' if period == 'annual' else 'monthly'
+    sub_defaults = {
+        'plan': plan, 'period': period, 'method': 'stripe', 'status': 'active',
+        'stripe_customer_id': cust_id, 'stripe_subscription_id': sub_id,
+        'checkout_session_id': (session_id or '')[:120],
+    }
+
+    meta = meta or {}
+    company = _single_line(meta.get('company'), 160) or email.split('@')[0][:160]
+    website = _normalize_website(meta.get('website'))
+    contact_name = _single_line(meta.get('name'), 120)
+    contact_phone = (meta.get('phone') or '').strip()[:30]
+    lead = None
+    try:
+        lead = ContactSubmission.objects.filter(pk=int(meta.get('lead_id') or 0)).first()
+    except (TypeError, ValueError):
+        lead = None
+
+    # Same checkout session delivered again under a NEW event id (the ledger
+    # only catches identical ids): it is already provisioned — never a 2nd tenant.
+    if session_id:
+        done = Subscription.objects.filter(
+            checkout_session_id=session_id[:120]).select_related('client').first()
+        if done is not None:
+            return done.client, False
+
+    existing = Client.objects.filter(notify_email__iexact=email).first()
+    existing_sub = Subscription.objects.filter(client=existing).first() if existing else None
+    if existing is None:
+        mode = 'new'
+    elif (existing_sub is not None and existing_sub.stripe_subscription_id
+            and existing_sub.status == 'active'):
+        mode = 'second'
+    else:
+        mode = 'link'
+
+    # Anyone can type someone else's address into the public signup form, so a
+    # checkout email alone must not grant control of a tenant that already has
+    # owners: relinking would repoint their billing portal at the payer's own
+    # Stripe customer (exposing invoices and card details both ways) and let the
+    # payer switch off the victim's agent by cancelling. Hand it to a human.
+    if mode == 'link' and Membership.objects.filter(client=existing).exists():
+        logger.warning('Checkout for %s targets tenant %s which already has owners',
+                       email, existing.slug)
+        _audit(request, 'stripe.link_refused', client=existing, result='blocked')
+        ops = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
+        if ops:
+            _send_plain_email(
+                f'[Stripe] REVISAR A MANO — pago apunta a {existing.slug}',
+                [ops],
+                (f'Un checkout pagado con {email} apunta al cliente existente '
+                 f'"{existing.name}" ({existing.slug}), que ya tiene dueños. '
+                 f'No se enlazó automáticamente para evitar que un tercero se '
+                 f'apodere de la suscripción. Verifica quién pagó y enlaza a '
+                 f'mano si es legítimo. Checkout: {session_id or "—"}'))
+        return existing, False
+
+    if mode == 'link':
+        limits = PLAN_LIMITS.get(plan, PLAN_LIMITS['starter'])
+        with transaction.atomic():
+            Subscription.objects.update_or_create(client=existing, defaults=sub_defaults)
+            # The tier they just paid for has to actually apply here too —
+            # otherwise a linked client keeps whatever caps it happened to have.
+            Client.objects.filter(pk=existing.pk).update(
+                is_active=True,
+                daily_message_cap=limits['daily_message_cap'],
+                enable_bookings=limits['enable_bookings'])
+            existing.is_active = True
+            if lead is not None and lead.status != 'won':
+                ContactSubmission.objects.filter(pk=lead.pk).update(status='won')
+            username, temp_password = _provision_client_login(existing)
+        client, created = existing, False
+    else:
+        prompt_lines = [f'Negocio: {company}']
+        if website:
+            prompt_lines.append(f'Sitio web: {website}')
+        if contact_name or contact_phone:
+            prompt_lines.append(
+                f'Contacto: {contact_name or "—"}' + (f' ({contact_phone})' if contact_phone else ''))
+        if lead is not None and lead.message.strip():
+            prompt_lines.append('')
+            prompt_lines.append(f'Lo que el cliente nos contó al registrarse:\n{lead.message.strip()}')
+        prompt_lines.append('')
+        prompt_lines.append('(Configuración inicial. DOMINIO completará el conocimiento del '
+                            'negocio durante la instalación.)')
+        limits = PLAN_LIMITS.get(plan, PLAN_LIMITS['starter'])
+
+        with transaction.atomic():
+            client = None
+            for attempt in range(3):
+                try:
+                    with transaction.atomic():
+                        client = Client.objects.create(
+                            name=company, slug=_slug_for_company(company),
+                            system_prompt='\n'.join(prompt_lines),
+                            notify_email=email, allowed_origins=_origins_from_website(website),
+                            website_url=website, notify_phone=contact_phone,
+                            daily_message_cap=limits['daily_message_cap'],
+                            enable_bookings=limits['enable_bookings'],
+                            is_active=True, onboarding_sent=True, setup_status='pending',
+                            primary_language='es',
+                        )
+                    break
+                except IntegrityError:
+                    # Slug race with a concurrent create — recompute and retry.
+                    if attempt == 2:
+                        raise
+            Subscription.objects.update_or_create(client=client, defaults=sub_defaults)
+            if lead is not None and lead.status != 'won':
+                ContactSubmission.objects.filter(pk=lead.pk).update(status='won')
+            username, temp_password = _provision_client_login(client)
+        created = True
+
+        # Best-effort greeting from the seed knowledge (same as the factory form).
+        try:
+            greeting = agent.generate_greeting(client.system_prompt)
+            if greeting:
+                Client.objects.filter(pk=client.pk).update(greeting=greeting)
+        except Exception:
+            logger.exception('Greeting generation failed for %s', client.slug)
+
+    dashboard_url = settings.SITE_URL + reverse('dashboard')
+    login = ({'username': username, 'password': temp_password, 'url': dashboard_url}
+             if username else None)
+    embed = _embed_snippet(settings.SITE_URL, client.slug)
+    install_url = settings.SITE_URL + reverse('install')
+
+    # The temp password exists in exactly one place: this email. If it does not
+    # send, the buyer has paid and cannot get in — so the result is checked, not
+    # discarded, and the ops alert below is escalated.
+    welcome_sent = _send_welcome_email(client, _plan_name(plan), login, install_url, embed)
+    if not welcome_sent:
+        logger.error('Welcome email FAILED for %s <%s> — the customer cannot log in',
+                     client.slug, email)
+        _audit(request, 'welcome.email', client=client, result='failed')
+
+    ops_email = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
+    if ops_email:
+        factory_url = settings.SITE_URL + reverse('client_edit', args=[client.pk])
+        login_note = ('' if login else
+                      ' (sin acceso al dashboard: el email es una cuenta de staff)')
+        if mode == 'second':
+            subject = f'[Stripe] Segundo tenant para {email} — {client.name} — {plan}/{period}'
+            intro = (f'El email ya tiene el agente "{existing.name}" ({existing.slug}) '
+                     f'pagando por Stripe (customer={existing_sub.stripe_customer_id}). '
+                     f'Se creó un SEGUNDO tenant y el primero no se tocó; el mismo login '
+                     f'administra los dos.')
+        elif mode == 'link':
+            subject = f'[Cliente vinculado] {client.name} — {plan}/{period} — instalar'
+            intro = (f'Un cliente que ya existía en el Factory ({client.slug}) pagó por '
+                     f'Stripe: se vinculó la suscripción y se activó el agente.')
+        else:
+            subject = f'[Nuevo cliente] {client.name} — {plan}/{period} — instalar'
+            intro = 'Nuevo cliente provisionado automáticamente desde Stripe.'
+        if not welcome_sent:
+            # The buyer paid and has no way in. This must be impossible to miss.
+            subject = '[ACCION REQUERIDA] ' + subject
+            intro = ('*** EL CORREO DE BIENVENIDA NO SALIO. El cliente pagó y NO tiene '
+                     'sus credenciales: contáctalo hoy, mándaselas a mano o pídele '
+                     'que use "¿Olvidaste tu contraseña?". *** ') + intro
+        _send_plain_email(
+            subject=subject,
+            to=[ops_email],
+            body=(f'{intro}\n\n'
+                  f'Negocio: {client.name}\nEmail: {email}{login_note}\n'
+                  f'Contacto: {contact_name or "—"} {contact_phone}\n'
+                  f'Sitio web: {website or client.website_url or "—"}\nPlan: {plan}/{period}\n'
+                  f'Stripe: customer={cust_id} subscription={sub_id}\n\n'
+                  f'Factory: {factory_url}\n'
+                  f'Snippet: {embed}\n\n'
+                  f'Siguiente paso: el cliente enviará los datos de acceso a su sitio '
+                  f'desde {install_url}. Instala el widget y marca el agente en vivo.'),
+            reply_to=[email])
+    logger.info('Self-serve checkout %s -> client %s (pk=%s) mode=%s plan=%s/%s',
+                _id_tail(session_id), client.slug, client.pk, mode, plan, period)
+    return client, created
 
 
 @_rate_limited('signup', limit=5, window=300)
@@ -660,12 +1303,13 @@ def get_started(request):
     if request.method == 'POST':
         if request.POST.get('hp'):  # honeypot
             return redirect('get_started')
-        company = (request.POST.get('company') or '').strip()[:160]
-        name = (request.POST.get('name') or '').strip()[:120]
+        company = _single_line(request.POST.get('company'), 160)
+        name = _single_line(request.POST.get('name'), 120)
         email = (request.POST.get('email') or '').strip()[:254]
         phone = (request.POST.get('phone') or '').strip()[:30]
         website = (request.POST.get('website_url') or '').strip()[:200]
         plan = (request.POST.get('plan') or '').strip()[:40]
+        period = 'annual' if (request.POST.get('period') or '') == 'annual' else 'monthly'
         details = (request.POST.get('message') or '').strip()[:3000]
 
         errors = {}
@@ -673,6 +1317,8 @@ def get_started(request):
             errors['name'] = 'Requerido.'
         if not company:
             errors['company'] = 'Requerido.'
+        if plan not in PLAN_BY_ID:
+            errors['plan'] = 'Escoge un plan para continuar.'
         # Email OR phone — a phone-only signup is fine, but a given phone must be valid.
         if email:
             try:
@@ -701,13 +1347,343 @@ def get_started(request):
         )
         submission.save()
         _send_lead_emails(submission)
-        messages.success(
-            request,
-            '¡Listo! Te escribimos por email en breve para montar tu agente y el pago.')
+
+        # M-01: when Stripe is configured for this plan, go straight to hosted
+        # checkout (setup fee + first period in ONE session). The webhook then
+        # provisions the tenant automatically — no manual coordination. Any
+        # Stripe hiccup falls back to the email flow (the lead is already saved).
+        # A self-serve plan that cannot reach checkout is a lost sale, and every
+        # way it fails is invisible: a missing recurring price silently serves
+        # the email flow, and a missing setup price silently drops the install
+        # fee the page just advertised. Say so, loudly, to someone who can fix it.
+        if email and plan in ('starter', 'pro', 'scale') and payments.stripe_enabled():
+            missing = []
+            if not payments.price_id_for(plan, period):
+                missing.append(f'STRIPE_PRICE_{plan.upper()}_{period.upper()}')
+            if PLAN_BY_ID.get(plan, {}).get('setup') and not payments.setup_price_id_for(plan):
+                missing.append(f'STRIPE_PRICE_{plan.upper()}_SETUP')
+            if missing:
+                logger.error('Stripe price(s) not configured: %s — signup %s fell back '
+                             'to the email flow', ', '.join(missing), submission.pk)
+                ops = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
+                if ops:
+                    _send_plain_email(
+                        subject=f'[ACCION REQUERIDA] Falta configurar precio de Stripe ({plan})',
+                        to=[ops],
+                        body=(f'Un cliente escogió {plan}/{period} pero estas variables de '
+                              f'entorno no están puestas: {", ".join(missing)}.\n\n'
+                              f'Consecuencia: '
+                              + ('el checkout NO se abrió y el cliente cayó al flujo de '
+                                 'correo. Escríbele hoy con el enlace de pago.\n\n'
+                                 if not payments.price_id_for(plan, period) else
+                                 'se cobró la mensualidad SIN el cargo de instalación que '
+                                 'anuncia la página.\n\n')
+                              + f'Cliente: {name} <{email}> — {company}\n'
+                              + f'Corre "manage.py preflight --stripe" para ver todo.'))
+
+        if email and payments.stripe_enabled() and payments.price_id_for(plan, period):
+            try:
+                session = payments.create_checkout_session(
+                    plan=plan, period=period, email=email,
+                    success_url=request.build_absolute_uri(reverse('bienvenida'))
+                    + '?session_id={CHECKOUT_SESSION_ID}',
+                    cancel_url=request.build_absolute_uri(
+                        reverse('get_started')) + '#planes',
+                    setup_price=payments.setup_price_id_for(plan),
+                    metadata={
+                        'company': company, 'name': name, 'phone': phone,
+                        'website': website, 'lead_id': str(submission.pk),
+                    },
+                )
+                if session.get('url'):
+                    return redirect(session['url'])
+            except payments.StripeError:
+                logger.exception('Stripe checkout failed for signup %s', submission.pk)
+
+        if email:
+            messages.success(
+                request,
+                '¡Listo! Te escribimos por email en breve con el enlace de pago y los próximos pasos.')
+        else:
+            messages.success(
+                request,
+                '¡Listo! Te llamamos o te escribimos por WhatsApp/SMS en breve para montar '
+                'tu agente y el pago.')
         return redirect(reverse('get_started') + '#done')
 
     return render(request, 'landing/get_started.html',
                   {'plans': PLANS, 'form': {}, 'errors': {}})
+
+
+@csrf_exempt
+def stripe_webhook(request):
+    """M-01: signed, idempotent Stripe webhook. Activates a client's subscription
+    on successful checkout and suspends the widget when payment dies. Always
+    answers 2xx for verified events so Stripe stops retrying."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido.'}, status=405)
+    payload = request.body
+    if len(payload) > 256 * 1024:
+        return JsonResponse({'error': 'Payload demasiado grande.'}, status=413)
+    sig = request.META.get('HTTP_STRIPE_SIGNATURE', '')
+    if not payments.verify_webhook_signature(payload, sig):
+        return JsonResponse({'error': 'Firma inválida.'}, status=400)
+
+    try:
+        event = json.loads(payload)
+    except ValueError:
+        return JsonResponse({'error': 'JSON inválido.'}, status=400)
+    event_id = str(event.get('id') or '')[:120]
+    event_type = str(event.get('type') or '')
+    obj = (event.get('data') or {}).get('object') or {}
+
+    # Idempotency: a retried delivery is acknowledged but never re-acted on.
+    # The slot is only burned once the handler FINISHES (handled_at). A row
+    # claimed but never stamped means the last attempt died mid-flight — worker
+    # OOM, timeout, dropped connection — so Stripe's retry must run it again
+    # rather than get a cheerful "duplicate" while the customer's money sits in
+    # our account with nothing provisioned. Re-running is safe: provisioning
+    # dedupes on Subscription.checkout_session_id.
+    row = None
+    if event_id:
+        row, _fresh = ProcessedWebhookEvent.objects.get_or_create(event_id=event_id)
+        if row.handled_at:
+            return JsonResponse({'ok': True, 'duplicate': True})
+
+    _handle_stripe_event(request, event_type, obj)
+
+    if row is not None:
+        ProcessedWebhookEvent.objects.filter(pk=row.pk).update(handled_at=timezone.now())
+
+    return JsonResponse({'ok': True})
+
+
+def widget_should_run(status):
+    """Single source of truth for "does the money say this agent stays up?".
+
+    'past_due' keeps running on purpose: Stripe is still retrying the card and
+    dunning the customer, and cutting service off on the first failed retry
+    punishes people whose card simply expired. Only a dead subscription stops it.
+
+    The webhook and the nightly reconcile MUST agree here — when they disagreed,
+    a customer's agent went down or came back depending on which ran last.
+    """
+    return status in ('active', 'past_due')
+
+
+def _handle_stripe_event(request, event_type, obj):
+    """Apply one verified, not-yet-seen Stripe event. Raises on unexpected
+    failure so the caller can release the idempotency ledger."""
+    ops_email = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
+
+    if event_type in ('checkout.session.completed',
+                      'checkout.session.async_payment_succeeded'):
+        email = ((obj.get('customer_details') or {}).get('email')
+                 or obj.get('customer_email') or '').strip().lower()
+        meta = obj.get('metadata') or {}
+        plan = (meta.get('plan') or 'starter')[:20]
+        period = 'annual' if meta.get('period') == 'annual' else 'monthly'
+        sub_id = str(obj.get('subscription') or '')[:80]
+        cust_id = str(obj.get('customer') or '')[:80]
+
+        session_id = str(obj.get('id') or '')[:120]
+        payment_status = obj.get('payment_status')
+
+        if not email:
+            _audit(request, 'stripe.checkout.completed', target=sub_id,
+                   result='sin email del pagador')
+            logger.error('Checkout %s completed without a payer email', _id_tail(session_id))
+        elif payment_status not in (None, 'paid', 'no_payment_required'):
+            # e.g. 'unpaid' (delayed payment methods): never provision, link or
+            # (re)activate on credit, whether or not the tenant already exists.
+            client_obj = Client.objects.filter(notify_email__iexact=email).first()
+            _audit(request, 'stripe.checkout.completed', client=client_obj, target=sub_id,
+                   result=f'no provisionado: payment_status={payment_status}')
+            logger.warning('Checkout %s not paid yet (%s); skipped provisioning',
+                           _id_tail(session_id), payment_status)
+            if ops_email:
+                _send_plain_email(
+                    subject=f'[Stripe] Checkout sin pagar todavía ({email})',
+                    to=[ops_email],
+                    body=(f'Un checkout quedó en payment_status={payment_status}, '
+                          f'así que NO se provisionó nada.\n\n'
+                          f'Si el pago llega después, Stripe manda '
+                          f'checkout.session.async_payment_succeeded y el alta corre '
+                          f'sola. Si no llega en 24h, este cliente no tiene agente: '
+                          f'contáctalo.\n\n'
+                          f'Email: {email}\nPlan: {plan}/{period}\n'
+                          f'Checkout: {session_id}'))
+        else:
+            # The self-serve alta. _provision_paid_client decides between a new
+            # tenant, linking a pre-created one, or a second tenant for an
+            # owner who already pays through Stripe (never touching the first).
+            try:
+                new_client, created = _provision_paid_client(
+                    request, email=email, plan=plan, period=period, meta=meta,
+                    cust_id=cust_id, sub_id=sub_id, session_id=session_id)
+                _audit(request, 'stripe.checkout.completed', client=new_client,
+                       target=sub_id,
+                       result=f'{plan}/{period} ' + ('provisionado' if created else 'vinculado'))
+            except Exception:
+                logger.exception('Auto-provisioning failed for checkout %s',
+                                 _id_tail(session_id))
+                _audit(request, 'stripe.checkout.completed', target=sub_id,
+                       result=f'ERROR provisionando {email}')
+                if ops_email:
+                    _send_plain_email(
+                        subject=f'[Stripe] Pago recibido — provisionar agente A MANO ({email})',
+                        to=[ops_email],
+                        body=(f'El alta automática falló (ver logs).\n'
+                              f'Email: {email}\nPlan: {plan}/{period}\n'
+                              f'Subscription: {sub_id}\nCheckout: {session_id}\n'
+                              f'Metadata: {json.dumps(meta, ensure_ascii=False)}\n\n'
+                              f'Crea el agente en el Factory con notify_email={email}.'))
+
+    elif event_type in ('customer.subscription.updated', 'customer.subscription.deleted'):
+        sub_id = str(obj.get('id') or '')[:80]
+        stripe_status = obj.get('status') or ''
+        items = ((obj.get('items') or {}).get('data') or [])
+        # Stripe moved current_period_end onto the items in the 2025-03-31
+        # ('basil') API version. Read the legacy top level first, then the item.
+        period_end = obj.get('current_period_end') or (
+            items[0].get('current_period_end') if items else None)
+        sub = Subscription.objects.filter(stripe_subscription_id=sub_id).select_related('client').first()
+        if sub is not None:
+            if event_type == 'customer.subscription.deleted' or stripe_status == 'canceled':
+                new_status = 'canceled'
+            elif stripe_status in ('active', 'trialing'):
+                new_status = 'active'
+            elif stripe_status in ('past_due', 'unpaid', 'incomplete', 'incomplete_expired'):
+                new_status = 'past_due'
+            else:
+                new_status = sub.status
+            updates = {'status': new_status}
+            # A plan change arrives as an 'updated' event carrying the new
+            # price. Mirror it locally, or we bill the new tier while serving
+            # the old one's limits (and show the customer a stale plan name).
+            price_id = ((items[0].get('price') or {}).get('id') or '') if items else ''
+            if price_id:
+                configured = getattr(settings, 'STRIPE_PRICES', {})
+                match = next((k for k, v in configured.items()
+                              if v == price_id and not k.endswith(':setup')), '')
+                if match:
+                    new_plan, new_period = match.split(':', 1)
+                    if new_plan != sub.plan or new_period != sub.period:
+                        limits = PLAN_LIMITS.get(new_plan, PLAN_LIMITS['starter'])
+                        updates['plan'] = new_plan
+                        updates['period'] = new_period
+                        Client.objects.filter(pk=sub.client_id).update(
+                            daily_message_cap=limits['daily_message_cap'],
+                            enable_bookings=limits['enable_bookings'])
+                        logger.info('Plan change for %s: %s/%s -> %s/%s',
+                                    sub.client.slug, sub.plan, sub.period,
+                                    new_plan, new_period)
+            if period_end:
+                try:
+                    import datetime as _dt
+                    updates['current_period_end'] = _dt.datetime.fromtimestamp(
+                        int(period_end), tz=_dt.timezone.utc)
+                except (ValueError, TypeError, OSError):
+                    pass
+            Subscription.objects.filter(pk=sub.pk).update(**updates)
+            # Suspend the widget when the subscription dies; reactivate on recovery.
+            if not widget_should_run(new_status) or stripe_status == 'unpaid':
+                Client.objects.filter(pk=sub.client_id).update(is_active=False)
+                if ops_email:
+                    _send_plain_email(
+                        subject=f'[Stripe] Suscripción caída — {sub.client.slug}',
+                        to=[ops_email],
+                        body=(f'La suscripción {sub_id} de {sub.client.name} quedó '
+                              f'"{stripe_status}". El widget fue pausado.'))
+            elif new_status == 'active' and not sub.client.is_active:
+                Client.objects.filter(pk=sub.client_id).update(is_active=True)
+            _audit(request, f'stripe.{event_type.rsplit(".", 1)[-1]}',
+                   client=sub.client, target=sub_id, result=new_status)
+
+
+_SESSION_ID_RE = re.compile(r'^cs_[A-Za-z0-9_]{1,117}$')
+
+
+BIENVENIDA_MAX_POLLS = 20
+
+
+@_rate_limited('bienvenida', limit=60, window=300, methods=('GET', 'POST'))
+def bienvenida(request):
+    """Post-checkout welcome page. The session id in the URL is never trusted:
+    a session the webhook already turned into a Subscription is answered from
+    the DB; otherwise Stripe is asked server-side and nothing is shown unless
+    it says 'paid'. The (minimal) Stripe answer is cached 10 min per session
+    because the page polls until the webhook has created the tenant (`poll`,
+    at most BIENVENIDA_MAX_POLLS times); Stripe errors are cached 60 s so
+    retries don't pile up 15 s calls."""
+    session_id = (request.GET.get('session_id') or '').strip()
+    try:
+        n = int(request.GET.get('n') or 0)
+    except (TypeError, ValueError):
+        n = 0
+    n = max(0, min(n, 30))
+    context = {'paid': False, 'email': '', 'client': None, 'plan_name': '',
+               'dashboard_url': settings.SITE_URL + reverse('dashboard'),
+               'install_url': settings.SITE_URL + reverse('install'),
+               'poll': False, 'poll_url': '', 'error': ''}
+    error_msg = ('No pudimos confirmar el pago. Si ya pagaste, revisa tu email — '
+                 'te escribimos con los próximos pasos.')
+    if not _SESSION_ID_RE.match(session_id):
+        context['error'] = error_msg
+        return render(request, 'landing/bienvenida.html', context)
+
+    # Fast path: the webhook already provisioned this checkout -> no Stripe call.
+    known = (Subscription.objects.filter(checkout_session_id=session_id)
+             .select_related('client').first())
+    if known is not None:
+        context.update({
+            'paid': True, 'email': known.client.notify_email, 'client': known.client,
+            'plan_name': _plan_name(known.plan), 'poll': False,
+        })
+        return render(request, 'landing/bienvenida.html', context)
+
+    if not payments.stripe_enabled():
+        context['error'] = error_msg
+        return render(request, 'landing/bienvenida.html', context)
+
+    cache_key = f'cs:{session_id}'
+    session = cache.get(cache_key)
+    if session is None:
+        try:
+            raw = payments.retrieve_checkout_session(session_id)
+        except payments.StripeError:
+            logger.exception('Could not retrieve checkout session %s', _id_tail(session_id))
+            cache.set(cache_key, {'payment_status': 'error', 'email': '', 'plan': ''}, 60)
+            context['error'] = error_msg
+            return render(request, 'landing/bienvenida.html', context)
+        # Cache only what the page needs, never the whole Stripe object (PII).
+        session = {
+            'payment_status': raw.get('payment_status'),
+            'email': ((raw.get('customer_details') or {}).get('email')
+                      or raw.get('customer_email') or '').strip().lower(),
+            'plan': ((raw.get('metadata') or {}).get('plan') or 'starter')[:20],
+        }
+        cache.set(cache_key, session, 600)
+
+    paid = session.get('payment_status') == 'paid'
+    if not paid:
+        context['error'] = error_msg
+        return render(request, 'landing/bienvenida.html', context)
+
+    email = session.get('email') or ''
+    plan = session.get('plan') or 'starter'
+    client_obj = Client.objects.filter(notify_email__iexact=email).first() if email else None
+    poll = client_obj is None and n < BIENVENIDA_MAX_POLLS
+    context.update({
+        'paid': True, 'email': email, 'client': client_obj,
+        'plan_name': _plan_name(plan), 'poll': poll,
+    })
+    if poll:
+        context['poll_url'] = f"{reverse('bienvenida')}?session_id={session_id}&n={n + 1}"
+    elif client_obj is None:
+        context['error'] = ('El pago se confirmó pero tu cuenta tarda más de lo normal — '
+                            'escríbenos a hola@dominiopr.com y lo resolvemos hoy.')
+    return render(request, 'landing/bienvenida.html', context)
 
 
 def terms(request):
@@ -727,13 +1703,9 @@ def dashboard(request):
     """Branded leads dashboard: stats + filterable, searchable table.
 
     Scoped per tenant: a client sees only their own leads, DOMINIO staff see all.
+    (The temp-password gate for every /dashboard/ page lives in
+    landing.middleware.TempPasswordGateMiddleware.)
     """
-    # First sign-in on an auto-provisioned account: force the temp password out
-    # of circulation before showing any data.
-    if Membership.objects.filter(user=request.user, must_change_password=True).exists():
-        messages.info(request, 'Crea una nueva contraseña para terminar de configurar tu cuenta.')
-        return redirect('password_change')
-
     scoped = leads_for(request.user)
     qs = scoped
 
@@ -872,6 +1844,179 @@ def password_change(request):
     else:
         form = PasswordChangeForm(request.user)
     return render(request, 'landing/dashboard_password.html', {'form': form})
+
+
+class DashboardPasswordResetConfirmView(PasswordResetConfirmView):
+    """Django's confirm view + clears the first-login gate: a user who set
+    their own password via reset no longer needs to change the temp one."""
+    template_name = 'landing/dashboard_password_reset_confirm.html'
+    success_url = reverse_lazy('password_reset_complete')
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        Membership.objects.filter(user=self.user, must_change_password=True) \
+            .update(must_change_password=False)
+        return response
+
+
+# ============================================================
+# CLIENT SELF-SERVICE — install details + billing
+# ============================================================
+
+def _is_org_admin(user, client):
+    if user.is_staff:
+        return True
+    return Membership.objects.filter(user=user, client=client, role='org_admin').exists()
+
+
+def _own_client(request):
+    """The ONE organization a self-service page is about. Members: one of
+    their clients (`?client=<slug>` picks among several). Staff: any client by
+    slug, else their own memberships. None = nothing to show (caller decides).
+    Scope is applied BEFORE the slug lookup — a cross-tenant slug yields None."""
+    slug = (request.GET.get('client') or request.POST.get('client') or '').strip()[:60]
+    ids = _member_client_ids(request.user)
+    qs = Client.objects.filter(id__in=ids) if ids else Client.objects.none()
+    if request.user.is_staff and slug:
+        qs = Client.objects.all()
+    if slug:
+        return qs.filter(slug=slug).first()
+    return qs.order_by('pk').first()
+
+
+def _no_client_response(request):
+    if request.user.is_staff:
+        messages.info(request, 'Escoge un agente de la fábrica para ver su instalación o facturación.')
+        return redirect('clients_list')
+    raise Http404
+
+
+@login_required
+@_rate_limited('install', limit=20, window=300)
+def install(request):
+    """Client-facing 'how do we get into your site' page. DOMINIO installs
+    the widget (done-for-you); the client can also paste the snippet themselves."""
+    client = _own_client(request)
+    if client is None:
+        return _no_client_response(request)
+    embed = _embed_snippet(request.build_absolute_uri('/'), client.slug)
+    # Prefill from what we already have: a returning customer must see their own
+    # answers, not empty boxes that overwrite them on submit.
+    form, errors, saved = {
+        'website_url': client.website_url,
+        'platform': client.platform,
+        'install_notes': client.install_notes,
+        'mode': 'dominio',
+    }, {}, False
+
+    if request.method == 'POST':
+        if not _is_org_admin(request.user, client):
+            return HttpResponseForbidden(
+                'Solo un administrador puede enviar los datos de instalación.')
+        form = {
+            'website_url': (request.POST.get('website_url') or '').strip()[:200],
+            'platform': (request.POST.get('platform') or '').strip()[:40],
+            'mode': (request.POST.get('mode') or 'dominio').strip()[:10],
+            'install_notes': (request.POST.get('install_notes') or '').strip()[:3000],
+        }
+        website = _normalize_website(form['website_url'])
+        if form['website_url'] and not website:
+            errors['website_url'] = 'Escribe la dirección completa de tu sitio, ej. https://tunegocio.com'
+        if form['platform'] and form['platform'] not in dict(Client.PLATFORM_CHOICES):
+            errors['platform'] = 'Escoge una plataforma de la lista.'
+        if form['mode'] not in ('dominio', 'yo'):
+            errors['mode'] = 'Escoge una opción.'
+        if form['mode'] == 'dominio' and not form['install_notes'] and not errors:
+            errors['install_notes'] = ('Cuéntanos cómo entrar a tu sitio (o con quién '
+                                       'coordinar) para instalar el agente.')
+        if not errors:
+            # Never let a blank field erase a stored value — the access notes in
+            # particular may be the only copy, and staff may not have read them yet.
+            client.website_url = website or client.website_url
+            client.platform = form['platform'] or client.platform
+            client.install_notes = form['install_notes'] or client.install_notes
+            if website and not client.allowed_origins:
+                client.allowed_origins = _origins_from_website(website)
+            client.save(update_fields=['website_url', 'platform', 'install_notes',
+                                       'allowed_origins'])
+            _audit(request, 'install.details', client=client,
+                   target=client.slug, result=form['mode'])
+            if form['mode'] == 'dominio':
+                ops_email = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
+                if ops_email:
+                    _send_plain_email(
+                        subject=f'[Instalación] {client.name} envió datos de acceso',
+                        to=[ops_email],
+                        body=(f'Cliente: {client.name} ({client.slug})\n'
+                              f'Email: {client.notify_email}\n'
+                              f'Sitio: {website or "—"}\n'
+                              f'Plataforma: {dict(Client.PLATFORM_CHOICES).get(form["platform"], "—")}\n\n'
+                              f'Notas de acceso: ver en el Factory (no viajan por email).\n\n'
+                              f'Factory: {settings.SITE_URL}{reverse("client_edit", args=[client.pk])}\n'
+                              f'Snippet: {embed}'),
+                        reply_to=[client.notify_email])
+                messages.success(request, 'Recibido. Instalamos tu agente y te avisamos por email cuando esté en vivo.')
+            else:
+                messages.success(request, 'Guardado. Pega el snippet en tu sitio y avísanos cuando esté listo.')
+            saved = True
+            form = {}
+        else:
+            messages.error(request, 'Revisa los campos marcados y trata de nuevo.')
+
+    return render(request, 'landing/dashboard_install.html', {
+        'active_tab': 'install', 'active': 'install',
+        'client': client, 'embed': embed, 'form': form, 'errors': errors,
+        'platforms': Client.PLATFORM_CHOICES, 'status': client.setup_status,
+        'saved': saved,
+    })
+
+
+@login_required
+def billing(request):
+    client = _own_client(request)
+    if client is None:
+        return _no_client_response(request)
+    subscription = Subscription.objects.filter(client=client).first()
+    plan = PLAN_BY_ID.get(subscription.plan) if subscription else None
+    return render(request, 'landing/dashboard_billing.html', {
+        'active_tab': 'billing', 'active': 'billing',
+        'client': client, 'subscription': subscription, 'plan': plan,
+        'plan_name': _plan_name(subscription.plan) if subscription else '',
+        'portal_available': bool(
+            subscription and payments.stripe_enabled() and subscription.stripe_customer_id
+            and _is_org_admin(request.user, client)),
+    })
+
+
+@login_required
+@require_POST
+@_rate_limited('portal', limit=10, window=300)
+def billing_portal(request):
+    """Hand the client to Stripe's Customer Portal (invoices, card, cancel)."""
+    client = _own_client(request)
+    if client is None:
+        return _no_client_response(request)
+    if not _is_org_admin(request.user, client):
+        messages.error(request, 'Solo un administrador puede gestionar la facturación.')
+        return redirect('billing')
+    subscription = Subscription.objects.filter(client=client).first()
+    if not (subscription and payments.stripe_enabled() and subscription.stripe_customer_id):
+        messages.error(request, 'La facturación de esta cuenta no se maneja por Stripe. Escríbenos y te ayudamos.')
+        return redirect('billing')
+    try:
+        session = payments.create_portal_session(
+            subscription.stripe_customer_id,
+            return_url=request.build_absolute_uri(reverse('billing')))
+    except payments.StripeError:
+        logger.exception('Portal session failed for %s', client.slug)
+        _audit(request, 'billing.portal', client=client, target=client.slug, result='error')
+        messages.error(request, 'No pudimos abrir el portal de facturación. Trata de nuevo en un momento.')
+        return redirect('billing')
+    _audit(request, 'billing.portal', client=client, target=client.slug)
+    if not session.get('url'):
+        messages.error(request, 'No pudimos abrir el portal de facturación. Trata de nuevo en un momento.')
+        return redirect('billing')
+    return redirect(session['url'])
 
 
 # ============================================================
@@ -1045,9 +2190,19 @@ def widget_js(request):
     if not client_obj:
         return HttpResponse('/* DOMINIO: unknown or inactive client key */',
                             content_type='application/javascript')
+    # Heartbeat for the factory ("is the snippet actually on their site?").
+    # Throttled through the cache so a busy site costs one write per 10 min.
+    seen_key = f'widgetseen:{client_obj.slug}'
+    if not cache.get(seen_key):
+        cache.set(seen_key, 1, 600)
+        Client.objects.filter(pk=client_obj.pk).update(widget_last_seen_at=timezone.now())
     t = _widget_theme(client_obj)
     ctx = {
         'slug': client_obj.slug,
+        # Minted on first serve so tenants created before this existed heal
+        # themselves. Handing it out here is safe: reaching this line already
+        # required knowing the key, and the widget must present it to chat.
+        'widget_token': client_obj.ensure_widget_token(),
         'name': client_obj.name,
         'greeting': client_obj.greeting or agent.DEFAULT_GREETING,
         'color': t['accent'],
@@ -1129,6 +2284,41 @@ def client_resend_onboarding(request, pk):
         messages.error(
             request,
             f'No se pudo enviar a {client.notify_email} — revisa la configuración de correo.')
+    return redirect('clients_list')
+
+
+@login_required
+@staff_required
+@require_POST
+def client_mark_live(request, pk):
+    """Staff flips a self-serve client from 'pending' to 'live' once the
+    widget is on their site, and the client gets the 'en vivo' email."""
+    client = get_object_or_404(Client, pk=pk)
+    if not client.website_url:
+        messages.error(request, 'Añade el sitio web del cliente antes de marcarlo en vivo.')
+        return redirect('clients_list')
+    now = timezone.now()
+    had_notes = bool(client.install_notes)
+    # The install notes (CMS access the client shared) are only needed until
+    # the widget is installed: purge them the moment the agent goes live.
+    Client.objects.filter(pk=client.pk).update(
+        setup_status='live', live_at=now, is_active=True, install_notes='')
+    client.setup_status, client.live_at, client.is_active = 'live', now, True
+    client.install_notes = ''
+    if had_notes:
+        _audit(request, 'install.notes_purged', client=client, target=client.slug)
+    sent = _send_live_email(
+        client,
+        dashboard_url=request.build_absolute_uri(reverse('dashboard')),
+        site_url=client.website_url)
+    _audit(request, 'client.live', client=client, target=client.slug,
+           result='email ok' if sent else 'email failed')
+    if sent:
+        messages.success(request, f'{client.name} está en vivo — email enviado a {client.notify_email}.')
+    else:
+        messages.error(
+            request,
+            f'{client.name} está en vivo, pero no se pudo enviar el email a {client.notify_email}.')
     return redirect('clients_list')
 
 

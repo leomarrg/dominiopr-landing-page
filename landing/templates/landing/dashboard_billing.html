@@ -1,0 +1,63 @@
+{% extends 'landing/dashboard_base.html' %}
+{% block title %}Facturación{% endblock %}
+{% block content %}
+<style>
+    /* Scoped to this page: dash-card has no default text color in dashboard_base.html
+       (it only sets a white background), so we set legible dark text explicitly here
+       instead of relying on the page's inherited white body color. */
+    .dash-card{color:#33475b}
+    .dash-card h2{color:var(--primary);margin:0 0 10px}
+    .bill-plan{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+    .bill-plan__name{color:var(--primary);font-family:'Space Grotesk',sans-serif;font-size:1.3rem;font-weight:700;margin:0 0 2px}
+    .bill-plan__price{color:#33475b;font-size:.92rem}
+    .bill-meta{color:#5c7189;font-size:.84rem;margin:10px 0 0;display:flex;flex-direction:column;gap:4px}
+    .bill-portal{margin-top:18px;padding-top:18px;border-top:1px solid #e3e3ea}
+    .bill-portal p{color:#5c7189;font-size:.84rem;margin:8px 0 0}
+    .bill-manual{color:#5c7189;font-size:.9rem;line-height:1.6}
+    .bill-manual a{color:#1e938a}
+    @media (max-width:600px){
+        .bill-plan{flex-direction:column}
+        .dash-card .save-btn{width:100%;min-height:44px}
+    }
+</style>
+
+<h1 class="dash-h1">Facturación — {{ client.name }}</h1>
+
+<div class="dash-card">
+    <h2>Tu plan</h2>
+    {% if subscription and plan %}
+    <div class="bill-plan">
+        <div>
+            <p class="bill-plan__name">{{ plan_name }}</p>
+            <p class="bill-plan__price">
+                {% if subscription.period == 'annual' %}${{ plan.annual }}<span>/año</span>{% else %}${{ plan.monthly }}<span>/mes</span>{% endif %}
+            </p>
+        </div>
+        <span class="dash-pill dash-pill--{% if subscription.status == 'active' %}active{% elif subscription.status == 'past_due' %}pending{% elif subscription.status == 'canceled' %}cancelled{% else %}draft{% endif %}">
+            {% if subscription.status == 'active' %}Activa{% elif subscription.status == 'past_due' %}Pago pendiente{% elif subscription.status == 'canceled' %}Cancelada{% else %}Incompleta{% endif %}
+        </span>
+    </div>
+    <div class="bill-meta">
+        {% if subscription.current_period_end %}<span>Próxima renovación: {{ subscription.current_period_end|date:"M d, Y" }}</span>{% endif %}
+        <span>Método de pago: {{ subscription.get_method_display }}</span>
+    </div>
+
+    {% if portal_available %}
+    <div class="bill-portal">
+        <form method="post" action="{% url 'billing_portal' %}">
+            {% csrf_token %}
+            <button type="submit" class="save-btn">Administrar pago y facturas</button>
+        </form>
+        <p>Cambia tu tarjeta, ve tus facturas o cancela — en la página segura de Stripe.</p>
+    </div>
+    {% else %}
+    <div class="bill-portal">
+        <p class="bill-manual">Tu suscripción se maneja manualmente — escríbenos a <a href="mailto:hola@dominiopr.com">hola@dominiopr.com</a> para cualquier cambio.</p>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="dash-empty" style="padding:30px 20px;color:#5c7189">Aún no tienes una suscripción activa. Escríbenos a <a href="mailto:hola@dominiopr.com" style="color:#1e938a">hola@dominiopr.com</a> si crees que esto es un error.</div>
+    {% endif %}
+</div>
+{% endblock %}

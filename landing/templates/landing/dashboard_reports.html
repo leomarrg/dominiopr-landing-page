@@ -1,0 +1,50 @@
+{% extends 'landing/dashboard_base.html' %}
+{% block title %}Reportes{% endblock %}
+{% block content %}
+<h1 class="dash-h1">Reportes — últimos 30 días</h1>
+
+<section class="dash-stats">
+    <div class="dash-stat"><div class="dash-stat__num">{{ stats.conversations }}</div><div class="dash-stat__label">Conversaciones</div></div>
+    <div class="dash-stat dash-stat--accent"><div class="dash-stat__num">{{ stats.chat_leads }}</div><div class="dash-stat__label">Leads del chat</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{{ stats.conversion }}%</div><div class="dash-stat__label">Conversión chat→lead</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{{ stats.escalated }}</div><div class="dash-stat__label">Escaladas</div></div>
+</section>
+<section class="dash-stats">
+    <div class="dash-stat"><div class="dash-stat__num">{{ stats.leads_total }}</div><div class="dash-stat__label">Leads totales</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{{ stats.leads_form }}</div><div class="dash-stat__label">Del formulario</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{% if stats.csat_avg %}{{ stats.csat_avg }}/5{% else %}—{% endif %}</div><div class="dash-stat__label">CSAT ({{ stats.csat_n }} votos)</div></div>
+    {% if request.user.is_staff %}
+    <div class="dash-stat"><div class="dash-stat__num">${{ stats.est_cost }}</div><div class="dash-stat__label">Costo API est. ({{ stats.tokens }} tokens)</div></div>
+    {% endif %}
+</section>
+
+{% if unanswered %}
+<div class="dash-card">
+    <h2>Motivos de escalamiento recientes (material para afinar el agente)</h2>
+    <ul>{% for r in unanswered %}<li>{{ r }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{% if top_pages %}
+<div class="dash-card">
+    <h2>Páginas que más leads producen</h2>
+    <table class="dash-table" style="max-width:680px">
+        <tbody>{% for p in top_pages %}<tr><td>{{ p.page_url|truncatechars:70 }}</td><td><b>{{ p.n }}</b></td></tr>{% endfor %}</tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if per_client %}
+<div class="dash-card">
+    <h2>Por cliente (operador)</h2>
+    <table class="dash-table">
+        <thead><tr><th>Cliente</th><th>Conversaciones</th><th>Leads</th><th>Tokens</th><th>Costo est.</th></tr></thead>
+        <tbody>
+            {% for row in per_client %}
+            <tr><td>{{ row.client__name }}</td><td>{{ row.n }}</td><td>{{ row.leads }}</td><td>{{ row.tokens|default:0 }}</td><td>${{ row.cost }}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,8 @@
+# These files are executed or parsed on the Ubuntu server. Checked out with
+# CRLF from a Windows clone they fail in ways that read as unrelated bugs
+# ("/bin/bash^M: bad interpreter", nginx refusing a directive), so pin them to
+# LF regardless of the platform the commit came from.
+*.sh          text eol=lf
+*.service     text eol=lf
+*.conf        text eol=lf
+deploy/**     text eol=lf

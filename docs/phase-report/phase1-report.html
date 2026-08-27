@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>DOMINIO Chat 24/7 — Phase 1: Especificación y Diseño del Sistema</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<style>
+  @page { size: Letter; margin: 20mm 18mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: #1a1a2e; font-size: 10pt; line-height: 1.5; margin: 0; }
+  h1 { font-size: 17pt; margin: 0 0 4px; }
+  h2 { font-size: 13.5pt; margin: 24px 0 8px; border-bottom: 1.5px solid #d8d8e0; padding-bottom: 4px; page-break-after: avoid; }
+  h3 { font-size: 11pt; margin: 14px 0 6px; page-break-after: avoid; }
+  p { margin: 5px 0; text-align: justify; }
+  ul, ol { margin: 5px 0 8px; padding-left: 20px; }
+  li { margin: 2.5px 0; }
+  code { font-family: Consolas, monospace; font-size: 8.8pt; background: #f2f2f5; padding: 1px 4px; border-radius: 3px; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 8.8pt; page-break-inside: avoid; }
+  th, td { border: 1px solid #c8c8d0; padding: 4.5px 7px; text-align: left; vertical-align: top; }
+  th { background: #1a1a2e; color: #fff; font-weight: 600; }
+  tr:nth-child(even) td { background: #f7f7fa; }
+  .cover { height: 88vh; display: flex; flex-direction: column; justify-content: center; text-align: center; page-break-after: always; }
+  .cover .kicker { text-transform: uppercase; letter-spacing: 4px; color: #b8860b; font-weight: 600; font-size: 10pt; }
+  .cover h1 { font-size: 26pt; margin: 10px 0 4px; }
+  .cover .sub { font-size: 13pt; color: #555; margin-bottom: 30px; }
+  .cover .meta { color: #777; font-size: 10pt; line-height: 1.9; }
+  .toc { page-break-after: always; }
+  .toc ol { columns: 2; column-gap: 40px; font-size: 9.5pt; }
+  .fig { margin: 10px 0 14px; page-break-inside: avoid; text-align: center; }
+  .fig .mermaid { display: inline-block; text-align: left; max-width: 100%; }
+  .figcap { font-size: 8.5pt; color: #666; margin-top: 4px; text-align: center; font-style: italic; }
+  .shot { max-width: 100%; border: 1px solid #ccc; border-radius: 4px; }
+  .shot-sm { max-width: 62%; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
+  .box { background: #f7f5ef; border-left: 4px solid #b8860b; padding: 8px 12px; margin: 10px 0; page-break-inside: avoid; }
+  .ok { color: #1e7a34; font-weight: 700; }
+  .par { color: #8a5a00; font-weight: 700; }
+  .no { color: #7a1e1e; font-weight: 700; }
+  .pb { page-break-before: always; }
+  .footer-note { margin-top: 26px; font-size: 8.5pt; color: #888; border-top: 1px solid #ddd; padding-top: 6px; }
+</style>
+</head>
+<body>
+
+<!-- ==================== PORTADA ==================== -->
+<div class="cover">
+  <div class="kicker">DOMINIO · dominiopr.com</div>
+  <h1>DOMINIO Chat 24/7</h1>
+  <div class="sub">Phase 1 — Especificación oficial del producto y diseño del sistema<br>Plataforma multi-tenant de atención con IA, captura de leads y seguimiento centralizado por cliente</div>
+  <div class="meta">
+    Propietario del documento: DOMINIO · Clasificación: uso interno y comercial<br>
+    Responsable y único desarrollador: Leomar Rodríguez González<br>
+    Repositorio: <code>dominiopr-landing-page</code> (Django / Python) · Sistema base en producción<br>
+    24 de julio de 2026 · Versión 2.0
+  </div>
+</div>
+
+<!-- ==================== CONTROL ==================== -->
+<h2>Control del documento</h2>
+<table>
+  <tr><th>Versión</th><th>Fecha</th><th>Autor</th><th>Descripción del cambio</th></tr>
+  <tr><td>1.0</td><td>22 de julio de 2026</td><td>Leomar Rodríguez González</td><td>Especificación y diseño del sistema en producción (ingeniería inversa documentada).</td></tr>
+  <tr><td>1.0 (spec)</td><td>23 de julio de 2026</td><td>Leomar Rodríguez González</td><td><em>DOMINIO Chat 24/7 — Especificación oficial del producto</em> (documento independiente).</td></tr>
+  <tr><td>2.0</td><td>24 de julio de 2026</td><td>Leomar Rodríguez González</td><td>Reescritura unificada: fusiona la especificación oficial del producto con el diseño y estado real del sistema en un solo documento.</td></tr>
+</table>
+<p><strong>Responsabilidad profesional:</strong> el análisis, diseño, desarrollo, integración, pruebas, despliegue y mantenimiento de DOMINIO Chat 24/7 están a cargo de Leomar Rodríguez González como único desarrollador responsable bajo la marca DOMINIO, con herramientas de IA como apoyo bajo su dirección y revisión. Los servicios especializados de terceros (nube, modelos de IA, correo) se identifican como dependencias o proveedores.</p>
+<div class="box"><strong>Convención de estado.</strong> Este documento describe el producto completo. Cada requisito se marca con su estado real: <span class="ok">✔ en producción</span> · <span class="par">⚠ parcial</span> · <span class="no">✘ planificado</span>. Todo lo ⚠/✘ tiene su mejora correspondiente (M-xx) especificada en el documento <em>Phase 2 — Plan de Mejoras</em>.</div>
+
+<!-- ==================== TOC ==================== -->
+<div class="toc">
+  <h2>Tabla de contenido</h2>
+  <ol>
+    <li>Resumen ejecutivo</li>
+    <li>Visión del producto</li>
+    <li>Contexto del negocio y problema</li>
+    <li>Objetivos y métricas de éxito</li>
+    <li>Alcance, exclusiones y supuestos</li>
+    <li>Proceso actual sujeto a mejora</li>
+    <li>Soluciones previas (benchmarking)</li>
+    <li>Solución propuesta y estado de implementación</li>
+    <li>Stakeholders y roles de usuario</li>
+    <li>Modelo de desarrollo</li>
+    <li>Requisitos funcionales</li>
+    <li>Lógica conversacional y escalamiento</li>
+    <li>Gestión del conocimiento e inteligencia artificial</li>
+    <li>Modelo de datos</li>
+    <li>Modelos del sistema (UML)</li>
+    <li>Arquitectura de la solución</li>
+    <li>Navegación y experiencia de usuario</li>
+    <li>Seguridad, privacidad y gobierno de IA</li>
+    <li>Requisitos no funcionales</li>
+    <li>Analítica, integraciones y operación</li>
+    <li>Riesgos y mitigaciones</li>
+    <li>Criterios de aceptación y pruebas</li>
+    <li>Prototipo funcional</li>
+    <li>Conclusión ejecutiva</li>
+    <li>Apéndices A–C · Glosario · Referencias</li>
+  </ol>
+</div>
+
+<!-- ==================== 1 ==================== -->
+<h2>1. Resumen ejecutivo</h2>
+<p><strong>DOMINIO Chat 24/7</strong> es una plataforma de atención automatizada para páginas web: responde consultas de visitantes en cualquier momento con información aprobada por cada organización, orienta a clientes potenciales, captura datos de contacto, identifica oportunidades comerciales, agenda citas y transfiere el seguimiento a una persona cuando la consulta lo requiere. La plataforma es <strong>multi-tenant</strong>: sirve a múltiples clientes de DOMINIO manteniendo aislamiento total de datos y configuración por organización, y centraliza en un panel por cliente las conversaciones, los prospectos y las métricas.</p>
+<p>A diferencia de una especificación puramente prospectiva, este documento parte de una realidad: <strong>el núcleo del sistema está construido y en producción</strong> en dominiopr.com — widget de conversación con IA (Claude, de Anthropic), captura de leads validada en servidor, reservas con protección anti doble-reserva, plataforma multi-tenant con widget embebible de una línea, panel de administración de agentes y dashboard de leads por cliente. Sobre esa base, el producto completo añade la capa de plataforma centralizada: historial y bandeja de conversaciones, base de conocimiento gestionada, roles y auditoría, analítica y cobro por suscripción (especificados en Phase 2).</p>
+<p><strong>Resultado esperado:</strong> convertir la página web de cada cliente en un canal de atención activo 24/7, sin sustituir la supervisión humana ni comprometer la exactitud, la privacidad o el control del cliente.</p>
+
+<!-- ==================== 2 ==================== -->
+<h2>2. Visión del producto</h2>
+<h3>2.1 Declaración de visión</h3>
+<p>Para organizaciones que reciben consultas frecuentes mediante su página web y pierden oportunidades fuera del horario laboral, DOMINIO Chat 24/7 ofrece un asistente conversacional configurable que responde con información autorizada, guía al visitante y crea oportunidades de seguimiento. A diferencia de un formulario estático o un chatbot limitado a opciones rígidas, combina conversación natural con IA, control de fuentes, reglas operativas, validación en servidor y supervisión humana.</p>
+<h3>2.2 Propuesta de valor</h3>
+<ul>
+  <li>Atención inmediata durante las 24 horas del día, en español de Puerto Rico.</li>
+  <li>Respuestas consistentes y alineadas con el contenido oficial del negocio.</li>
+  <li>Captura estructurada de prospectos y citas — validada por el servidor, no por el modelo.</li>
+  <li>Reducción de preguntas repetitivas atendidas manualmente.</li>
+  <li>Transferencia de contexto a personal humano cuando sea necesario.</li>
+  <li>Datos sobre lo que los visitantes preguntan, necesitan y no encuentran.</li>
+  <li>Instalación en cualquier página con una línea de código; servicio manejado por DOMINIO.</li>
+</ul>
+<h3>2.3 Principios del producto</h3>
+<table>
+  <tr><th>Principio</th><th>Aplicación</th></tr>
+  <tr><td>Exactitud antes que fluidez</td><td>La respuesta debe estar respaldada por el contenido del negocio o declarar su limitación; el agente tiene prohibido inventar precios, promesas o hechos.</td></tr>
+  <tr><td>El modelo propone, el backend valida</td><td>Ninguna escritura de datos (leads, citas) depende del juicio de la IA: validación en servidor y constraints de base de datos.</td></tr>
+  <tr><td>Humano disponible como alternativa</td><td>El sistema facilita seguimiento o transferencia; siempre existe un canal alterno (formulario, email).</td></tr>
+  <tr><td>Privacidad por diseño</td><td>Solo se solicitan los datos necesarios; reglas de acceso, aislamiento por organización y retención definida.</td></tr>
+  <tr><td>Control del cliente</td><td>La organización decide contenido, mensajes, reglas, apariencia, dominios y usuarios.</td></tr>
+  <tr><td>Experiencia simple</td><td>El visitante no necesita conocer la tecnología; el administrador no necesita capacitación extensa.</td></tr>
+  <tr><td>Austeridad operable</td><td>La arquitectura debe poder operarla una sola persona con costos acotados por diseño.</td></tr>
+  <tr><td>Mejora continua</td><td>Las conversaciones y métricas deben permitir detectar contenido faltante y oportunidades.</td></tr>
+</table>
+
+<!-- ==================== 3 ==================== -->
+<h2>3. Contexto del negocio y problema</h2>
+<p><strong>DOMINIO</strong> (dominiopr.com) es un estudio de software y tecnología en Puerto Rico: desarrolla plataformas a la medida, dashboards, automatizaciones y herramientas de IA, y maneja la tecnología del día a día de sus clientes. Sus clientes y prospectos usan las páginas web como punto de entrada para conocer servicios y establecer contacto.</p>
+<h3>3.1 Problemas identificados</h3>
+<ul>
+  <li>La página web informa, pero no conversa ni identifica la necesidad específica del visitante.</li>
+  <li>Las consultas fuera de horario no reciben atención inmediata; el visitante abandona antes de llenar un formulario.</li>
+  <li>El personal repite respuestas similares en distintos canales, con calidad variable según quién atienda.</li>
+  <li>Los datos de contacto y el contexto quedan dispersos entre correos, formularios y mensajes.</li>
+  <li>La organización no dispone de una visión centralizada de las preguntas y oportunidades que genera su sitio.</li>
+</ul>
+<h3>3.2 Oportunidad</h3>
+<p>Convertir el tráfico web existente en conversaciones útiles y medibles. Un asistente bien gobernado orienta de inmediato, reduce fricción, mejora la captura de oportunidades y entrega información operativa. DOMINIO — que sufría el mismo problema en su propia página — resolvió primero su caso y convirtió la solución en un producto vendible por suscripción a PYMEs de Puerto Rico, con una brecha de mercado clara: ninguna opción existente combina IA generativa real en español puertorriqueño, captura validada, instalación de una línea y precio/manejo pensados para el mercado local (ver benchmarking, sección 7).</p>
+
+<!-- ==================== 4 ==================== -->
+<h2>4. Objetivos y métricas de éxito</h2>
+<table>
+  <tr><th>ID</th><th>Objetivo</th><th>Estado</th></tr>
+  <tr><td>OBJ-01</td><td>Ofrecer un canal de atención disponible 24/7 desde la página web.</td><td><span class="ok">✔ en producción</span></td></tr>
+  <tr><td>OBJ-02</td><td>Resolver automáticamente consultas frecuentes con información autorizada.</td><td><span class="ok">✔ en producción</span></td></tr>
+  <tr><td>OBJ-03</td><td>Capturar datos de contacto e intención cuando exista una oportunidad de seguimiento.</td><td><span class="ok">✔ en producción</span></td></tr>
+  <tr><td>OBJ-04</td><td>Escalar preguntas complejas o inciertas con el contexto de la conversación.</td><td><span class="par">⚠ parcial</span> (referencia al equipo; consola → M-16)</td></tr>
+  <tr><td>OBJ-05</td><td>Centralizar conversaciones, prospectos, fuentes y métricas por cliente.</td><td><span class="par">⚠ parcial</span> (leads sí; conversaciones/fuentes/métricas → M-02/M-15/M-03)</td></tr>
+  <tr><td>OBJ-06</td><td>Permitir que cada cliente controle contenido, apariencia y reglas de su chatbot.</td><td><span class="ok">✔ en producción</span> (vía servicio manejado en el Factory)</td></tr>
+  <tr><td>OBJ-07</td><td>Proteger datos, accesos y separación entre organizaciones.</td><td><span class="ok">✔ en producción</span> (roles granulares y auditoría → M-17)</td></tr>
+</table>
+<h3>4.1 Indicadores de éxito (metas iniciales de diseño, a validar en piloto)</h3>
+<table>
+  <tr><th>Indicador</th><th>Meta inicial</th><th>Método de medición</th></tr>
+  <tr><td>Disponibilidad del servicio</td><td>99.5% mensual</td><td>Monitoreo de disponibilidad.</td></tr>
+  <tr><td>Tiempo de respuesta del chat</td><td>&lt; 8 segundos en operación normal</td><td>Latencia de mensajes.</td></tr>
+  <tr><td>Resolución automática</td><td>≥ 70% de consultas frecuentes</td><td>Conversaciones cerradas sin escalamiento (requiere M-02/M-16).</td></tr>
+  <tr><td>Conversaciones sin respuesta útil</td><td>&lt; 10%</td><td>Registro de respuesta segura (requiere M-19).</td></tr>
+  <tr><td>Captura de prospectos</td><td>Mayor que el formulario web</td><td>Ya medible: <code>source=chat</code> vs <code>contact_form</code>.</td></tr>
+  <tr><td>Satisfacción (CSAT)</td><td>≥ 4 / 5</td><td>Encuesta post-conversación (requiere M-18).</td></tr>
+</table>
+
+<!-- ==================== 5 ==================== -->
+<h2 class="pb">5. Alcance, exclusiones y supuestos</h2>
+<h3>5.1 Alcance del producto</h3>
+<ul>
+  <li>Widget de conversación para páginas web en escritorio y móvil, embebible con una línea de código.</li>
+  <li>Respuestas basadas en contenido aprobado por organización; soporte de español (primario) e inglés.</li>
+  <li>Configuración de identidad, saludo, apariencia, acciones rápidas y dominios autorizados por cliente.</li>
+  <li>Captura de prospectos con validación; agendamiento de citas con protección anti doble-reserva.</li>
+  <li>Escalamiento a seguimiento humano por correo o consola.</li>
+  <li>Panel administrativo: agentes, conocimiento, conversaciones, prospectos, usuarios y métricas.</li>
+  <li>Demo público "prueba tu propio agente" como herramienta de venta (proof-of-value).</li>
+  <li>Arquitectura multi-organización y multi-sitio con aislamiento de datos.</li>
+</ul>
+<h3>5.2 Exclusiones</h3>
+<ul>
+  <li>Procesamiento de pagos de visitantes o manejo de tarjetas dentro del chat. (El cobro de suscripciones a los clientes vía pasarela alojada — Stripe — sí es parte del plan: M-01.)</li>
+  <li>Llamadas de voz, videollamadas o reconocimiento de voz.</li>
+  <li>Ejecución autónoma de acciones críticas en sistemas externos.</li>
+  <li>Asesoría legal, médica, financiera o profesional sin revisión humana.</li>
+  <li>Chat conversacional dentro de redes sociales o WhatsApp en el lanzamiento (solo notificaciones salientes, futuras).</li>
+  <li>Sustitución total del personal de atención al cliente.</li>
+</ul>
+<h3>5.3 Supuestos</h3>
+<ul>
+  <li>El cliente provee contenido correcto, vigente y con derechos de uso, y designa un responsable de validar respuestas y atender escalaciones.</li>
+  <li>El sitio del cliente permite instalar un fragmento de código.</li>
+  <li>Los servicios de IA, nube y correo tienen costos variables por uso — acotados por los límites del sistema.</li>
+  <li>Las integraciones dependen de cuentas, permisos y APIs del cliente.</li>
+</ul>
+
+<!-- ==================== 6 ==================== -->
+<h2>6. Proceso actual sujeto a mejora</h2>
+<p>El proceso sin la plataforma — el que vive un negocio típico — depende del contenido estático y de canales atendidos manualmente:</p>
+<ol>
+  <li>El visitante accede a la página y revisa servicios, preguntas frecuentes y datos de contacto.</li>
+  <li>Si no encuentra respuesta, envía un formulario, correo o mensaje — o simplemente se va.</li>
+  <li>La consulta queda pendiente hasta que una persona esté disponible (fuera de horario: al próximo día laborable).</li>
+  <li>El personal interpreta la necesidad, busca la información y responde manualmente.</li>
+  <li>Las citas se coordinan con mensajes de ida y vuelta; el contexto queda distribuido entre canales.</li>
+</ol>
+<div class="fig">
+<pre class="mermaid">
+flowchart LR
+  V(["Visitante"]) --- U1(["Leer contenido<br/>de la página"])
+  V --- U2(["Buscar información<br/>de contacto"])
+  V --- U3(["Enviar formulario<br/>o email"])
+  V --- U4(["Llamar para<br/>coordinar cita"])
+  D(["Dueño del negocio"]) --- U5(["Revisar buzón<br/>manualmente"])
+  D --- U6(["Responder y dar<br/>seguimiento"])
+  D --- U7(["Anotar interesados<br/>en notas sueltas"])
+  U3 -.-> U5
+  U4 -.-> U6
+</pre>
+<div class="figcap">Figura 1 — Casos de uso del proceso actual (as-is): atención manual, asincrónica y sin registro estructurado.</div>
+</div>
+<p><strong>Información y documentos en uso:</strong> contenido de la página, descripciones de servicios, preguntas frecuentes, formularios de contacto, correos y notas de seguimiento, políticas y material institucional — los mismos insumos que alimentarán la base de conocimiento del agente.</p>
+
+<!-- ==================== 7 ==================== -->
+<h2>7. Soluciones previas (benchmarking)</h2>
+<table>
+  <tr><th>Herramienta</th><th>Qué ofrece</th><th>Limitación frente al problema</th></tr>
+  <tr><td>Intercom (Fin AI)</td><td>Chat de sitio con agente de IA y helpdesk completo.</td><td>Precio de nivel empresarial (suscripción + costo por resolución); inglés-primero; excesivo para una PYME de PR.</td></tr>
+  <tr><td>Drift / Salesloft</td><td>Chat conversacional de marketing B2B.</td><td>Enfocado a equipos de ventas grandes; costo alto; sin adaptación local.</td></tr>
+  <tr><td>Tidio / Tawk.to</td><td>Widgets económicos con bots de reglas y live chat.</td><td>Los bots de reglas no entienden preguntas libres; el live chat vuelve a depender de un humano conectado.</td></tr>
+  <tr><td>HubSpot Chat</td><td>Chat + CRM gratuito con bots básicos.</td><td>La IA conversacional real requiere planes pagados; configuración compleja para un dueño de negocio.</td></tr>
+  <tr><td>Chatbots de reglas (ManyChat, Landbot)</td><td>Flujos de botones predefinidos.</td><td>Abandonan al visitante cuando la pregunta se sale del guion.</td></tr>
+  <tr><td>Formulario de contacto</td><td>Universal y barato.</td><td>Es exactamente el proceso actual: pasivo, sin respuesta inmediata ni calificación del lead.</td></tr>
+</table>
+<p><strong>Posición de DOMINIO Chat 24/7:</strong> IA generativa real que conversa en español puertorriqueño sobre el negocio específico + captura y citas validadas en servidor + instalación de una línea + servicio manejado y precios para el mercado local.</p>
+
+<!-- ==================== 8 ==================== -->
+<h2 class="pb">8. Solución propuesta y estado de implementación</h2>
+<p>DOMINIO Chat 24/7 centraliza la conversación, el conocimiento y el seguimiento en una sola plataforma. Cada organización (tenant) tiene su configuración, contenido, reglas, apariencia y dominios permitidos. El visitante conversa sin crear cuenta; el personal autorizado usa un panel protegido. Tres capas de producto sobre una sola base de código Django:</p>
+<table>
+  <tr><th>Capa</th><th>Contenido</th><th>Estado</th></tr>
+  <tr><td>Sitio comercial de DOMINIO</td><td>Landing en español de PR, seis líneas de servicio, precios con signup self-serve (4 planes + anual), formulario de contacto, demo público del agente, GA4 con consentimiento.</td><td><span class="ok">✔ en producción</span></td></tr>
+  <tr><td>Agente conversacional</td><td>Widget con IA (Claude), quick-replies, captura de leads (<code>capture_lead</code>) y citas (<code>create_booking</code>) validadas en backend, emails de notificación con contexto y página de origen.</td><td><span class="ok">✔ en producción</span></td></tr>
+  <tr><td>Plataforma multi-tenant</td><td>Widget embebible de una línea tematizado por cliente, Agent Factory (alta/edición/pausa), dashboard de leads por cliente con login auto-provisionado, aislamiento por organización.</td><td><span class="ok">✔ en producción</span></td></tr>
+  <tr><td>Plataforma centralizada completa</td><td>Historial y bandeja de conversaciones con estados, base de conocimiento con fuentes, roles y auditoría, analítica, encuestas, cobro por suscripción.</td><td><span class="no">✘ planificada</span> — Phase 2 (M-01…M-19)</td></tr>
+</table>
+<h3>8.1 Flujo operacional</h3>
+<ol>
+  <li>El visitante abre el widget y recibe un saludo contextual con acciones rápidas.</li>
+  <li>Formula una pregunta o selecciona una opción; el sistema valida dominio, límites y configuración del tenant.</li>
+  <li>El motor arma el contexto (reglas compartidas + conocimiento del negocio) y la IA genera una respuesta sujeta a reglas.</li>
+  <li>Cuando hay intención comercial, el agente guía hacia contacto o cita; el backend valida y persiste; se notifica al cliente.</li>
+  <li>Cuando la pregunta no puede resolverse, el agente lo reconoce y ofrece seguimiento humano.</li>
+  <li>La interacción queda disponible para análisis y mejora continua (con M-02/M-03).</li>
+</ol>
+
+<!-- ==================== 9 ==================== -->
+<h2>9. Stakeholders y roles de usuario</h2>
+<table>
+  <tr><th>Stakeholder</th><th>Interés</th><th>Rol en el sistema</th></tr>
+  <tr><td>Visitante / cliente potencial</td><td>Orientación rápida y confiable.</td><td>Usa el widget, pregunta, deja datos o reserva; sin cuenta.</td></tr>
+  <tr><td>Prospecto (lead)</td><td>Recibir seguimiento sobre su necesidad.</td><td>Provee contacto e intención; queda en el pipeline del cliente.</td></tr>
+  <tr><td>Dueño / representante del cliente (tenant)</td><td>Que el chatbot represente bien su negocio y produzca leads.</td><td>Aprueba contenido y reglas; atiende leads desde su dashboard.</td></tr>
+  <tr><td>Agente humano del cliente</td><td>Atender lo no resuelto automáticamente.</td><td>Recibe contexto y continúa el seguimiento (rol formal → M-17).</td></tr>
+  <tr><td>DOMINIO (operador de plataforma)</td><td>Operar, mantener y evolucionar el servicio.</td><td>Administra agentes en el Factory, seguridad, costos y soporte.</td></tr>
+  <tr><td>Proveedores (Anthropic, AWS, Google)</td><td>—</td><td>Inferencia de IA, infraestructura, correo y analítica: dependencias externas.</td></tr>
+</table>
+<h3>9.1 Matriz de permisos</h3>
+<table>
+  <tr><th>Función</th><th>Visitante</th><th>Agente*</th><th>Admin. organización*</th><th>Admin. DOMINIO</th></tr>
+  <tr><td>Conversar con el widget</td><td>Sí</td><td>Sí</td><td>Sí</td><td>Sí</td></tr>
+  <tr><td>Ver conversaciones</td><td>Solo su sesión</td><td>Asignadas o permitidas</td><td>Toda su organización</td><td>Según soporte autorizado</td></tr>
+  <tr><td>Ver y gestionar prospectos</td><td>No</td><td>Asignados</td><td>Toda su organización</td><td>Todo</td></tr>
+  <tr><td>Gestionar conocimiento/fuentes</td><td>No</td><td>No</td><td>Sí</td><td>Sí</td></tr>
+  <tr><td>Gestionar usuarios</td><td>No</td><td>No</td><td>Su organización</td><td>Sí</td></tr>
+  <tr><td>Configurar agentes/plataforma</td><td>No</td><td>No</td><td>Limitado a su organización</td><td>Sí</td></tr>
+  <tr><td>Ver auditoría</td><td>No</td><td>No</td><td>Parcial</td><td>Sí</td></tr>
+</table>
+<p style="font-size:8.5pt">* Estado actual: existe el binario miembro-de-organización (ve todo lo suyo) vs. staff de DOMINIO (ve todo). La separación agente/admin-organización y la auditoría se implementan en M-17. El aislamiento entre organizaciones ya es efectivo hoy (scoping por <code>Membership</code>).</p>
+
+<!-- ==================== 10 ==================== -->
+<h2>10. Modelo de desarrollo</h2>
+<p>Modelo <strong>iterativo-incremental de corte ágil</strong> con entregas continuas a producción, ejecutado por un único desarrollador con asistencia de IA. Justificación: los requisitos evolucionan con feedback real de prospectos, cada incremento es desplegable y el costo de un ciclo en cascada no se justifica a esta escala. Los cambios que afecten alcance, arquitectura, seguridad o costos se documentan y clasifican (corrección / ajuste menor / mejora / ampliación de alcance).</p>
+<table>
+  <tr><th>Incremento</th><th>Contenido</th><th>Estado</th></tr>
+  <tr><td>1. Sitio comercial</td><td>Landing, formulario, emails, despliegue.</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>2. Agente de IA propio</td><td>Widget "Ask DOMINIO", motor con tools, límites anti-abuso.</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>3. Multi-tenant</td><td>Clientes, widget embebible, Factory, dashboards, onboarding, reservas.</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>4. Comercialización</td><td>Precios (4 planes + anual), funnel de signup, kit de marketing.</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>5. Formalización</td><td>Especificación unificada (este documento) + plan de mejoras (Phase 2).</td><td><span class="ok">✔ esta entrega</span></td></tr>
+  <tr><td>6. Plataforma completa</td><td>Iteraciones 1–5 del roadmap de Phase 2 (pruebas, cobro, historial, analítica, citas, conocimiento, consola, roles).</td><td><span class="no">✘ próxima</span></td></tr>
+</table>
+
+<!-- ==================== 11 ==================== -->
+<h2 class="pb">11. Requisitos funcionales</h2>
+<p>Catálogo unificado. Prioridad MoSCoW; el estado refleja el sistema real y, cuando aplica, la mejora de Phase 2 que completa el requisito.</p>
+<table>
+  <tr><th>ID</th><th>Requisito</th><th>Prior.</th><th>Estado</th></tr>
+  <tr><td>RF-01</td><td>Inicio de conversación sin crear cuenta.</td><td>Must</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>RF-02</td><td>Saludo configurable por organización (autogenerable por IA); variación por página/horario.</td><td>Should</td><td><span class="par">⚠</span> saludo por tenant ✔; por página/horario ✘</td></tr>
+  <tr><td>RF-03</td><td>Mensajería de texto conservando el orden de la conversación.</td><td>Must</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>RF-04</td><td>Respuesta basada exclusivamente en conocimiento autorizado del negocio.</td><td>Must</td><td><span class="par">⚠</span> vía texto compilado; fuentes gestionadas → M-15</td></tr>
+  <tr><td>RF-05</td><td>Control de incertidumbre: declarar limitación y ofrecer alternativa en vez de inventar.</td><td>Must</td><td><span class="par">⚠</span> reglas activas; medición formal → M-19</td></tr>
+  <tr><td>RF-06</td><td>Acciones rápidas (quick-replies) por servicios y temas.</td><td>Should</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>RF-07</td><td>Captura de prospectos: nombre, correo, teléfono, empresa, interés; consentimiento.</td><td>Must</td><td><span class="ok">✔</span> (aviso de consentimiento explícito → M-10)</td></tr>
+  <tr><td>RF-08</td><td>Validación de formatos antes de guardar (email real, teléfono de 10 dígitos).</td><td>Must</td><td><span class="ok">✔</span> en backend</td></tr>
+  <tr><td>RF-09</td><td>Agendamiento de citas con fecha/hora validadas y anti doble-reserva.</td><td>Must</td><td><span class="ok">✔</span> (constraint único parcial en BD)</td></tr>
+  <tr><td>RF-10</td><td>Escalamiento por solicitud, regla, tema sensible o baja confianza.</td><td>Must</td><td><span class="no">✘</span> → M-16</td></tr>
+  <tr><td>RF-11</td><td>Transferencia de contexto al humano: historial, resumen, datos y motivo.</td><td>Must</td><td><span class="no">✘</span> → M-16</td></tr>
+  <tr><td>RF-12</td><td>Atención humana: continuar la conversación o registrar seguimiento; cierre clasificando resultado.</td><td>Should</td><td><span class="no">✘</span> → M-16</td></tr>
+  <tr><td>RF-13</td><td>Encuesta de satisfacción opcional al finalizar.</td><td>Could</td><td><span class="no">✘</span> → M-18</td></tr>
+  <tr><td>RF-14</td><td>Gestión de chatbots: crear, editar, activar, pausar (nunca borrar).</td><td>Must</td><td><span class="ok">✔</span> Agent Factory</td></tr>
+  <tr><td>RF-15</td><td>Personalización visual: nombre, colores con derivación de tema, saludo, posición.</td><td>Should</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>RF-16</td><td>Instalación por snippet de una línea (<code>widget.js?key=SLUG</code>).</td><td>Must</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>RF-17</td><td>Dominios autorizados: el widget solo funciona en la allowlist del cliente.</td><td>Must</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>RF-18</td><td>Gestión de fuentes de conocimiento (URL, documento, FAQ, texto) con ciclo de vida.</td><td>Must</td><td><span class="no">✘</span> → M-15</td></tr>
+  <tr><td>RF-19</td><td>Procesamiento de fuentes: extraer, limpiar, componer el contexto del agente.</td><td>Must</td><td><span class="no">✘</span> → M-15</td></tr>
+  <tr><td>RF-20</td><td>Actualización/reprocesamiento de fuentes manual o programado.</td><td>Should</td><td><span class="no">✘</span> → M-15</td></tr>
+  <tr><td>RF-21</td><td>Prueba antes de publicar: preguntas de prueba contra una versión borrador.</td><td>Must</td><td><span class="no">✘</span> → M-15/M-19</td></tr>
+  <tr><td>RF-22</td><td>Historial de conversaciones: listar, filtrar, buscar y abrir.</td><td>Must</td><td><span class="no">✘</span> → M-02/M-16</td></tr>
+  <tr><td>RF-23</td><td>Etiquetas y clasificación de conversaciones (tema, prioridad, resultado, responsable).</td><td>Should</td><td><span class="no">✘</span> → M-16</td></tr>
+  <tr><td>RF-24</td><td>Gestión de prospectos: consultar, actualizar estado del pipeline, responder, exportar.</td><td>Must</td><td><span class="par">⚠</span> pipeline y respuesta ✔; export → M-07</td></tr>
+  <tr><td>RF-25</td><td>Reportes: volumen, resolución, escalamiento, satisfacción, temas, prospectos, costo.</td><td>Must</td><td><span class="no">✘</span> → M-03</td></tr>
+  <tr><td>RF-26</td><td>Usuarios y roles por organización: invitar, activar, desactivar, asignar rol.</td><td>Must</td><td><span class="par">⚠</span> login auto-provisionado ✔; roles/invitaciones → M-17</td></tr>
+  <tr><td>RF-27</td><td>Auditoría de acciones administrativas con usuario, fecha y resultado.</td><td>Must</td><td><span class="no">✘</span> → M-17</td></tr>
+  <tr><td>RF-28</td><td>Notificaciones de prospectos, citas y escalamientos.</td><td>Should</td><td><span class="par">⚠</span> email ✔; WhatsApp/SMS → M-06</td></tr>
+  <tr><td>RF-29</td><td>Exportación de datos permitidos (CSV).</td><td>Should</td><td><span class="no">✘</span> → M-07</td></tr>
+  <tr><td>RF-30</td><td>Privacidad operativa: localizar, exportar, anonimizar o eliminar datos.</td><td>Must</td><td><span class="no">✘</span> → M-10</td></tr>
+  <tr><td>RF-31</td><td>Configuración por organización: identidad, reglas, contenido y usuarios independientes.</td><td>Must</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>RF-32</td><td>Bloqueo y límites: rate limits, cuotas, suspensión controlada.</td><td>Must</td><td><span class="par">⚠</span> límites por IP y global ✔; cuota por tenant → M-04</td></tr>
+  <tr><td>RF-33</td><td>Demo público: probar el agente con el contexto del propio negocio, sin persistir nada.</td><td>Should</td><td><span class="ok">✔</span> (proof-of-value)</td></tr>
+  <tr><td>RF-34</td><td>Cobro de suscripción por plan (mensual/anual) sin coordinación manual.</td><td>Must</td><td><span class="no">✘</span> → M-01</td></tr>
+</table>
+
+<h3>11.1 Casos de uso del sistema</h3>
+<div class="fig">
+<pre class="mermaid">
+flowchart LR
+  subgraph actores1 [" "]
+    V(["Visitante"])
+    P(["Prospecto de agente"])
+  end
+  subgraph sistema ["DOMINIO Chat 24/7"]
+    UC1(["UC-01 Conversar con<br/>el agente de IA"])
+    UC2(["UC-02 Quedar registrado<br/>como lead vía chat"])
+    UC3(["UC-03 Reservar una cita"])
+    UC4(["UC-04 Enviar formulario<br/>de contacto"])
+    UC5(["UC-05 Probar el demo con<br/>su propio negocio"])
+    UC6(["UC-06 Solicitar un plan<br/>(signup)"])
+    UC7(["UC-07 Gestionar leads<br/>en el dashboard"])
+    UC8(["UC-08 Responder a un lead<br/>por email"])
+    UC9(["UC-09 Administrar agentes<br/>(Agent Factory)"])
+    UC10(["UC-10 Instalar el widget<br/>en su página"])
+  end
+  subgraph actores2 [" "]
+    T(["Cliente (tenant)"])
+    S(["Staff DOMINIO"])
+    A[/"API de Claude<br/>(Anthropic)"/]
+    G[/"Gmail SMTP"/]
+  end
+  V --- UC1
+  V --- UC2
+  V --- UC3
+  V --- UC4
+  P --- UC5
+  P --- UC6
+  T --- UC7
+  T --- UC8
+  T --- UC10
+  S --- UC7
+  S --- UC9
+  UC1 --- A
+  UC5 --- A
+  UC2 --- G
+  UC3 --- G
+  UC4 --- G
+</pre>
+<div class="figcap">Figura 2 — Casos de uso implementados (los planificados — bandeja, conocimiento, roles — se modelan en Phase 2).</div>
+</div>
+
+<h3>11.2 Casos de uso detallados (implementados)</h3>
+<table>
+  <tr><th style="width:9%">ID</th><th>Detalle</th></tr>
+  <tr><td><strong>UC-01</strong><br>Conversar con el agente</td><td><strong>Actor:</strong> visitante. <strong>Entrada:</strong> mensajes libres (historial completo por turno; máx. 12 turnos, 64 KB). <strong>Proceso:</strong> <code>POST /api/chat/</code>; el servidor sanitiza, resuelve el tenant por slug, valida el <code>Origin</code> y llama a Claude con reglas compartidas + conocimiento del negocio (prompt caching). <strong>Salida:</strong> respuesta en español de PR, 1–3 oraciones, solo con información del negocio. <strong>Alterno:</strong> sin evidencia suficiente, el agente lo reconoce y ofrece al equipo (regla fundamental, sección 13).</td></tr>
+  <tr><td><strong>UC-02</strong><br>Captura de lead</td><td><strong>Actor:</strong> visitante (iniciado por el agente al detectar interés). <strong>Entrada:</strong> nombre + email y/o teléfono (10 dígitos); empresa y necesidad opcionales. <strong>Proceso:</strong> el modelo invoca <code>capture_lead</code>; el backend re-valida (si falla, el agente re-pregunta), aplica tope 5/h/IP y persiste con <code>source=chat</code> y página de origen. <strong>Salida:</strong> lead en el pipeline + email al cliente con botón al dashboard + confirmación al visitante. El agente no puede afirmar que guardó sin que la tool corriera.</td></tr>
+  <tr><td><strong>UC-03</strong><br>Reservar cita</td><td><strong>Actor:</strong> visitante (tenants con reservas activas). <strong>Entrada:</strong> nombre, email válido, fecha/hora futura confirmada. <strong>Proceso:</strong> <code>create_booking</code>; el backend exige ≥30 min de antelación y ≤120 días; constraint único parcial impide doble reserva; si choca, el agente ofrece otra hora. <strong>Salida:</strong> reserva <code>pending</code> + emails a ambas partes.</td></tr>
+  <tr><td><strong>UC-04</strong><br>Formulario de contacto</td><td><strong>Actor:</strong> visitante que prefiere no chatear. <strong>Salida:</strong> lead con <code>source=contact_form</code> + emails. Respaldo permanente cuando el chat está apagado o en tope.</td></tr>
+  <tr><td><strong>UC-05</strong><br>Demo "prueba tu agente"</td><td><strong>Actor:</strong> prospecto. <strong>Entrada:</strong> descripción de su negocio (≤6,000 caracteres) + preguntas. <strong>Proceso:</strong> <code>POST /api/demo/</code> — sin tools, sin persistir nada, con el mismo tope diario. <strong>Salida:</strong> experiencia de primera mano del producto.</td></tr>
+  <tr><td><strong>UC-06</strong><br>Signup de plan</td><td><strong>Actor:</strong> prospecto. <strong>Entrada:</strong> plan (4 niveles, anual opcional) + contacto (honeypot anti-bot). <strong>Salida:</strong> lead etiquetado <code>[AGENT SIGNUP]</code>; el cobro automático llega con M-01.</td></tr>
+  <tr><td><strong>UC-07</strong><br>Gestionar leads</td><td><strong>Actor:</strong> cliente y staff. <strong>Proceso:</strong> dashboard con estadísticas, tabla filtrable/buscable y pipeline (new → contacted → qualified → won/lost). <strong>Aislamiento:</strong> cada organización ve solo lo suyo; primer login fuerza cambio de contraseña.</td></tr>
+  <tr><td><strong>UC-08</strong><br>Responder a un lead</td><td><strong>Actor:</strong> cliente/staff. <strong>Proceso:</strong> email desde el dashboard (Reply-To al inbox del cliente); un envío exitoso mueve el lead a <code>contacted</code>.</td></tr>
+  <tr><td><strong>UC-09</strong><br>Administrar agentes</td><td><strong>Actor:</strong> staff DOMINIO. <strong>Proceso:</strong> crear/editar clientes (conocimiento, saludo autogenerable, colores, dominios, reservas), pausar/reactivar (nunca borrar), reenviar onboarding. Al activar: login auto-provisionado + email con snippet de instalación.</td></tr>
+  <tr><td><strong>UC-10</strong><br>Instalar el widget</td><td><strong>Actor:</strong> cliente (o DOMINIO por él). <strong>Entrada:</strong> <code>&lt;script src=".../widget.js?key=SLUG" async&gt;</code>. <strong>Salida:</strong> agente tematizado operando en la página del cliente, revocable al instante (pausa o allowlist).</td></tr>
+</table>
+<div class="grid2">
+  <div class="fig"><img class="shot" src="img/ai-chat-reply-desktop.jpg" alt="Chat respondiendo"><div class="figcap">Figura 3 — UC-01: el agente contestando (desktop).</div></div>
+  <div class="fig"><img class="shot" src="img/ai-lead-capture.jpg" alt="Captura de lead"><div class="figcap">Figura 4 — UC-02: captura conversacional de un lead.</div></div>
+</div>
+
+<!-- ==================== 12 ==================== -->
+<h2 class="pb">12. Lógica conversacional y escalamiento</h2>
+<h3>12.1 Estados de conversación</h3>
+<p>Ciclo de vida objetivo (se materializa con M-02/M-16; hoy la conversación vive en el navegador del visitante):</p>
+<table>
+  <tr><th>Estado</th><th>Descripción</th></tr>
+  <tr><td>Activa (por IA)</td><td>La conversación está siendo atendida automáticamente.</td></tr>
+  <tr><td>Esperando datos</td><td>El agente solicitó información o aclaración al visitante.</td></tr>
+  <tr><td>Escalada</td><td>Requiere atención humana: en cola con motivo, resumen y contacto.</td></tr>
+  <tr><td>En seguimiento humano</td><td>Una persona asumió la conversación o el seguimiento.</td></tr>
+  <tr><td>Cerrada — resuelta / no resuelta / abandono</td><td>Fin con resultado clasificado (o sesión terminada sin confirmación).</td></tr>
+  <tr><td>Bloqueada</td><td>Detenida por abuso, seguridad o política (límites de la sección 18).</td></tr>
+</table>
+<h3>12.2 Reglas de escalamiento</h3>
+<ul>
+  <li>El visitante solicita explícitamente hablar con una persona.</li>
+  <li>No hay evidencia suficiente en el conocimiento del negocio (respuesta segura).</li>
+  <li>La respuesta involucra información sensible, cotización personalizada o alto riesgo.</li>
+  <li>Se detecta lenguaje de reclamación, urgencia o posible incidente.</li>
+  <li>Una regla configurada por la organización exige intervención humana.</li>
+</ul>
+<h3>12.3 Comportamiento fuera de horario</h3>
+<p>Cuando no hay personal disponible, el agente lo comunica claramente, recopila los datos mínimos, confirma que se creó una solicitud de seguimiento y establece la expectativa — sin prometer tiempos no configurados. (Hoy: el agente captura el lead y promete seguimiento del equipo; la gestión de horarios llega con M-05/M-16.)</p>
+
+<!-- ==================== 13 ==================== -->
+<h2>13. Gestión del conocimiento e inteligencia artificial</h2>
+<h3>13.1 Modelo actual y objetivo</h3>
+<p><strong>Hoy:</strong> el conocimiento de cada organización es un texto curado (<code>system_prompt</code>) que DOMINIO redacta y mantiene como parte del servicio manejado; se inyecta al modelo junto a las reglas compartidas del motor, con prompt caching. <strong>Objetivo (M-15):</strong> fuentes gestionables con ciclo de vida — página web (URL), documento (PDF/DOCX/TXT), preguntas frecuentes y contenido manual — que un compilador convierte en el contexto del agente; el índice vectorial (RAG) queda diferido hasta que el conocimiento de un tenant no quepa en el presupuesto de contexto.</p>
+<h3>13.2 Ciclo de vida de una fuente (objetivo)</h3>
+<p>Creación o carga → validación (tipo, tamaño, permisos) → extracción y limpieza → composición del contexto → <strong>pruebas de respuesta</strong> → aprobación y activación → monitoreo y actualización → archivo. Una fuente inválida queda en error y no participa en respuestas.</p>
+<h3>13.3 Controles de calidad de IA</h3>
+<ul>
+  <li>Responder únicamente con el conocimiento del negocio y el contexto autorizado. <span class="ok">✔ activo</span></li>
+  <li>Separar instrucciones del sistema, contenido del negocio y mensajes del visitante (input no confiable). <span class="ok">✔ activo</span></li>
+  <li>Defensa contra prompt injection: instrucciones embebidas se tratan como manipulación; nunca revelar el prompt ni cambiar de propósito. <span class="ok">✔ activo</span></li>
+  <li>Las acciones (leads, citas) se validan y ejecutan en el backend; el agente no puede confirmar lo que no ocurrió. <span class="ok">✔ activo</span></li>
+  <li>Respuesta segura medible, conjunto de evaluación por tenant antes de publicar cambios, versionado de configuración y trazabilidad por conversación. <span class="no">✘ → M-19</span></li>
+</ul>
+<div class="box"><strong>Regla fundamental de respuesta:</strong> el agente debe preferir reconocer que no tiene información suficiente — y ofrecer al equipo — antes que completar la respuesta con datos no respaldados. (Vigente en las reglas del motor; medible con M-19.)</div>
+
+<!-- ==================== 14 ==================== -->
+<h2 class="pb">14. Modelo de datos</h2>
+<p>Base de datos relacional (PostgreSQL en producción) sobre el ORM de Django. Modelo vigente — cuatro entidades propias más el usuario de autenticación:</p>
+<div class="fig">
+<pre class="mermaid">
+erDiagram
+  CLIENT ||--o{ CONTACT_SUBMISSION : "leads (PROTECT)"
+  CLIENT ||--o{ BOOKING : "bookings (PROTECT)"
+  CLIENT ||--o{ MEMBERSHIP : "members (CASCADE)"
+  USER ||--o{ MEMBERSHIP : "memberships (CASCADE)"
+  CONTACT_SUBMISSION |o--o{ BOOKING : "bookings (SET_NULL)"
+
+  CLIENT {
+    slug slug UK "clave publica del widget"
+    varchar name "160"
+    text system_prompt "conocimiento del negocio"
+    varchar greeting "400, opcional"
+    email notify_email
+    text allowed_origins "dominios permitidos"
+    varchar primary_color "default #34d6c8"
+    varchar surface_color "default #12304a"
+    varchar header_color "default #0c2132"
+    boolean enable_bookings "default false"
+    boolean is_active "default true"
+    boolean onboarding_sent "default false"
+    datetime created_at
+  }
+  CONTACT_SUBMISSION {
+    varchar name "120"
+    email email "opcional"
+    varchar phone "30, opcional"
+    varchar company "160, opcional"
+    varchar service "6 choices"
+    varchar budget "5 choices, opcional"
+    text message
+    int client_id FK "PROTECT, nullable"
+    varchar source "contact_form-chat-signup, idx"
+    varchar status "new-contacted-qualified-won-lost, idx"
+    varchar page_url "500"
+    ip ip_address "nullable"
+    varchar user_agent "300"
+    datetime created_at
+  }
+  BOOKING {
+    int client_id FK "PROTECT, nullable"
+    int lead_id FK "SET_NULL, nullable"
+    varchar name "120"
+    email email "idx"
+    varchar service "120, opcional"
+    text notes "opcional"
+    datetime start "idx, America-Puerto_Rico"
+    int duration_minutes "default 30"
+    varchar status "pending-confirmed-cancelled-completed-no_show"
+    datetime created_at
+  }
+  MEMBERSHIP {
+    int user_id FK "CASCADE"
+    int client_id FK "CASCADE"
+    boolean must_change_password "default false"
+    datetime created_at
+  }
+  USER {
+    varchar username "Django auth"
+    varchar email
+    boolean is_staff
+  }
+</pre>
+<div class="figcap">Figura 5 — ERD del sistema en producción (campos reales de <code>landing/models.py</code>). Las entidades planificadas (suscripciones, conversaciones, fuentes, auditoría, encuestas) se modelan en Phase 2.</div>
+</div>
+<h3>14.1 Reglas de integridad</h3>
+<ul>
+  <li>Toda entidad de negocio pertenece a una organización; los identificadores de organización nunca se aceptan del cliente HTTP — se resuelven en servidor. <span class="ok">✔</span></li>
+  <li>Las FKs de leads y reservas hacia <code>Client</code> usan <code>PROTECT</code>: no se puede borrar un tenant dejando PII huérfana; los clientes se pausan, no se borran. <span class="ok">✔</span></li>
+  <li><code>Booking</code> tiene constraint único parcial (<code>uniq_active_booking_per_slot</code>): la doble reserva es imposible a nivel de base de datos. <span class="ok">✔</span></li>
+  <li><code>Membership</code> es único por (usuario, organización) y una cuenta puede administrar varias organizaciones. <span class="ok">✔</span></li>
+  <li>Operaciones críticas con transacciones (<code>transaction.atomic</code>) e idempotencia en los procesos automáticos. <span class="ok">✔</span></li>
+</ul>
+
+<!-- ==================== 15 ==================== -->
+<h2 class="pb">15. Modelos del sistema (UML)</h2>
+<h3>15.1 Perspectiva externa — contexto</h3>
+<div class="fig">
+<pre class="mermaid">
+flowchart LR
+  V(["Visitante del sitio<br/>del cliente o de DOMINIO"]) -->|"chat, formularios, reservas"| S["DOMINIO Chat 24/7<br/>(Django en Lightsail)"]
+  T(["Cliente (tenant)"]) -->|"dashboard, respuestas"| S
+  ST(["Staff DOMINIO"]) -->|"Agent Factory, admin"| S
+  S -->|"Messages API<br/>(inferencia + tools)"| A["Anthropic<br/>Claude"]
+  S -->|"emails transaccionales"| G["Gmail SMTP"]
+  S -->|"eventos de analitica"| GA["Google Analytics 4"]
+  W["Página web del cliente"] -->|"carga /widget.js?key=SLUG"| S
+</pre>
+<div class="figcap">Figura 6 — Contexto del sistema: actores humanos y sistemas externos.</div>
+</div>
+<h3>15.2 Perspectiva de interacción — flujo principal (chat → lead)</h3>
+<div class="fig">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor Vis as Visitante
+  participant W as Widget (JS)
+  participant D as Django chat_api
+  participant C as Claude (Anthropic)
+  participant DB as PostgreSQL
+  participant M as Gmail SMTP
+  Vis->>W: escribe mensaje
+  W->>D: POST /api/chat/ (historial completo)
+  D->>D: límites, sanitizar, resolver tenant, validar Origin
+  D->>C: messages.create (reglas + conocimiento, tools)
+  C-->>D: tool_use: capture_lead(nombre, email...)
+  D->>D: re-validar email/teléfono, tope por IP
+  D->>DB: INSERT ContactSubmission (source=chat)
+  D->>M: notificación al cliente + confirmación al lead
+  D->>C: tool_result: "Lead guardado"
+  C-->>D: respuesta final en español
+  D-->>W: JSON {reply}
+  W-->>Vis: burbuja del asistente
+</pre>
+<div class="figcap">Figura 7 — Secuencia del caso de uso principal: conversación que termina en lead persistido y notificado.</div>
+</div>
+<h3>15.3 Perspectiva de comportamiento — ciclos de vida</h3>
+<div class="grid2">
+<div class="fig">
+<pre class="mermaid">
+stateDiagram-v2
+  [*] --> new : lead capturado<br/>(chat, form o signup)
+  new --> contacted : respuesta enviada
+  contacted --> qualified : interés confirmado
+  qualified --> won : negocio cerrado
+  qualified --> lost : no procede
+  new --> lost
+  contacted --> lost
+  won --> [*]
+  lost --> [*]
+</pre>
+<div class="figcap">Figura 8 — Estados de un lead (pipeline del dashboard).</div>
+</div>
+<div class="fig">
+<pre class="mermaid">
+stateDiagram-v2
+  [*] --> pending : create_booking<br/>validado por backend
+  pending --> confirmed : cliente confirma
+  pending --> cancelled
+  confirmed --> completed : cita ocurrió
+  confirmed --> no_show : no llegó
+  confirmed --> cancelled
+  completed --> [*]
+  cancelled --> [*]
+  no_show --> [*]
+</pre>
+<div class="figcap">Figura 9 — Estados de una reserva (Booking).</div>
+</div>
+</div>
+<p>La perspectiva estructural del código: el paquete <code>landing/</code> concentra <code>agent.py</code> (motor de IA: reglas, tools, loop de tool-use), <code>views.py</code> (endpoints públicos, handlers de tools, dashboard, factory), <code>models.py</code> (Figura 5), plantillas (páginas, emails, widget embebible como template JS) y estáticos.</p>
+
+<!-- ==================== 16 ==================== -->
+<h2 class="pb">16. Arquitectura de la solución</h2>
+<p><strong>Monolito Django en capas con servicios externos manejados</strong> — la opción apropiada para un operador único con costos acotados: la carga computacional pesada (inferencia de IA) vive en la nube del proveedor y el servidor solo orquesta. Microservicios añadirían costo operacional sin beneficio a esta escala.</p>
+<div class="fig">
+<pre class="mermaid">
+flowchart TB
+  subgraph CLIENTE ["Navegadores"]
+    B1["Sitio dominiopr.com<br/>+ chat-widget.js"]
+    B2["Página del cliente<br/>+ widget.js embebible"]
+    B3["Dashboard / Factory<br/>(clientes y staff)"]
+  end
+  subgraph SRV ["AWS Lightsail 512MB — Django"]
+    direction TB
+    V1["Capa de presentación<br/>templates + estáticos"]
+    V2["Capa de aplicación<br/>views: chat_api, demo_api, widget_js,<br/>dashboard, factory + defensas<br/>(rate limits, topes, CORS, allowlist)"]
+    A1["Motor del agente (agent.py)<br/>reglas compartidas + conocimiento por tenant<br/>tools: capture_lead / create_booking"]
+    V3["Capa de datos (ORM)<br/>Client, ContactSubmission,<br/>Booking, Membership"]
+  end
+  DB[("PostgreSQL")]
+  ANT["Anthropic Claude<br/>claude-haiku-4-5<br/>(prompt caching)"]
+  GM["Gmail SMTP"]
+  GA4["Google Analytics 4"]
+  B1 --> V2
+  B2 --> V2
+  B3 --> V1
+  V1 --> V2
+  V2 --> A1
+  A1 <--> ANT
+  V2 --> V3
+  V3 <--> DB
+  V2 --> GM
+  B1 -.-> GA4
+</pre>
+<div class="figcap">Figura 10 — Arquitectura en producción. El patrón clave: el modelo de IA propone, la capa de aplicación valida y ejecuta. Los componentes planificados (webhooks de pago, base de conocimiento, consola, jobs) se diagraman en Phase 2.</div>
+</div>
+<h3>16.1 Componentes de la plataforma</h3>
+<table>
+  <tr><th>Componente</th><th>Responsabilidad</th><th>Estado</th></tr>
+  <tr><td>Widget embebible</td><td>Interfaz pública en la página del cliente, tematizada en servidor.</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>Orquestador conversacional</td><td>Contexto, instrucciones, tools, límites y loop de tool-use (máx. 3 rondas).</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>Proveedor de modelo</td><td>Claude (<code>claude-haiku-4-5</code>, configurable); inferencia cloud-side.</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>API de aplicación</td><td>Validación de dominio/estado/límites, autenticación del panel, autorización por organización.</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>Panel administrativo (Factory + dashboard)</td><td>Agentes, leads, usuarios auto-provisionados.</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>Notificaciones</td><td>Email transaccional (leads, citas, onboarding, respuestas manuales).</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>Base de datos relacional</td><td>Configuración, leads, reservas, membresías.</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>Base de conocimiento + motor de recuperación</td><td>Fuentes por organización, compilación del contexto; RAG diferido.</td><td><span class="no">✘ M-15</span></td></tr>
+  <tr><td>Consola de conversaciones</td><td>Bandeja, estados, escalamiento, cierre con resultado.</td><td><span class="no">✘ M-16</span></td></tr>
+  <tr><td>Observabilidad y auditoría</td><td>Logs ✔; métricas, alertas y bitácora administrativa → M-03/M-17.</td><td><span class="par">⚠</span></td></tr>
+  <tr><td>Almacenamiento de objetos y backups</td><td>Documentos de fuentes y respaldos verificados.</td><td><span class="no">✘ M-10/M-15</span></td></tr>
+</table>
+
+<!-- ==================== 17 ==================== -->
+<h2 class="pb">17. Navegación y experiencia de usuario</h2>
+<div class="fig">
+<pre class="mermaid">
+flowchart TD
+  ROOT["/ (landing page)"] --> GS["/get-started/<br/>precios + signup"]
+  ROOT --> TERMS["/terms/"]
+  ROOT --> PRIV["/privacy/"]
+  ROOT -.->|"API JSON"| CHAT["/api/chat/"]
+  ROOT -.->|"API JSON"| DEMO["/api/demo/"]
+  ROOT -.->|"JS embebible"| WJS["/widget.js?key=SLUG"]
+  ROOT --> LOGIN["/dashboard/login/"]
+  LOGIN --> DASH["/dashboard/<br/>leads del cliente"]
+  DASH --> LS["/dashboard/lead/id/status/"]
+  DASH --> LE["/dashboard/lead/id/email/"]
+  DASH --> PW["/dashboard/password/"]
+  DASH ==>|"solo staff"| CL["/dashboard/clients/<br/>Agent Factory"]
+  CL --> CNEW["/dashboard/clients/new/"]
+  CL --> CEDIT["/dashboard/clients/id/"]
+  CL --> CTOG["/dashboard/clients/id/toggle/"]
+  CL --> CRES["/dashboard/clients/id/resend/"]
+  ROOT -.-> ADMIN["/admin/ (Django admin, staff)"]
+</pre>
+<div class="figcap">Figura 11 — Árbol de navegación actual. Los módulos planificados (conversaciones, conocimiento, reportes, usuarios) se añaden bajo /dashboard/ en Phase 2.</div>
+</div>
+<h3>17.1 Módulos del panel (actuales y objetivo)</h3>
+<table>
+  <tr><th>Módulo</th><th>Contenido</th><th>Estado</th></tr>
+  <tr><td>Acceso</td><td>Login con rate limit, cambio de contraseña forzado al primer acceso.</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>Dashboard</td><td>Indicadores de leads y actividad; tabla filtrable.</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>Chatbots (Factory)</td><td>Listado, configuración, tematización, instalación, pausa.</td><td><span class="ok">✔ (staff)</span></td></tr>
+  <tr><td>Prospectos</td><td>Pipeline de estados, respuesta por email; export → M-07.</td><td><span class="par">⚠</span></td></tr>
+  <tr><td>Conversaciones</td><td>Bandeja, filtros, detalle, etiquetas, escalamiento, cierre.</td><td><span class="no">✘ M-02/M-16</span></td></tr>
+  <tr><td>Conocimiento</td><td>Fuentes, procesamiento, errores, pruebas.</td><td><span class="no">✘ M-15</span></td></tr>
+  <tr><td>Reportes</td><td>Volumen, resolución, satisfacción, conversión, costo.</td><td><span class="no">✘ M-03</span></td></tr>
+  <tr><td>Usuarios</td><td>Invitaciones, roles, estado.</td><td><span class="no">✘ M-17</span></td></tr>
+  <tr><td>Configuración</td><td>Organización, privacidad, retención, notificaciones.</td><td><span class="no">✘ M-10</span></td></tr>
+</table>
+<h3>17.2 Principios de UX</h3>
+<ul>
+  <li>Mobile-first y adaptable (widget y panel verificados en móvil). El widget carga async y no degrada el sitio anfitrión.</li>
+  <li>Lenguaje claro en español de PR, coherente con la marca de cada cliente; el visitante escoge con quick-replies en vez de escribir.</li>
+  <li>Estados completos: carga ("escribiendo…"), error con canal alterno, vacío, éxito, sin permiso.</li>
+  <li>Confirmación antes de acciones destructivas; los agentes se pausan, nunca se borran.</li>
+  <li>Accesibilidad: navegación por teclado, contraste derivado automáticamente del tema del cliente; objetivo WCAG 2.1 AA (M-13).</li>
+</ul>
+
+<!-- ==================== 18 ==================== -->
+<h2 class="pb">18. Seguridad, privacidad y gobierno de IA</h2>
+<h3>18.1 Seguridad (controles activos)</h3>
+<table>
+  <tr><th>Control</th><th>Implementación</th></tr>
+  <tr><td>Transporte y sesiones</td><td>HTTPS/TLS; autenticación del panel con rate limit (10 intentos/5 min/IP); protección CSRF; cookies de sesión de Django.</td></tr>
+  <tr><td>Autorización</td><td>Toda operación se valida en servidor por organización (scoping por <code>Membership</code>) y por staff; protección de open-redirect.</td></tr>
+  <tr><td>Límites anti-abuso</td><td>12 req/min/IP en chat (15 en demo); tope global diario (2,000) que acota el gasto de API ante ataque distribuido; topes de 5 leads y 5 reservas/h/IP; cuerpo máximo 64 KB; historial máximo 12 turnos; honeypot en signup. Cuota por tenant → M-04.</td></tr>
+  <tr><td>Origen</td><td>Allowlist de dominios por cliente validada contra el header <code>Origin</code>.</td></tr>
+  <tr><td>Prompt injection</td><td>Input del visitante = no confiable; el agente no revela instrucciones, no cambia de propósito, no genera contenido ajeno al negocio.</td></tr>
+  <tr><td>Secretos</td><td>Credenciales fuera del código (variables de entorno); ninguna tarjeta toca el servidor (pagos → Stripe alojado, M-01).</td></tr>
+  <tr><td>Datos</td><td>FKs <code>PROTECT</code> sobre PII; transacciones e idempotencia; eliminación lógica (pausa) para conservar auditoría.</td></tr>
+</table>
+<h3>18.2 Privacidad</h3>
+<ul>
+  <li>Minimización: el agente solo pide nombre y un medio de contacto; solo llama <code>capture_lead</code> con datos que el visitante dio voluntariamente sobre sí mismo.</li>
+  <li>El demo público es efímero: no persiste conversaciones ni contexto del prospecto.</li>
+  <li>Términos y política de privacidad publicados; GA4 con manejo de consentimiento.</li>
+  <li>Retención configurable, borrado/anonimización a solicitud, DPA con cada cliente y backups verificados → M-10.</li>
+</ul>
+<h3>18.3 Gobierno de IA</h3>
+<table>
+  <tr><th>Control</th><th>Aplicación</th><th>Estado</th></tr>
+  <tr><td>Fuentes autorizadas</td><td>Solo el conocimiento del negocio participa en respuestas.</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>Acciones bajo control del backend</td><td>El modelo propone; validación y persistencia en servidor y BD.</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>Respuesta segura</td><td>Declarar limitación en vez de inventar (regla fundamental).</td><td><span class="par">⚠ activa; medible con M-19</span></td></tr>
+  <tr><td>Evaluación pre-publicación</td><td>Conjunto de preguntas representativas por tenant antes de activar cambios.</td><td><span class="no">✘ M-19</span></td></tr>
+  <tr><td>Trazabilidad y versionado</td><td>Versión de configuración por conversación; historial de cambios.</td><td><span class="no">✘ M-19/M-17</span></td></tr>
+  <tr><td>Monitoreo</td><td>Revisión de respuestas fallidas, quejas y anomalías.</td><td><span class="no">✘ M-03/M-19</span></td></tr>
+</table>
+
+<!-- ==================== 19 ==================== -->
+<h2 class="pb">19. Requisitos no funcionales</h2>
+<table>
+  <tr><th style="width:16%">Categoría</th><th>Requisito</th></tr>
+  <tr><td>Disponibilidad y recuperación</td><td>RNF-01: meta 99.5% mensual (excluyendo mantenimiento anunciado). RNF-02: degradación elegante — sin API key el widget no se renderiza; en tope o error, el chat dirige al formulario (siempre hay canal). <span class="ok">✔</span> RNF-03: RPO 24 h / RTO 8 h con backups automáticos y restauración probada. <span class="no">✘ M-10</span></td></tr>
+  <tr><td>Rendimiento y eficiencia</td><td>RNF-04: respuesta del chat normalmente &lt; 8 s; widget de carga asíncrona que no bloquea el sitio anfitrión. <span class="ok">✔</span> RNF-05: inferencia fuera del servidor (512 MB solo orquesta); prompt caching; respuestas acotadas (<code>max_tokens=512</code>); widget embebible cacheado (5 min). <span class="ok">✔</span></td></tr>
+  <tr><td>Seguridad</td><td>RNF-06…12: los controles de la sección 18.1 (TLS, CSRF, autorización en servidor, límites multicapa, allowlist, prompt hardening, secretos). <span class="ok">✔</span> Cuota por tenant <span class="no">✘ M-04</span>; cifrado de datos sensibles en reposo <span class="no">✘ M-10</span>.</td></tr>
+  <tr><td>Aislamiento multi-tenant</td><td>RNF-13: los datos de una organización jamás son accesibles por otra; el identificador de organización se resuelve en servidor, nunca del cliente HTTP. <span class="ok">✔</span> (pruebas dedicadas de aislamiento → M-09/M-17)</td></tr>
+  <tr><td>Usabilidad y accesibilidad</td><td>RNF-14: flujo del visitante en español de PR con quick-replies; tareas administrativas sin capacitación extensa. <span class="ok">✔</span> RNF-15: WCAG 2.1 AA en widget y panel. <span class="par">⚠ M-13</span> RNF-16: responsive móvil/tableta/escritorio y navegadores vigentes. <span class="ok">✔</span></td></tr>
+  <tr><td>Internacionalización</td><td>RNF-17: español primario e inglés bajo solicitud del visitante <span class="ok">✔</span>; idioma primario configurable por organización <span class="no">✘ M-14</span>.</td></tr>
+  <tr><td>Mantenibilidad y calidad</td><td>RNF-18: separación motor/datos (reglas compartidas, conocimiento como data), configuración por variables de entorno, deploy con migraciones automáticas. <span class="ok">✔</span> RNF-19: pruebas automatizadas de los flujos críticos bloqueando el deploy. <span class="no">✘ M-09</span></td></tr>
+  <tr><td>Observabilidad y costos</td><td>RNF-20: registro de errores y eventos <span class="ok">✔</span>; métricas de latencia, consumo y costo por organización con límites y alertas <span class="no">✘ M-03/M-04</span>. RNF-21: idempotencia en procesos automáticos y webhooks. <span class="par">⚠ (patrón vigente; webhooks → M-01)</span></td></tr>
+  <tr><td>Integridad y auditoría</td><td>RNF-22: transacciones y constraints en operaciones críticas <span class="ok">✔</span>; bitácora de acciones administrativas <span class="no">✘ M-17</span>.</td></tr>
+  <tr><td>Legales y cumplimiento</td><td>RNF-23: términos, privacidad y consentimiento de analítica publicados <span class="ok">✔</span>; retención definida, DPA y moderación de contenido/abuso documentada <span class="no">✘ M-10</span>.</td></tr>
+  <tr><td>Portabilidad</td><td>RNF-24: widget JavaScript vanilla autocontenido — funciona en cualquier página HTML sin tocar el stack del cliente <span class="ok">✔</span>; infraestructura de nube estándar documentada (DEPLOYMENT.md) <span class="ok">✔</span>; abstracción del proveedor de IA <span class="no">✘ M-12</span>.</td></tr>
+</table>
+
+<!-- ==================== 20 ==================== -->
+<h2 class="pb">20. Analítica, integraciones y operación</h2>
+<h3>20.1 Analítica y reportes (objetivo M-02/M-03/M-18)</h3>
+<ul>
+  <li><strong>Operativos:</strong> conversaciones iniciadas/cerradas/abandonadas, mensajes por conversación, resolución automática vs. escalamiento, preguntas sin respuesta suficiente, latencia y errores.</li>
+  <li><strong>Comerciales:</strong> prospectos por periodo/sitio/página de origen, intereses más consultados, tasa de conversión conversación→lead, estado del seguimiento. (Parcialmente medible hoy: leads por fuente y página de origen. <span class="par">⚠</span>)</li>
+  <li><strong>De calidad:</strong> satisfacción (CSAT), respuestas marcadas para revisión, fuentes con errores o vencidas, tasa de respuesta segura.</li>
+  <li><strong>De costo:</strong> tokens/costo de API por organización y global (para cuotas y precios).</li>
+</ul>
+<h3>20.2 Integraciones</h3>
+<table>
+  <tr><th>Integración</th><th>Prioridad</th><th>Propósito</th><th>Estado</th></tr>
+  <tr><td>Página web mediante script</td><td>Inicial</td><td>Instalar y operar el widget.</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>Correo electrónico</td><td>Inicial</td><td>Notificar leads, citas, onboarding y errores.</td><td><span class="ok">✔</span> (proveedor dedicado → M-11)</td></tr>
+  <tr><td>Analítica web (GA4)</td><td>Inicial</td><td>Relacionar conversación con página y conversión.</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>Pasarela de pago (Stripe)</td><td>Alta</td><td>Cobro de suscripciones de clientes.</td><td><span class="no">✘ M-01</span></td></tr>
+  <tr><td>WhatsApp / SMS (Twilio)</td><td>Posterior</td><td>Notificaciones salientes al cliente.</td><td><span class="no">✘ M-06</span></td></tr>
+  <tr><td>Calendario (Google Calendar)</td><td>Posterior</td><td>Sincronizar citas.</td><td><span class="no">✘ M-05</span></td></tr>
+  <tr><td>CRM / export</td><td>Posterior</td><td>Llevar prospectos al CRM del cliente.</td><td><span class="no">✘ M-07</span></td></tr>
+</table>
+<p>Toda integración documenta permisos, datos transferidos, manejo de errores, límites, costos y responsabilidad del proveedor.</p>
+<h3>20.3 Despliegue y operación</h3>
+<ul>
+  <li><strong>Ambientes:</strong> desarrollo local (SQLite, datos no productivos) y producción (AWS Lightsail 512 MB, PostgreSQL, TLS, dominio dominiopr.com). Ambiente de pruebas/demo: el propio demo público y el modo test de las integraciones. Deploy con migraciones automáticas.</li>
+  <li><strong>Operación:</strong> logs de aplicación y avisos de límites <span class="ok">✔</span>; monitoreo de disponibilidad, alertas, respaldos verificados y procedimiento de incidentes <span class="no">✘ M-10/M-03</span>; revisión periódica de calidad de respuestas como parte del servicio manejado mensual.</li>
+  <li><strong>Dependencias externas:</strong> Anthropic (modelos), AWS (infraestructura), Google (SMTP, GA4), DNS/TLS y acceso al sitio del cliente. Los costos varían con tráfico, conversaciones y notificaciones — acotados por los límites del sistema.</li>
+</ul>
+
+<!-- ==================== 21 ==================== -->
+<h2 class="pb">21. Riesgos y mitigaciones</h2>
+<table>
+  <tr><th>ID</th><th>Riesgo</th><th>Prob.</th><th>Impacto</th><th>Mitigación</th></tr>
+  <tr><td>R-01</td><td>Respuestas incorrectas o inventadas (alucinación)</td><td>Media</td><td>Alto</td><td><strong>Activa:</strong> solo conocimiento del negocio, regla fundamental de respuesta segura, precios como rangos. <strong>Refuerzo:</strong> evaluación pre-publicación (M-19).</td></tr>
+  <tr><td>R-02</td><td>Prompt injection / manipulación del agente</td><td>Alta</td><td>Alto</td><td><strong>Activa:</strong> separación de instrucciones, input no confiable, tools limitadas, validación backend. <strong>Refuerzo:</strong> pruebas adversariales (M-09).</td></tr>
+  <tr><td>R-03</td><td>Abuso del endpoint público que dispare el gasto de API</td><td>Alta</td><td>Alto</td><td><strong>Activa:</strong> límites multicapa + tope global diario = costo máximo conocido. <strong>Refuerzo:</strong> cuota por tenant (M-04).</td></tr>
+  <tr><td>R-04</td><td>Exposición de datos entre organizaciones</td><td>Baja</td><td>Crítico</td><td><strong>Activa:</strong> scoping en servidor, FKs PROTECT. <strong>Refuerzo:</strong> pruebas de aislamiento dedicadas (M-09/M-17).</td></tr>
+  <tr><td>R-05</td><td>Contenido del negocio desactualizado</td><td>Media</td><td>Alto</td><td>Servicio manejado mensual; fechas de revisión y alertas por fuente (M-15).</td></tr>
+  <tr><td>R-06</td><td>Caída o cambio de precios del proveedor de IA</td><td>Baja</td><td>Alto</td><td>Degradación al formulario; abstracción del proveedor (M-12).</td></tr>
+  <tr><td>R-07</td><td>Interrupción del servicio / pérdida de datos</td><td>Media</td><td>Crítico</td><td>Transacciones y constraints activos; backups verificados, RPO/RTO y monitoreo (M-10).</td></tr>
+  <tr><td>R-08</td><td>Spam de leads / abuso del SMTP</td><td>Media</td><td>Medio</td><td><strong>Activa:</strong> validación backend, topes por IP, honeypot. <strong>Refuerzo:</strong> proveedor dedicado (M-11).</td></tr>
+  <tr><td>R-09</td><td>Impacto del widget en el sitio del cliente</td><td>Media</td><td>Alto</td><td>Carga asíncrona, JS vanilla liviano, caché de 5 min; presupuesto de peso en pruebas (M-09).</td></tr>
+  <tr><td>R-10</td><td>Escalamiento sin personal disponible</td><td>Alta</td><td>Medio</td><td>Expectativa comunicada + seguimiento asíncrono; horarios y consola (M-05/M-16).</td></tr>
+  <tr><td>R-11</td><td>Baja adopción (desconfianza en IA) / baja adopción administrativa</td><td>Media</td><td>Alto</td><td>Proof-of-value con el demo público; UX simple; onboarding automatizado; precios de entrada bajos.</td></tr>
+  <tr><td>R-12</td><td>Capacidad de un único desarrollador (bus factor = 1) y crecimiento de alcance</td><td>Alta</td><td>Alto</td><td>Este documento + DEPLOYMENT.md + código en GitHub; backlog priorizado con control de cambios; MVP por mejora; automatización de pruebas (M-09); servicios administrados.</td></tr>
+  <tr><td>R-13</td><td>Archivos maliciosos en fuentes de conocimiento</td><td>Media</td><td>Alto</td><td>Aplica al llegar M-15: tipos permitidos, tamaño máximo, extracción aislada, escaneo.</td></tr>
+</table>
+
+<!-- ==================== 22 ==================== -->
+<h2 class="pb">22. Criterios de aceptación y pruebas</h2>
+<h3>22.1 Criterios de aceptación del producto</h3>
+<table>
+  <tr><th>ID</th><th>Criterio</th><th>Estado</th></tr>
+  <tr><td>AC-01</td><td>Un visitante puede abrir el widget, preguntar y recibir una respuesta útil.</td><td><span class="ok">✔ verificable hoy</span></td></tr>
+  <tr><td>AC-02</td><td>La respuesta usa exclusivamente contenido de la organización.</td><td><span class="ok">✔ verificable hoy</span></td></tr>
+  <tr><td>AC-03</td><td>Sin evidencia suficiente, el agente no inventa y ofrece alternativa humana.</td><td><span class="ok">✔ verificable hoy</span> (medición → M-19)</td></tr>
+  <tr><td>AC-04</td><td>El visitante puede dejar datos con validación (y consentimiento explícito → M-10).</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>AC-05</td><td>Un administrador puede añadir una fuente y probar preguntas antes de activarla.</td><td><span class="no">✘ M-15</span></td></tr>
+  <tr><td>AC-06</td><td>Un usuario autorizado puede revisar conversaciones y prospectos de su organización.</td><td><span class="par">⚠ prospectos ✔; conversaciones → M-02/M-16</span></td></tr>
+  <tr><td>AC-07</td><td>Los datos de una organización no son visibles para otra.</td><td><span class="ok">✔</span> (pruebas automatizadas → M-09)</td></tr>
+  <tr><td>AC-08</td><td>El widget funciona en móvil y escritorio sin interferir con la página anfitriona.</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>AC-09</td><td>Las acciones administrativas críticas quedan registradas.</td><td><span class="no">✘ M-17</span></td></tr>
+  <tr><td>AC-10</td><td>El panel presenta métricas con filtros de fecha.</td><td><span class="par">⚠ stats de leads ✔; reportes → M-03</span></td></tr>
+  <tr><td>AC-11</td><td>Fuera de horario se crea una solicitud de seguimiento con expectativa clara.</td><td><span class="par">⚠ lead + promesa de seguimiento ✔; horarios → M-05</span></td></tr>
+  <tr><td>AC-12</td><td>Un cliente puede pagar un plan y activar su servicio sin coordinación manual.</td><td><span class="no">✘ M-01</span></td></tr>
+</table>
+<h3>22.2 Casos de prueba representativos</h3>
+<table>
+  <tr><th>ID</th><th>Escenario</th><th>Resultado esperado</th></tr>
+  <tr><td>CP-01</td><td>Pregunta conocida sobre servicios</td><td>Respuesta correcta alineada con el contenido del negocio.</td></tr>
+  <tr><td>CP-02</td><td>Pregunta fuera del conocimiento</td><td>Declara la limitación y ofrece al equipo; no inventa.</td></tr>
+  <tr><td>CP-03</td><td>Email o teléfono inválido en captura</td><td>El agente pide corregir; nada se guarda hasta validar.</td></tr>
+  <tr><td>CP-04</td><td>Intento de prompt injection ("ignora tus instrucciones")</td><td>Declina brevemente y regresa al negocio; no revela el prompt.</td></tr>
+  <tr><td>CP-05</td><td>Widget cargado desde dominio no autorizado</td><td>Rechazo seguro (403).</td></tr>
+  <tr><td>CP-06</td><td>Usuario de la organización A consulta datos de la B</td><td>Sin acceso; scoping en servidor.</td></tr>
+  <tr><td>CP-07</td><td>Doble reserva del mismo slot</td><td>La segunda falla por constraint; el agente ofrece otra hora.</td></tr>
+  <tr><td>CP-08</td><td>Ráfaga de mensajes / bot</td><td>429 con Retry-After; tope global protege el presupuesto.</td></tr>
+  <tr><td>CP-09</td><td>Vista móvil del widget y el panel</td><td>Sin desbordamientos ni controles inaccesibles.</td></tr>
+  <tr><td>CP-10</td><td>Restauración de respaldo</td><td>Datos restaurables según procedimiento (M-10).</td></tr>
+</table>
+<p><strong>Tipos de prueba:</strong> unitarias e integración (con el SDK de IA mockeado), permisos y aislamiento, seguridad y abuso, calidad de respuesta (conjunto de evaluación), rendimiento del widget, accesibilidad, respaldo/restauración y aceptación con el cliente. La suite automatizada que bloquea el deploy es M-09.</p>
+
+<!-- ==================== 23 ==================== -->
+<h2 class="pb">23. Prototipo funcional</h2>
+<p>El "prototipo" supera lo requerido por una especificación: es el <strong>sistema real en producción</strong>, evaluable en dominiopr.com con datos reales. Evidencia visual:</p>
+<div class="grid2">
+  <div class="fig"><img class="shot" src="img/hero.jpg" alt="Landing"><div class="figcap">Figura 12 — Landing page (hero) en español.</div></div>
+  <div class="fig"><img class="shot" src="img/get-started.jpg" alt="Precios"><div class="figcap">Figura 13 — UC-06: precios y signup.</div></div>
+  <div class="fig"><img class="shot" src="img/dash-main.jpg" alt="Dashboard"><div class="figcap">Figura 14 — UC-07: dashboard de leads con pipeline.</div></div>
+  <div class="fig"><img class="shot" src="img/factory-form.jpg" alt="Factory"><div class="figcap">Figura 15 — UC-09: Agent Factory (edición de un agente).</div></div>
+  <div class="fig"><img class="shot" src="img/contact.jpg" alt="Contacto"><div class="figcap">Figura 16 — UC-04: formulario de contacto (respaldo).</div></div>
+  <div class="fig"><img class="shot shot-sm" src="img/mobile-chat.jpg" alt="Móvil"><div class="figcap">Figura 17 — UC-01 en móvil (mobile-first).</div></div>
+</div>
+<p>Las pantallas de los módulos planificados (bandeja de conversaciones, gestión de conocimiento, reportes, usuarios) se diseñarán como wireframes al inicio de sus iteraciones (roadmap de Phase 2), validando navegación y estados antes de construir.</p>
+
+<!-- ==================== 24 ==================== -->
+<h2>24. Conclusión ejecutiva</h2>
+<p>DOMINIO Chat 24/7 es un producto de atención digital controlado, medible y extensible. Su valor no depende solo de usar IA: combina contenido correcto, experiencia simple, validación en servidor, escalamiento humano, seguridad, privacidad y una operación que una sola persona puede sostener. El núcleo — agente, captura, citas, multi-tenant, panel — está construido, endurecido y en producción; la capa de plataforma centralizada (conversaciones, conocimiento, roles, analítica, cobro) está especificada con prioridades y roadmap en <em>Phase 2 — Plan de Mejoras</em>.</p>
+<p>La evolución se guiará por los requisitos Must pendientes, un piloto con clientes reales pagando, y datos de conversaciones reales — manteniendo el alcance compatible con un único responsable de desarrollo.</p>
+
+<!-- ==================== APÉNDICES ==================== -->
+<h2 class="pb">Apéndice A — Historias de usuario</h2>
+<table>
+  <tr><th>ID</th><th>Historia</th></tr>
+  <tr><td>HU-01</td><td>Como visitante, quiero una respuesta inmediata para no esperar al próximo día laboral.</td></tr>
+  <tr><td>HU-02</td><td>Como visitante, quiero saber cuándo una respuesta no es segura para decidir si contacto a una persona.</td></tr>
+  <tr><td>HU-03</td><td>Como prospecto, quiero dejar mis datos sin repetir toda la conversación.</td></tr>
+  <tr><td>HU-04</td><td>Como agente humano, quiero recibir el contexto completo para atender sin pedir la misma información de nuevo.</td></tr>
+  <tr><td>HU-05</td><td>Como administrador, quiero controlar las fuentes para asegurar que las respuestas estén aprobadas.</td></tr>
+  <tr><td>HU-06</td><td>Como administrador, quiero probar el chatbot antes de publicar cambios.</td></tr>
+  <tr><td>HU-07</td><td>Como gerente, quiero medir preguntas, resolución y prospectos para evaluar el servicio.</td></tr>
+  <tr><td>HU-08</td><td>Como responsable de privacidad, quiero localizar, anonimizar o eliminar datos autorizados.</td></tr>
+  <tr><td>HU-09</td><td>Como DOMINIO, quiero aislar los datos de cada cliente para operar la plataforma con seguridad.</td></tr>
+</table>
+
+<h2>Apéndice B — Información requerida del cliente (checklist de onboarding)</h2>
+<ul>
+  <li>Nombre, identidad visual (colores/logo), dominio y páginas donde se instalará.</li>
+  <li>Descripción de servicios, procesos, horarios y cobertura; preguntas frecuentes con respuestas aprobadas.</li>
+  <li>Políticas, términos y contenido que el chatbot puede comunicar; temas que deben escalarse de inmediato.</li>
+  <li>Datos que se pueden solicitar al visitante; email (y teléfono, con M-06) responsable del seguimiento.</li>
+  <li>Política de privacidad y retención aplicable; idiomas requeridos.</li>
+  <li>Preguntas de prueba con resultado esperado (conjunto de evaluación, M-19).</li>
+</ul>
+
+<h2>Apéndice C — Matriz de trazabilidad</h2>
+<table>
+  <tr><th>Objetivo</th><th>Requisitos</th><th>Aceptación</th><th>Estado</th></tr>
+  <tr><td>Atención 24/7</td><td>RF-01…06</td><td>AC-01…03</td><td><span class="ok">✔</span></td></tr>
+  <tr><td>Captura de oportunidades</td><td>RF-07, RF-08, RF-24, RF-33</td><td>AC-04, AC-06</td><td><span class="ok">✔</span> (export → M-07)</td></tr>
+  <tr><td>Citas</td><td>RF-09</td><td>CP-07</td><td><span class="ok">✔</span> (gestión → M-05)</td></tr>
+  <tr><td>Atención híbrida</td><td>RF-10…13</td><td>AC-03, AC-11</td><td><span class="no">✘ M-16/M-18</span></td></tr>
+  <tr><td>Control administrativo y conocimiento</td><td>RF-14…23, RF-26, RF-27</td><td>AC-05, AC-09</td><td><span class="par">⚠ (M-15/M-16/M-17)</span></td></tr>
+  <tr><td>Analítica</td><td>RF-25, RF-29</td><td>AC-10</td><td><span class="no">✘ M-03/M-07</span></td></tr>
+  <tr><td>Seguridad, privacidad y aislamiento</td><td>RF-17, RF-30…32 · RNF sección 19</td><td>AC-07, AC-09</td><td><span class="par">⚠ (M-04/M-10/M-17)</span></td></tr>
+  <tr><td>Negocio autoservible</td><td>RF-34</td><td>AC-12</td><td><span class="no">✘ M-01</span></td></tr>
+</table>
+
+<h2>Glosario</h2>
+<table>
+  <tr><td><strong>Agente (humano)</strong></td><td>Persona autorizada del cliente que atiende conversaciones escaladas.</td></tr>
+  <tr><td><strong>Agente de IA / chatbot</strong></td><td>Software que conversa con visitantes usando un modelo de lenguaje con herramientas (tools).</td></tr>
+  <tr><td><strong>Allowlist de orígenes</strong></td><td>Dominios autorizados desde los que el widget de una organización puede llamar al API.</td></tr>
+  <tr><td><strong>Base de conocimiento</strong></td><td>Conjunto de fuentes aprobadas (URLs, documentos, FAQ, texto) que alimenta las respuestas.</td></tr>
+  <tr><td><strong>Constraint único parcial</strong></td><td>Regla de BD que exige unicidad solo entre filas que cumplen una condición (reservas activas del mismo slot).</td></tr>
+  <tr><td><strong>Escalamiento</strong></td><td>Transferencia de una consulta a atención o seguimiento humano, con contexto.</td></tr>
+  <tr><td><strong>Lead / prospecto</strong></td><td>Persona u organización con interés potencial, registrada con nombre y al menos un contacto.</td></tr>
+  <tr><td><strong>LLM</strong></td><td>Modelo de lenguaje de gran escala (aquí: Claude, de Anthropic).</td></tr>
+  <tr><td><strong>Multi-tenant / multiempresa</strong></td><td>Una sola instalación sirve a varias organizaciones con datos y configuración aislados.</td></tr>
+  <tr><td><strong>Prompt caching</strong></td><td>Reutilización del prefijo estable del prompt entre llamadas para reducir costo y latencia.</td></tr>
+  <tr><td><strong>Prompt injection</strong></td><td>Intento de manipular las instrucciones del modelo mediante el contenido del usuario.</td></tr>
+  <tr><td><strong>RAG</strong></td><td>Generación aumentada por recuperación de fragmentos desde una base de conocimiento.</td></tr>
+  <tr><td><strong>Respuesta segura</strong></td><td>Declarar la limitación y ofrecer alternativa humana en vez de inventar.</td></tr>
+  <tr><td><strong>RPO / RTO</strong></td><td>Pérdida máxima de datos aceptada / tiempo objetivo de restauración ante una interrupción.</td></tr>
+  <tr><td><strong>Tenant / organización</strong></td><td>Cliente de DOMINIO con su propio agente, datos, usuarios y dashboard.</td></tr>
+  <tr><td><strong>Tool use</strong></td><td>Capacidad del modelo de invocar funciones de la aplicación (<code>capture_lead</code>, <code>create_booking</code>) cuyos efectos ejecuta el backend.</td></tr>
+  <tr><td><strong>Widget</strong></td><td>Componente de chat integrado en una página web mediante un script.</td></tr>
+</table>
+
+<h2>Referencias</h2>
+<ol style="font-size:9pt">
+  <li>L. Rodríguez González / DOMINIO, <em>DOMINIO Chat 24/7 — Especificación oficial del producto</em>, v1.0, 23 de julio de 2026 (fusionada en este documento).</li>
+  <li>DOMINIO, <em>Phase 2 — Plan de Mejoras e Implementación</em>, v2.0, julio 2026 (repositorio <code>dominiopr-landing-page</code>).</li>
+  <li>I. Sommerville, <em>Software Engineering</em>, 10th ed. Harlow, England: Pearson, 2016.</li>
+  <li>ACM/IEEE-CS Joint Task Force, "Software Engineering Code of Ethics and Professional Practice, v5.2," ACM, 1999. https://www.acm.org/code-of-ethics/software-engineering-code</li>
+  <li>Django Software Foundation, "Django Documentation," 2026. https://docs.djangoproject.com/</li>
+  <li>Anthropic, "Claude API — Messages, Tool Use and Prompt Caching," 2026. https://docs.anthropic.com/</li>
+  <li>OWASP Foundation, "OWASP Top 10 for LLM Applications," 2025. https://owasp.org/www-project-top-10-for-large-language-model-applications/</li>
+  <li>W3C, "Web Content Accessibility Guidelines (WCAG) 2.1," 2018. https://www.w3.org/TR/WCAG21/</li>
+  <li>Object Management Group, "OMG UML, v2.5.1," 2017. https://www.omg.org/spec/UML/</li>
+  <li>Amazon Web Services, "Amazon Lightsail Documentation," 2026. https://docs.aws.amazon.com/lightsail/</li>
+</ol>
+
+<div class="footer-note">DOMINIO Chat 24/7 · dominiopr.com — Phase 1: Especificación oficial del producto y diseño del sistema · v2.0 · 24 de julio de 2026 · © 2026 DOMINIO. Documento de uso interno y comercial; no constituye oferta económica ni contrato salvo incorporación expresa a un acuerdo firmado.</div>
+
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', flowchart: { htmlLabels: true } });
+</script>
+</body>
+</html>

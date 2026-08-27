@@ -6,7 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DOMINIO — Agentes</title>
     <meta name="robots" content="noindex, nofollow">
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preload" href="{% static 'landing/fonts/space-grotesk-latin-var.woff2' %}" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="{% static 'landing/css/fonts.css' %}">
     <link rel="stylesheet" href="{% static 'landing/css/dashboard.css' %}">
     <style>
         .agent-card{background:var(--primary-light);border:1px solid var(--line);border-radius:14px;padding:22px;margin-bottom:16px}
@@ -23,6 +24,9 @@
         .toggle-btn:hover{border-color:#f6a96b;color:#f6a96b}
         .badge-off{background:rgba(224,98,98,.16);color:#f0a0a0;padding:3px 9px;border-radius:999px;font-size:.72rem}
         .badge-on{background:rgba(46,168,87,.16);color:#8be0a4;padding:3px 9px;border-radius:999px;font-size:.72rem}
+        .badge-pending{background:rgba(246,169,107,.18);color:#f6c48f;padding:3px 9px;border-radius:999px;font-size:.72rem}
+        .live-btn{border-color:#8be0a4;color:#8be0a4}
+        .live-btn:hover{background:rgba(46,168,87,.16);border-color:#8be0a4;color:#8be0a4}
         .new-btn{background:var(--accent);color:var(--primary);border:none;padding:11px 18px;border-radius:10px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none}
         @media (max-width:600px){
             .agent-card{padding:18px}
@@ -56,8 +60,15 @@
                     <span class="slug">key: {{ c.slug }}</span>
                 </div>
                 <div class="agent-actions">
-                    {% if c.is_active %}<span class="badge-on">Activo</span>{% else %}<span class="badge-off">Pausado</span>{% endif %}
+                    {% if not c.is_active %}<span class="badge-off">Pausado</span>{% elif c.setup_status == 'pending' %}<span class="badge-pending">Pendiente de instalación</span>{% else %}<span class="badge-on">En vivo</span>{% endif %}
                     <a href="{% url 'client_edit' c.pk %}" class="edit-btn">Editar</a>
+                    {% if c.setup_status == 'pending' %}
+                    <form method="post" action="{% url 'client_mark_live' c.pk %}" style="display:inline;"
+                          onsubmit="return confirm('¿Marcar {{ c.name|escapejs }} en vivo y enviarle el email de \'tu agente está en vivo\' a {{ c.notify_email|escapejs }}?');">
+                        {% csrf_token %}
+                        <button type="submit" class="edit-btn live-btn"{% if not c.website_url %} disabled title="Añade el sitio web del cliente antes de marcarlo en vivo."{% endif %}>Marcar en vivo</button>
+                    </form>
+                    {% endif %}
                     <form method="post" action="{% url 'client_toggle_active' c.pk %}" style="display:inline;">
                         {% csrf_token %}
                         <button type="submit" class="edit-btn toggle-btn">{% if c.is_active %}Pausar{% else %}Activar{% endif %}</button>
@@ -72,7 +83,16 @@
             <div class="agent-meta">
                 <span><b>{{ c.lead_count }}</b> leads</span>
                 <span>Notifica a: {{ c.notify_email }}</span>
+                {% if c.website_url %}<span>Sitio: <a href="{{ c.website_url }}" target="_blank" rel="noopener" style="color:var(--accent);">{{ c.website_url }}</a></span>{% endif %}
+                {% if c.platform %}<span>Plataforma: {{ c.get_platform_display }}</span>{% endif %}
+                {% if c.widget_last_seen_at %}<span>Widget visto: {{ c.widget_last_seen_at|date:"d M Y H:i" }}</span>{% endif %}
             </div>
+            {% if c.setup_status == 'pending' and c.install_notes %}
+            <details style="margin:0 0 12px;color:var(--muted);font-size:.82rem;">
+                <summary style="cursor:pointer;color:#f6c48f;">Notas de acceso del cliente</summary>
+                <pre style="white-space:pre-wrap;margin:8px 0 0;color:#b9c9d8;font:inherit;">{{ c.install_notes }}</pre>
+            </details>
+            {% endif %}
             <p style="color:var(--muted);font-size:.8rem;margin:0 0 8px;">Instalación — pega esta línea en el sitio, antes de &lt;/body&gt;:</p>
             <div class="snippet">
                 <code id="embed-{{ c.pk }}">{{ c.embed }}</code>

@@ -1,0 +1,80 @@
+{% extends 'landing/dashboard_base.html' %}
+{% block title %}Citas{% endblock %}
+{% block content %}
+<h1 class="dash-h1">Citas</h1>
+
+<div class="dash-table-wrap">
+    <table class="dash-table">
+        <thead><tr><th>Fecha y hora</th><th>Nombre</th><th>Contacto</th><th>Servicio</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <tbody>
+            {% for b in upcoming %}
+            <tr>
+                <td><b>{{ b.start|date:"D d M · g:i A" }}</b><div class="dash-sub">{{ b.duration_minutes }} min · {{ b.client.name|default:"DOMINIO" }}</div></td>
+                <td>{{ b.name }}</td>
+                <td><a href="mailto:{{ b.email }}">{{ b.email }}</a></td>
+                <td>{{ b.service|default:"—" }}</td>
+                <td><span class="dash-pill dash-pill--{{ b.status }}">{{ b.get_status_display }}</span></td>
+                <td>
+                    <div class="dash-actions-row" style="margin:0">
+                    {% if b.status == 'pending' %}
+                        <form method="post" action="{% url 'booking_status' b.pk %}">{% csrf_token %}<input type="hidden" name="status" value="confirmed"><button class="save-btn save-btn--sm">Confirmar</button></form>
+                        <form method="post" action="{% url 'booking_status' b.pk %}">{% csrf_token %}<input type="hidden" name="status" value="cancelled"><button class="save-btn save-btn--sm">Cancelar</button></form>
+                    {% elif b.status == 'confirmed' %}
+                        <form method="post" action="{% url 'booking_status' b.pk %}">{% csrf_token %}<input type="hidden" name="status" value="completed"><button class="save-btn save-btn--sm">Completada</button></form>
+                        <form method="post" action="{% url 'booking_status' b.pk %}">{% csrf_token %}<input type="hidden" name="status" value="no_show"><button class="save-btn save-btn--sm">No llegó</button></form>
+                        <form method="post" action="{% url 'booking_status' b.pk %}">{% csrf_token %}<input type="hidden" name="status" value="cancelled"><button class="save-btn save-btn--sm">Cancelar</button></form>
+                    {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6"><div class="dash-empty">No hay citas próximas. El agente las creará según los visitantes reserven.</div></td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if can_manage_rules and rule_clients %}
+<div class="dash-card">
+    <h2>Horario laboral (el agente solo ofrece horas dentro de estas ventanas)</h2>
+    {% if rules %}
+    <table class="dash-table" style="max-width:640px">
+        <thead><tr><th>Agente</th><th>Día</th><th>Horario</th><th></th></tr></thead>
+        <tbody>
+            {% for r in rules %}
+            <tr>
+                <td>{{ r.client.name }}</td>
+                <td>{% cycle '' %}{% for num, dname in weekdays %}{% if num == r.weekday %}{{ dname }}{% endif %}{% endfor %}</td>
+                <td>{{ r.open_time|time:"g:i A" }} – {{ r.close_time|time:"g:i A" }}</td>
+                <td><form method="post" action="{% url 'availability_delete' r.pk %}">{% csrf_token %}<button class="save-btn save-btn--sm">Quitar</button></form></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="dash-muted">Sin horario configurado: el agente acepta cualquier hora futura (con 30 min de antelación).</p>
+    {% endif %}
+    <form class="dash-inline-form" method="post" action="{% url 'availability_add' %}">
+        {% csrf_token %}
+        <select name="client">{% for c in rule_clients %}<option value="{{ c.pk }}">{{ c.name }}</option>{% endfor %}</select>
+        <select name="weekday">{% for num, dname in weekdays %}<option value="{{ num }}">{{ dname }}</option>{% endfor %}</select>
+        <input type="time" name="open_time" required>
+        <input type="time" name="close_time" required>
+        <button type="submit" class="save-btn save-btn--sm">Añadir ventana</button>
+    </form>
+</div>
+{% endif %}
+
+{% if past %}
+<div class="dash-card">
+    <h2>Pasadas</h2>
+    <table class="dash-table">
+        <tbody>
+            {% for b in past %}
+            <tr><td>{{ b.start|date:"M d · g:i A" }}</td><td>{{ b.name }}</td><td><span class="dash-pill dash-pill--{{ b.status }}">{{ b.get_status_display }}</span></td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

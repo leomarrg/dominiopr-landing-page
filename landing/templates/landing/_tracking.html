@@ -2,7 +2,7 @@
 Cookie consent + Google Analytics 4.
 GA only loads AFTER the visitor clicks "Accept" (opt-in), satisfying
 US/PR privacy expectations (CCPA/CPRA: clear notice + ability to reject).
-The choice is stored in localStorage. A footer link with id="cookieSettings"
+The choice is stored in localStorage. A footer link with id="cookieSettings" (or any .js-cookie-settings link)
 reopens the banner so the visitor can change their mind.
 {% endcomment %}
 
@@ -24,15 +24,15 @@ reopens the banner so the visitor can change their mind.
 {% endif %}
 
 <div id="cookieBanner" class="cookie-banner" role="dialog" aria-live="polite"
-     aria-label="Cookie consent" hidden>
+     aria-label="Consentimiento de cookies" hidden>
   <p class="cookie-banner__text">
-    We use cookies to measure site traffic and understand how visitors use our
-    site. You can accept or reject analytics cookies. See our
-    <a href="{% url 'privacy' %}">Privacy Policy</a>.
+    Usamos cookies para medir el tráfico del sitio y entender cómo lo usan
+    los visitantes. Puedes aceptarlas o rechazarlas. Lee nuestra
+    <a href="{% url 'privacy' %}">Política de Privacidad</a>.
   </p>
   <div class="cookie-banner__actions">
-    <button type="button" id="cookieReject" class="cookie-banner__btn cookie-banner__btn--ghost">Reject</button>
-    <button type="button" id="cookieAccept" class="cookie-banner__btn cookie-banner__btn--primary">Accept</button>
+    <button type="button" id="cookieReject" class="cookie-banner__btn cookie-banner__btn--ghost">Rechazar</button>
+    <button type="button" id="cookieAccept" class="cookie-banner__btn cookie-banner__btn--primary">Aceptar</button>
   </div>
 </div>
 
@@ -112,7 +112,10 @@ reopens the banner so the visitor can change their mind.
 
     // Let a footer "Cookie settings" link reopen the banner.
     document.addEventListener('click', function (e) {
-      var trigger = e.target.closest && e.target.closest('#cookieSettings');
+      // Matches the footer link (#cookieSettings) and any in-body link
+      // (.js-cookie-settings) — an id may only appear once per page.
+      var trigger = e.target.closest &&
+        e.target.closest('#cookieSettings, .js-cookie-settings');
       if (trigger) {
         e.preventDefault();
         try { localStorage.removeItem(KEY); } catch (_) {}

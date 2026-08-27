@@ -18,6 +18,11 @@ class ClientForm(forms.ModelForm):
             'name', 'slug', 'system_prompt', 'greeting', 'notify_email',
             'allowed_origins', 'primary_color', 'surface_color', 'header_color',
             'enable_bookings', 'is_active',
+            # Self-serve provisioning state (webhook sets pending; staff flips live)
+            'setup_status', 'website_url', 'platform',
+            # Phase 2 operation knobs (M-04/M-06/M-10/M-14)
+            'primary_language', 'daily_message_cap', 'retention_months',
+            'notify_phone', 'notify_channel',
         ]
         widgets = {
             'system_prompt': forms.Textarea(attrs={'rows': 10}),
@@ -27,6 +32,7 @@ class ClientForm(forms.ModelForm):
             'primary_color': forms.TextInput(attrs={'type': 'color'}),
             'surface_color': forms.TextInput(attrs={'type': 'color'}),
             'header_color': forms.TextInput(attrs={'type': 'color'}),
+            'notify_phone': forms.TextInput(attrs={'placeholder': '+17871234567'}),
         }
 
     def __init__(self, *args, **kwargs):

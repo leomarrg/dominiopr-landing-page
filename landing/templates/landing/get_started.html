@@ -4,34 +4,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Crea tu agente de IA — DOMINIO</title>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    {% include "landing/_seo.html" with title="DOMINIO Chat 24/7 — Tu agente de IA | DOMINIO" description="Un agente de IA que contesta a tus clientes, califica leads y toma citas 24/7. Nosotros lo instalamos en tu página en 48 horas. Desde $99/mes. Actívalo hoy." path="/get-started/" %}
+    <link rel="preload" href="{% static 'landing/fonts/space-grotesk-latin-var.woff2' %}" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="{% static 'landing/css/fonts.css' %}">
     <link rel="stylesheet" href="{% static 'landing/css/style.css' %}">
-    <link rel="icon" type="image/png" href="{% static 'landing/images/logo/profile_pic@4x.PNG' %}">
     <style>
         .gs-wrap{background:var(--primary);min-height:100vh;padding:48px 0 80px}
-        .gs-top{text-align:center;max-width:680px;margin:0 auto 44px}
+        .gs-top{text-align:center;max-width:680px;margin:0 auto 32px}
         .gs-top .section-tag{color:var(--accent)}
         .gs-top h1{color:var(--white);font-family:'Space Grotesk',sans-serif;font-size:2.4rem;line-height:1.1;margin:6px 0 14px}
         .gs-top p{color:rgba(255,255,255,.72);font-size:1.05rem;line-height:1.6}
         .gs-back{display:inline-block;color:var(--accent);font-size:.88rem;margin-bottom:20px;text-decoration:none}
-        .plans{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:48px}
+
+        /* ---- "Cómo funciona" strip ---- */
+        .gs-steps{list-style:none;display:grid;grid-template-columns:repeat(4,1fr);gap:14px;max-width:960px;margin:0 auto 44px;padding:0}
+        .gs-step{background:var(--primary-light);border:1px solid rgba(52,214,200,.16);border-radius:14px;padding:16px 16px 16px 52px;position:relative;color:rgba(255,255,255,.82);font-size:.86rem;line-height:1.45}
+        .gs-step__num{position:absolute;left:16px;top:16px;width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--primary);font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:.86rem;display:flex;align-items:center;justify-content:center}
+
+        /* ---- Pricing ---- */
+        .planes-wrap{max-width:1080px;margin:0 auto 48px}
+        .planes-head{text-align:center;margin-bottom:22px}
+        .launch-note{color:var(--accent);font-size:.85rem;font-weight:600;margin:0 0 16px;letter-spacing:.02em}
+        .plans-tax{text-align:center;color:rgba(255,255,255,.62);font-size:.82rem;margin:18px 0 0}
+        .price-toggle{display:inline-flex;background:var(--primary-light);border:1px solid rgba(52,214,200,.22);border-radius:999px;padding:4px}
+        .price-toggle__btn{border:none;background:transparent;color:rgba(255,255,255,.65);font:inherit;font-weight:600;font-size:.86rem;padding:9px 18px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+        .price-toggle__btn.is-active{background:var(--accent);color:var(--primary)}
+        .price-toggle__badge{background:rgba(255,255,255,.16);color:inherit;font-size:.68rem;font-weight:700;padding:2px 7px;border-radius:999px;text-transform:uppercase;letter-spacing:.03em}
+        .price-toggle__btn.is-active .price-toggle__badge{background:rgba(10,28,46,.18)}
+        .price-toggle__btn:not(.is-active) .price-toggle__badge{color:var(--accent)}
+
+        .plans{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
         .plan{background:var(--primary-light);border:1px solid rgba(52,214,200,.16);border-radius:18px;padding:28px 24px;display:flex;flex-direction:column}
         .plan--featured{border-color:var(--accent);box-shadow:0 14px 40px rgba(0,0,0,.3)}
         .plan__tag{align-self:flex-start;background:var(--accent);color:var(--primary);font-size:.7rem;font-weight:700;padding:4px 10px;border-radius:999px;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em}
         .plan h3{color:var(--white);font-size:1.2rem;margin:0 0 4px}
+        .plan__tagline{color:rgba(255,255,255,.55);font-size:.82rem;margin:0 0 14px;line-height:1.4}
         .plan .price{color:var(--white);font-family:'Space Grotesk',sans-serif;font-size:2rem;font-weight:700}
         .plan .price span{font-size:.9rem;color:var(--muted,#8aa0b5);font-weight:400}
-        .plan .setup{color:rgba(255,255,255,.5);font-size:.8rem;margin:2px 0 6px}
-        .plan .annual{color:var(--accent);font-size:.78rem;font-weight:500;margin:0 0 14px}
-        .plan ul{list-style:none;padding:0;margin:0 0 8px;flex:1}
+        .plan .price--custom{font-size:1.6rem}
+        .plan .setup{color:rgba(255,255,255,.5);font-size:.8rem;margin:4px 0 0;min-height:1.2em}
+        .plan ul{list-style:none;padding:0;margin:16px 0 8px;flex:1}
         .plan li{color:rgba(255,255,255,.78);font-size:.88rem;padding:6px 0 6px 22px;position:relative}
         .plan li::before{content:"";position:absolute;left:0;top:12px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
         .plan__pick{margin-top:14px;text-align:center;border:1px solid rgba(52,214,200,.4);background:transparent;color:var(--accent);padding:11px;border-radius:10px;font:inherit;font-weight:600;font-size:.88rem;cursor:pointer}
         .plan__pick:hover{background:var(--accent);color:var(--primary)}
+
         .gs-form-wrap{max-width:640px;margin:0 auto;background:var(--primary-light);border:1px solid rgba(52,214,200,.2);border-radius:20px;padding:34px}
         .gs-form-wrap h2{color:var(--white);font-family:'Space Grotesk',sans-serif;font-size:1.5rem;margin:0 0 6px}
-        .gs-form-wrap .sub{color:rgba(255,255,255,.65);font-size:.92rem;margin:0 0 22px}
+        .gs-form-wrap .sub{color:rgba(255,255,255,.65);font-size:.92rem;margin:0 0 22px;line-height:1.5}
         .gs-form{display:flex;flex-direction:column;gap:14px}
         .gs-row{display:flex;gap:14px}
         .gs-row>*{flex:1;min-width:0}
@@ -41,7 +61,7 @@
         .gs-note{color:rgba(255,255,255,.5);font-size:.8rem;text-align:center;margin-top:4px}
         .gs-success{background:rgba(46,160,87,.14);border:1px solid rgba(46,160,87,.45);color:#8be0a4;border-radius:12px;padding:16px;margin-bottom:20px;text-align:center}
         /* ---- Demo "Try your own agent" ---- */
-        .gs-demo{max-width:640px;margin:0 auto 40px;background:var(--primary-light);border:1px solid rgba(52,214,200,.2);border-radius:20px;padding:28px}
+        .gs-demo{max-width:640px;margin:0 auto 48px;background:var(--primary-light);border:1px solid rgba(52,214,200,.2);border-radius:20px;padding:28px}
         .gs-demo__head h2{color:var(--white);font-family:'Space Grotesk',sans-serif;font-size:1.4rem;margin:0 0 6px}
         .gs-demo__head p{color:rgba(255,255,255,.65);font-size:.92rem;line-height:1.5;margin:0 0 18px}
         .gs-demo__ctx{width:100%;box-sizing:border-box;padding:13px 16px;border-radius:10px;border:1px solid rgba(52,214,200,.22);background:var(--primary);color:var(--white);font-family:inherit;font-size:16px;line-height:1.5;resize:vertical;min-height:96px}
@@ -59,79 +79,142 @@
         #demoInput:focus{outline:none;border-color:var(--accent)}
         .gs-demo__form .btn-primary{flex:0 0 auto;padding:13px 22px;white-space:nowrap}
         .gs-demo__form .btn-primary:disabled{opacity:.5;cursor:default}
-        @media (max-width:1040px){.plans{grid-template-columns:repeat(2,1fr)}}
+        @media (max-width:1040px){.plans{grid-template-columns:repeat(2,1fr)}.gs-steps{grid-template-columns:repeat(2,1fr)}}
         @media (max-width:860px){.gs-top h1{font-size:1.9rem}.gs-row{flex-direction:column}.gs-demo{padding:22px 18px}.gs-demo__form{flex-direction:column}.gs-demo__form .btn-primary{width:100%}}
-        @media (max-width:560px){.plans{grid-template-columns:1fr}}
+        @media (max-width:560px){.plans{grid-template-columns:1fr}.gs-steps{grid-template-columns:1fr}.price-toggle{width:100%}.price-toggle__btn{flex:1;justify-content:center}}
     </style>
+    <script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "¿Qué incluye cada plan?", "acceptedAnswer": {"@type": "Answer", "text": "Starter cubre el agente en tu web, respuestas 24/7, captura de leads y tu dashboard. Pro suma calificación de leads, citas y reservaciones automáticas, marca y colores, y afinamos tu agente cada mes. Scale añade WhatsApp y multicanal, hasta 3 locales y conexión con tu CRM y calendario. Custom se ajusta a integraciones o volumen fuera de estos rangos — hablamos contigo primero."}}, {"@type": "Question", "name": "¿Tengo que instalarlo yo?", "acceptedAnswer": {"@type": "Answer", "text": "No. Tú pagas y nos das acceso a tu página (o se lo mandas a tu webmaster); nosotros lo instalamos y configuramos en 48 horas. Funciona en WordPress, Wix, Squarespace, Shopify o sitios en HTML."}}, {"@type": "Question", "name": "¿Qué pasa cuando el agente captura un lead?", "acceptedAnswer": {"@type": "Answer", "text": "Te llega por correo al instante y también queda guardado en tu dashboard, donde puedes ver el historial completo de la conversación y darle seguimiento cuando quieras."}}, {"@type": "Question", "name": "¿Cómo funciona el cobro y puedo cancelar?", "acceptedAnswer": {"@type": "Answer", "text": "El pago es seguro por Stripe, mensual o anual (dos meses gratis pagando anual), más una instalación única de configuración. Puedes cancelar cuando quieras — sin contrato forzado."}}]}</script>
 </head>
 <body>
+    <a class="skip-link" href="#contenido">Saltar al contenido</a>
+    <main id="contenido" tabindex="-1">
 <div class="gs-wrap">
     <div class="container">
         <a href="{% url 'index' %}" class="gs-back">&larr; Volver a DOMINIO</a>
         <div class="gs-top">
             <p class="section-tag">Crea tu agente</p>
-            <h1>Tu propio agente de IA, contestando clientes 24/7</h1>
-            <p>Entrenado con tu negocio. Contesta preguntas, captura leads y agenda citas 24/7 — en vivo en tu sitio con una sola línea de código.</p>
+            <h1>Tu agente de IA contestando clientes 24/7 — instalado por nosotros</h1>
+            <p>Pagas, te damos acceso al instante y nosotros lo instalamos y configuramos en tu página. En vivo en 48 horas, sin que tú toques una línea de código.</p>
         </div>
+
+        <ol class="gs-steps">
+            <li class="gs-step"><span class="gs-step__num">1</span>Eliges tu plan y pagas seguro con Stripe</li>
+            <li class="gs-step"><span class="gs-step__num">2</span>Recibes tu dashboard al instante</li>
+            <li class="gs-step"><span class="gs-step__num">3</span>Nos das acceso a tu página (o se lo mandas a tu webmaster)</li>
+            <li class="gs-step"><span class="gs-step__num">4</span>Lo instalamos y configuramos en 48 h</li>
+        </ol>
 
         <div class="gs-demo" id="demo">
             <div class="gs-demo__head">
                 <h2>Prueba tu propio agente — gratis</h2>
                 <p>Escribe lo que hace tu negocio y pregúntale lo que sea. Esto es exactamente lo que verían tus clientes.</p>
             </div>
-            <textarea id="demoContext" class="gs-demo__ctx" rows="4" placeholder="Ej. Somos Pizzería Napoli en San Juan. Pizzas al horno de leña, pastas y ensaladas. Abrimos de martes a domingo de 11am a 10pm. Delivery por nuestra página. Tomamos reservaciones para grupos de 6 o más."></textarea>
+            <textarea id="demoContext" class="gs-demo__ctx" rows="4" aria-label="Describe tu negocio para el demo" placeholder="Ej. Somos Pizzería Napoli en San Juan. Pizzas al horno de leña, pastas y ensaladas. Abrimos de martes a domingo de 11am a 10pm. Delivery por nuestra página. Tomamos reservaciones para grupos de 6 o más."></textarea>
             <div class="gs-demo__log" id="demoLog"></div>
             <form class="gs-demo__form" id="demoForm">
-                <input type="text" id="demoInput" placeholder="Pregúntale algo a tu agente…" autocomplete="off" maxlength="2000">
+                <input type="text" id="demoInput" aria-label="Escribe tu pregunta para el demo" placeholder="Pregúntale algo a tu agente…" autocomplete="off" maxlength="2000">
                 <button type="submit" class="btn-primary">Enviar</button>
             </form>
         </div>
 
-        <div class="plans">
-            {% for p in plans %}
-            <div class="plan {% if p.featured %}plan--featured{% endif %}">
-                {% if p.featured %}<span class="plan__tag">Más popular</span>{% endif %}
-                <h3>{{ p.name }}</h3>
-                <div class="price">{{ p.price }}{% if p.price != "Hablemos" %}<span>/mes</span>{% endif %}</div>
-                {% if p.setup %}<div class="setup">{{ p.setup }}</div>{% endif %}
-                {% if p.annual %}<div class="annual">{{ p.annual }}</div>{% endif %}
-                <ul>{% for f in p.features %}<li>{{ f }}</li>{% endfor %}</ul>
-                <button type="button" class="plan__pick" data-plan="{{ p.id }}">Elegir {{ p.name }}</button>
+        <div class="planes-wrap" id="planes">
+            <div class="planes-head">
+                <p class="launch-note">Precio de lanzamiento — garantizado para los primeros 10 clientes</p>
+                <div class="price-toggle" role="group" aria-label="Elige tu ciclo de pago">
+                    <button type="button" class="price-toggle__btn is-active" id="toggleMonthly" aria-pressed="true">Mensual</button>
+                    <button type="button" class="price-toggle__btn" id="toggleAnnual" aria-pressed="false">Anual <span class="price-toggle__badge">2 meses gratis</span></button>
+                </div>
             </div>
-            {% endfor %}
+            <div class="plans">
+                {% for p in plans %}
+                <div class="plan {% if p.featured %}plan--featured{% endif %}">
+                    {% if p.featured %}<span class="plan__tag">Más popular</span>{% endif %}
+                    <h3>{{ p.name }}</h3>
+                    <p class="plan__tagline">{{ p.tagline }}</p>
+                    {% if p.monthly %}
+                    <div class="price" data-monthly="${{ p.monthly }}<span>/mes</span>" data-annual="${{ p.annual }}<span>/año</span>">${{ p.monthly }}<span>/mes</span></div>
+                    <div class="setup">{% if p.setup %}+ ${{ p.setup }} instalación y configuración (una vez){% endif %}</div>
+                    {% else %}
+                    <div class="price price--custom">Hablemos</div>
+                    <div class="setup"></div>
+                    {% endif %}
+                    <ul>{% for f in p.features %}<li>{{ f }}</li>{% endfor %}</ul>
+                    <button type="button" class="plan__pick" data-plan="{{ p.id }}">{% if p.monthly %}Elegir {{ p.name }}{% else %}Hablemos{% endif %}</button>
+                </div>
+                {% endfor %}
+            </div>
+            {% if TAX_ON_TOP %}<p class="plans-tax">Los precios no incluyen IVU. El impuesto se calcula y se añade al momento de pagar.</p>{% endif %}
         </div>
 
+        <section id="faq" class="faq faq--compact" aria-labelledby="faq-title">
+        <div class="container">
+            <p class="section-tag">Preguntas frecuentes</p>
+            <h2 class="section-title" id="faq-title">Antes de activar tu agente</h2>
+            <div class="faq-list">
+                <details class="faq-item">
+                    <summary>¿Qué incluye cada plan?</summary>
+                    <p>Starter cubre el agente en tu web, respuestas 24/7, captura de leads y tu dashboard. Pro suma calificación de leads, citas y reservaciones automáticas, marca y colores, y afinamos tu agente cada mes. Scale añade WhatsApp y multicanal, hasta 3 locales y conexión con tu CRM y calendario. Custom se ajusta a integraciones o volumen fuera de estos rangos — hablamos contigo primero.</p>
+                </details>
+                <details class="faq-item">
+                    <summary>¿Tengo que instalarlo yo?</summary>
+                    <p>No. Tú pagas y nos das acceso a tu página (o se lo mandas a tu webmaster); nosotros lo instalamos y configuramos en 48 horas. Funciona en WordPress, Wix, Squarespace, Shopify o sitios en HTML.</p>
+                </details>
+                <details class="faq-item">
+                    <summary>¿Qué pasa cuando el agente captura un lead?</summary>
+                    <p>Te llega por correo al instante y también queda guardado en tu dashboard, donde puedes ver el historial completo de la conversación y darle seguimiento cuando quieras.</p>
+                </details>
+                <details class="faq-item">
+                    <summary>¿Cómo funciona el cobro y puedo cancelar?</summary>
+                    <p>El pago es seguro por Stripe, mensual o anual (dos meses gratis pagando anual), más una instalación única de configuración. Puedes cancelar cuando quieras — sin contrato forzado.</p>
+                </details>
+            </div>
+        </div>
+    </section>
         <div class="gs-form-wrap" id="request">
             {% if messages %}{% for m in messages %}<div class="gs-success" id="done">{{ m }}</div>{% endfor %}{% endif %}
-            <h2>Solicita tu agente</h2>
-            <p class="sub">Cuéntanos de tu negocio. Configuramos tu agente y te enviamos por email un enlace seguro de Stripe para el plan mensual — y ahí tu agente sale en vivo.</p>
-            <form class="gs-form" method="post" action="{% url 'get_started' %}#request" novalidate>
+            <h2>Activa tu agente</h2>
+            <p class="sub">Completa tus datos y sigue al pago seguro con Stripe. Tu cuenta y tu dashboard se crean al instante; nosotros instalamos el agente en tu página en 48 horas.</p>
+            <form class="gs-form" method="post" action="{% url 'get_started' %}#request" novalidate
+                  onsubmit="var b=this.querySelector('button[type=submit]');if(b){b.disabled=true;b.textContent='Enviando…';}">
                 {% csrf_token %}
-                <div style="position:absolute;left:-9999px" aria-hidden="true"><input type="text" name="hp" tabindex="-1" autocomplete="off"></div>
+                <div style="position:absolute;left:-9999px" aria-hidden="true"><input type="text" name="hp" tabindex="-1" autocomplete="off" aria-hidden="true"></div>
+                <input type="hidden" name="period" id="periodInput" value="{{ form.period|default:'monthly' }}">
                 <div class="gs-row">
-                    <input type="text" name="company" placeholder="Nombre del negocio" value="{{ form.company|default:'' }}" required>
-                    <input type="text" name="name" placeholder="Tu nombre" value="{{ form.name|default:'' }}" required>
+                    <input type="text" name="company" aria-label="Nombre del negocio" placeholder="Nombre del negocio" value="{{ form.company|default:'' }}" required>
+                    <input type="text" name="name" aria-label="Tu nombre" placeholder="Tu nombre" value="{{ form.name|default:'' }}" required>
                 </div>
                 {% if errors.company %}<div class="err">{{ errors.company }}</div>{% endif %}
                 <div class="gs-row">
-                    <input type="email" name="email" placeholder="Email" value="{{ form.email|default:'' }}">
-                    <input type="tel" name="phone" placeholder="(787) 123-4567" inputmode="tel" autocomplete="tel" maxlength="14" value="{{ form.phone|default:'' }}">
+                    <input type="email" name="email" aria-label="Email" placeholder="Email" value="{{ form.email|default:'' }}">
+                    <input type="tel" name="phone" aria-label="Teléfono" placeholder="(787) 123-4567" inputmode="tel" autocomplete="tel" maxlength="14" value="{{ form.phone|default:'' }}">
                 </div>
                 {% if errors.email %}<div class="err">{{ errors.email }}</div>{% endif %}
                 {% if errors.phone %}<div class="err">{{ errors.phone }}</div>{% endif %}
-                <input type="text" name="website_url" placeholder="Página web (opcional)" value="{{ form.website_url|default:'' }}">
-                <select name="plan" id="planSelect">
+                <input type="text" name="website_url" aria-label="Página web" placeholder="Página web (opcional)" value="{{ form.website_url|default:'' }}">
+                <select name="plan" aria-label="Plan" id="planSelect">
                     <option value="">Elige un plan</option>
-                    {% for p in plans %}<option value="{{ p.id }}" {% if form.plan == p.id %}selected{% endif %}>{{ p.name }}{% if p.price != "Hablemos" %} — {{ p.price }}/mes{% endif %}</option>{% endfor %}
+                    {% for p in plans %}
+                    <option value="{{ p.id }}" {% if form.plan == p.id %}selected{% endif %}>{{ p.name }}{% if p.monthly %} — ${{ p.monthly }}/mes{% if p.setup %} + ${{ p.setup }} instalación{% endif %}{% else %} — Hablemos{% endif %}</option>
+                    {% endfor %}
                 </select>
-                <textarea name="message" rows="4" placeholder="¿Qué hace tu negocio y en qué quieres que ayude el agente?">{{ form.message|default:'' }}</textarea>
-                <button type="submit" class="btn-primary">Solicitar mi agente</button>
-                <p class="gs-note">Solo se te cobra el plan mensual cuando tu agente esté en vivo, de forma segura por Stripe.</p>
+                {% if errors.plan %}<div class="err">{{ errors.plan }}</div>{% endif %}
+                <textarea name="message" aria-label="Qué hace tu negocio" rows="4" placeholder="¿Qué hace tu negocio y en qué quieres que ayude el agente?">{{ form.message|default:'' }}</textarea>
+                <button type="submit" class="btn-primary">Continuar al pago seguro</button>
+                <p class="gs-note">Cobro seguro por Stripe · cancela cuando quieras · si eliges Custom o prefieres hablar primero, te escribimos por email.</p>
             </form>
         </div>
     </div>
 </div>
+    </main>
 <script>
+    // Insert thousands separators into any "$1234" pattern already rendered
+    // server-side (select options, one-time setup lines).
+    function insertCommas(str){
+        return str.replace(/\$(\d{4,})/g, function(_, d){ return '$' + Number(d).toLocaleString('en-US'); });
+    }
+    document.querySelectorAll('#planSelect option').forEach(function(o){ o.textContent = insertCommas(o.textContent); });
+    document.querySelectorAll('.plan .setup').forEach(function(e){ e.textContent = insertCommas(e.textContent); });
+
     document.querySelectorAll('.plan__pick').forEach(function(b){
         b.addEventListener('click', function(){
             var sel = document.getElementById('planSelect');
@@ -139,6 +222,32 @@
             document.getElementById('request').scrollIntoView({behavior:'smooth'});
         });
     });
+
+    // Monthly / annual price toggle — swaps the big price text on each plan
+    // card and keeps the hidden `period` form field in sync.
+    (function(){
+        var periodInput = document.getElementById('periodInput');
+        var btnMonthly = document.getElementById('toggleMonthly');
+        var btnAnnual = document.getElementById('toggleAnnual');
+        var prices = document.querySelectorAll('.plan .price[data-monthly]');
+        if (!btnMonthly || !btnAnnual) return;
+
+        function setPeriod(period){
+            var isMonthly = period === 'monthly';
+            btnMonthly.classList.toggle('is-active', isMonthly);
+            btnAnnual.classList.toggle('is-active', !isMonthly);
+            btnMonthly.setAttribute('aria-pressed', String(isMonthly));
+            btnAnnual.setAttribute('aria-pressed', String(!isMonthly));
+            if (periodInput) periodInput.value = period;
+            prices.forEach(function(el){
+                el.innerHTML = insertCommas(el.getAttribute('data-' + period));
+            });
+        }
+        btnMonthly.addEventListener('click', function(){ setPeriod('monthly'); });
+        btnAnnual.addEventListener('click', function(){ setPeriod('annual'); });
+        // Reflect the server-rendered period (kept after a validation error).
+        setPeriod(periodInput && periodInput.value === 'annual' ? 'annual' : 'monthly');
+    })();
 
     // Format the phone field as (XXX) XXX-XXXX while typing (US/PR).
     document.querySelectorAll('input[name="phone"]').forEach(function (el) {
@@ -165,11 +274,12 @@
         // Escape HTML, then render the small markdown subset the model emits.
         function renderRich(text){
             var esc = String(text)
-                .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
             return esc
                 .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
                 .replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<em>$2</em>')
-                .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+                .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)"'<>]+)\)/g,
                     '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
         }
 

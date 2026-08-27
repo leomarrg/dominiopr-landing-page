@@ -4,10 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Términos de Servicio | DOMINIO</title>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    {% include "landing/_seo.html" with title="Términos de Servicio | DOMINIO" description="Términos de servicio de DOMINIO: condiciones de uso del sitio, los planes de DOMINIO Chat 24/7 y los servicios de software y tecnología que ofrecemos." path="/terms/" %}
+    <link rel="preload" href="{% static 'landing/fonts/space-grotesk-latin-var.woff2' %}" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="{% static 'landing/css/fonts.css' %}">
     <link rel="stylesheet" href="{% static 'landing/css/style.css' %}">
-    <link rel="icon" type="image/png" href="{% static 'landing/images/logo/profile_pic@4x.PNG' %}">
     <style>
         .legal-page {
             padding: 140px 0 80px;
@@ -67,6 +67,8 @@
     </style>
 </head>
 <body>
+    <a class="skip-link" href="#contenido">Saltar al contenido</a>
+    <main id="contenido" tabindex="-1">
     <div class="legal-page">
         <div class="container">
             <div class="legal-content">
@@ -101,6 +103,23 @@
                 <h2>5. Términos de Pago</h2>
                 <p>Los términos, itinerarios y montos de pago se detallarán en las propuestas o contratos individuales de cada proyecto. Los pagos tardíos pueden resultar en retrasos del proyecto o en la suspensión de los servicios. Todos los honorarios no son reembolsables, a menos que se indique lo contrario en el acuerdo del proyecto.</p>
 
+                <h2>5.1 DOMINIO Chat 24/7 — Suscripciones</h2>
+                <p>DOMINIO Chat 24/7 se vende como una <strong>suscripción recurrente</strong>. Al completar el pago aceptas lo siguiente:</p>
+                <ul>
+                    <li><strong>Renovación automática.</strong> Tu plan se renueva solo — cada mes o cada año, según lo que escogiste — y se cobra a la tarjeta que registraste, hasta que lo canceles.</li>
+                    <li><strong>Cancelación.</strong> Puedes cancelar cuando quieras desde <em>Facturación</em> en tu dashboard. La cancelación aplica al final del período que ya pagaste: tu agente sigue funcionando hasta esa fecha. No hay contrato de permanencia ni penalidad por cancelar.</li>
+                    <li><strong>Reembolsos.</strong> La mensualidad o anualidad ya cobrada no se reembolsa ni se prorratea. Si algo salió mal de nuestro lado, escríbenos: lo resolvemos caso por caso.</li>
+                    <li><strong>Cargo de instalación.</strong> El cargo de instalación y configuración se cobra una sola vez, junto con el primer período. Cubre trabajo que hacemos por adelantado, así que no es reembolsable una vez que empezamos la instalación.</li>
+                    <li><strong>Instalación.</strong> Instalamos y configuramos tu agente dentro de las 48 horas laborables siguientes al pago, siempre que nos des a tiempo el acceso a tu página. Si el acceso se demora, el plazo corre desde que lo recibimos.</li>
+                    <li><strong>Cambios de plan.</strong> Puedes subir o bajar de plan desde <em>Facturación</em>. Los límites del plan nuevo aplican en cuanto Stripe confirma el cambio.</li>
+                    <li><strong>Si dejas de pagar.</strong> Si un cobro falla, Stripe reintenta durante unos días y te avisa. Si el cobro nunca entra, pausamos el agente hasta que se regularice.</li>
+                    <li><strong>Tus datos al cancelar.</strong> Los leads, conversaciones y citas que tu agente capturó son tuyos. Puedes exportarlos desde el dashboard antes de cancelar; escríbenos si necesitas ayuda. Después de cancelar conservamos la información según los plazos de la <a href="{% url 'privacy' %}">Política de Privacidad</a> y luego la eliminamos.</li>
+                    <li><strong>Cambios de precio.</strong> Si cambiamos el precio de tu plan te avisamos por email con al menos 30 días de anticipación. El precio nuevo aplica en tu siguiente renovación; si no te sirve, puedes cancelar antes.</li>
+                    <li><strong>Uso justo.</strong> Cada plan incluye un límite de mensajes diarias. Si lo pasas de forma sostenida, te contactamos para moverte al plan que te corresponde.</li>
+                    <li><strong>Naturaleza del servicio.</strong> El agente es un asistente de inteligencia artificial. Puede equivocarse. No sustituye asesoría profesional y no cerramos contratos ni compromisos vinculantes en tu nombre a través de él.</li>
+                </ul>
+                <p>Los pagos los procesa <strong>Stripe</strong>. Nosotros nunca vemos ni guardamos los datos de tu tarjeta.</p>
+
                 <h2>6. Itinerarios del Proyecto</h2>
                 <p>Nos comprometemos a entregar los proyectos dentro de los itinerarios acordados. No obstante, los itinerarios pueden ajustarse si se solicitan cambios de alcance, si el cliente retrasa la información o retroalimentación requerida, o si surgen retos técnicos imprevistos. Cualquier cambio en el itinerario se comunicará de manera oportuna.</p>
 
@@ -125,6 +144,7 @@
         </div>
     </div>
 
+    </main>
     <footer class="footer">
         <div class="container footer-content">
             <div class="footer-brand">

@@ -1,0 +1,19 @@
+{% extends "landing/emails/_base.html" %}
+{% block content %}
+<p style="margin:0 0 6px; color:#3bc0c7; font-size:12px; letter-spacing:2px; text-transform:uppercase;">Tu agente está en vivo</p>
+<h1 style="margin:0 0 16px; color:#ffffff; font-size:22px; font-weight:700;">{{ client.name }}, ya está funcionando.</h1>
+<p style="margin:0 0 14px;">Tu agente de IA está en vivo en <a href="{{ site_url }}" style="color:#3bc0c7; text-decoration:none;">{{ site_url }}</a> — contestando visitantes 24/7.</p>
+
+<p style="margin:22px 0 6px; color:#3bc0c7; font-size:12px; letter-spacing:2px; text-transform:uppercase;">Qué esperar</p>
+<p style="margin:0 0 14px;">Cada visitante que hable con tu agente y deje sus datos llega como un lead — por correo y en tu dashboard.</p>
+
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;">
+  <tr><td style="border-radius:8px; background:#3bc0c7;">
+    <a href="{{ dashboard_url }}" style="display:inline-block; padding:13px 26px; color:#0b0d12; font-family:'Helvetica Neue',Arial,sans-serif; font-weight:700; font-size:14px; text-decoration:none; border-radius:8px;">Ver mi dashboard</a>
+  </td></tr>
+</table>
+
+<p style="margin:0 0 14px; color:rgba(255,255,255,0.7); font-size:14px;">Tip: entra a <a href="{{ site_url }}" style="color:#3bc0c7; text-decoration:none;">{{ site_url }}</a> y pregúntale algo a tu propio agente — así ves exactamente lo que ven tus clientes.</p>
+
+<p style="margin:18px 0 0;">¿Dudas? Responde a este correo.</p>
+{% endblock %}

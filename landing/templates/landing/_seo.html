@@ -1,0 +1,33 @@
+{% load static %}{% comment %}
+Shared <head> SEO block. Usage inside <head>, instead of a hand-written <title>:
+  {% include "landing/_seo.html" with title="..." description="..." path="/get-started/" %}
+Optional: noindex=True (private/transactional pages), image="<absolute url>".
+Canonical + Open Graph URLs are built from SITE_URL (settings.DJANGO_SITE_URL),
+never from the request Host, so www/non-www and IP hits all canonicalize to
+the public domain.
+{% endcomment %}{% with og_image=image|default:'' %}
+    <title>{{ title }}</title>
+    {% if description %}<meta name="description" content="{{ description }}">{% endif %}
+    {% if noindex %}<meta name="robots" content="noindex, nofollow">{% else %}<meta name="robots" content="index, follow, max-image-preview:large">{% endif %}
+    <link rel="canonical" href="{{ SITE_URL }}{{ path|default:'/' }}">
+    <meta name="theme-color" content="#0b1a2b">
+    <meta name="color-scheme" content="dark">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="DOMINIO">
+    <meta property="og:locale" content="es_PR">
+    <meta property="og:title" content="{{ title }}">
+    {% if description %}<meta property="og:description" content="{{ description }}">{% endif %}
+    <meta property="og:url" content="{{ SITE_URL }}{{ path|default:'/' }}">
+    <meta property="og:image" content="{% if og_image %}{{ og_image }}{% else %}{{ SITE_URL }}{% static 'landing/images/brand/og-image.png' %}{% endif %}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="DOMINIO — Estudio de Software y Tecnología en Puerto Rico">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ title }}">
+    {% if description %}<meta name="twitter:description" content="{{ description }}">{% endif %}
+    <meta name="twitter:image" content="{% if og_image %}{{ og_image }}{% else %}{{ SITE_URL }}{% static 'landing/images/brand/og-image.png' %}{% endif %}">
+    <link rel="icon" href="{% static 'landing/images/brand/favicon-32.png' %}" sizes="32x32" type="image/png">
+    <link rel="icon" href="{% static 'landing/images/brand/favicon-16.png' %}" sizes="16x16" type="image/png">
+    <link rel="apple-touch-icon" href="{% static 'landing/images/brand/apple-touch-icon.png' %}">
+    <link rel="manifest" href="{% url 'webmanifest' %}">
+{% endwith %}

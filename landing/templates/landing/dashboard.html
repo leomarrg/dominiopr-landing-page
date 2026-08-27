@@ -6,11 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DOMINIO — Leads</title>
     <meta name="robots" content="noindex, nofollow">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preload" href="{% static 'landing/fonts/space-grotesk-latin-var.woff2' %}" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="{% static 'landing/css/fonts.css' %}">
     <link rel="stylesheet" href="{% static 'landing/css/dashboard.css' %}">
-    <link rel="icon" type="image/png" href="{% static 'landing/images/logo/profile_pic@4x.PNG' %}">
+    <link rel="icon" type="image/png" href="{% static 'landing/images/brand/favicon-32.png' %}">
 </head>
 <body class="dash-body">
     {% include 'landing/_dash_nav.html' with active='leads' %}
@@ -41,6 +40,7 @@
             </select>
             <button type="submit">Filtrar</button>
             {% if q or cur_source or cur_status %}<a class="dash-clear" href="{% url 'dashboard' %}">Limpiar</a>{% endif %}
+            <a class="dash-clear" href="{% url 'export_leads' %}?source={{ cur_source }}&amp;status={{ cur_status }}&amp;q={{ q|urlencode }}">Exportar CSV</a>
         </form>
 
         <div class="dash-table-wrap">

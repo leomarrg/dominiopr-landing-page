@@ -1,0 +1,104 @@
+{% extends 'landing/dashboard_base.html' %}
+{% block title %}Conocimiento{% endblock %}
+{% block content %}
+<h1 class="dash-h1">Base de conocimiento — {{ client_obj.name }}</h1>
+
+{% if all_clients|length > 1 %}
+<form class="dash-inline-form" method="get" action="{% url 'knowledge' %}">
+    <label for="kn-client">Agente:</label>
+    <select id="kn-client" name="client" onchange="this.form.submit()">
+        {% for c in all_clients %}
+        <option value="{{ c.slug }}" {% if c.pk == client_obj.pk %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+    </select>
+</form>
+{% endif %}
+
+<div class="dash-card">
+    <h2>Fuentes</h2>
+    <p class="dash-muted">Solo las fuentes <b>activas</b> participan en las respuestas del agente. Una fuente nueva queda en borrador: pruébala abajo y actívala cuando la respuesta sea correcta.</p>
+    <table class="dash-table">
+        <thead><tr><th>Título</th><th>Tipo</th><th>Estado</th><th>Actualizada</th><th>Acciones</th></tr></thead>
+        <tbody>
+            {% for s in sources %}
+            <tr>
+                <td><b>{{ s.title }}</b>
+                    {% if s.origin %}<div class="dash-sub">{{ s.origin|truncatechars:60 }}</div>{% endif %}
+                    {% if s.error %}<div class="dash-sub" style="color:#a12626">{{ s.error }}</div>{% endif %}</td>
+                <td>{{ s.get_kind_display }}</td>
+                <td><span class="dash-pill dash-pill--{{ s.status }}">{{ s.get_status_display }}</span></td>
+                <td class="dash-sub">{{ s.updated_at|date:"M d, g:i A" }}</td>
+                <td>
+                    <div class="dash-actions-row" style="margin:0">
+                        {% if s.status == 'draft' %}
+                        <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="activate"><button class="save-btn save-btn--sm">Activar</button></form>
+                        {% endif %}
+                        {% if s.kind == 'url' %}
+                        <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="reprocess"><button class="save-btn save-btn--sm">Reprocesar</button></form>
+                        {% endif %}
+                        {% if s.status == 'active' %}
+                        <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="archive"><button class="save-btn save-btn--sm">Archivar</button></form>
+                        {% else %}
+                        <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="delete"><button class="save-btn save-btn--sm">Borrar</button></form>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5"><div class="dash-empty">Sin fuentes todavía — el agente usa el conocimiento base configurado por DOMINIO. Añade tu primera fuente abajo.</div></td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="dash-card">
+    <h2>Añadir fuente</h2>
+    <form method="post" action="{% url 'knowledge_save' %}">
+        {% csrf_token %}
+        <input type="hidden" name="client" value="{{ client_obj.slug }}">
+        <div class="dash-inline-form" style="margin-bottom:8px">
+            <select name="kind" id="kn-kind">
+                {% for val, label in kind_choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
+            </select>
+            <input type="text" name="title" placeholder="Título (p. ej. Precios 2026)" maxlength="160" required style="flex:1;min-width:220px">
+        </div>
+        <input type="url" name="origin" placeholder="https://… (solo para tipo URL)" maxlength="500" style="width:100%;margin-bottom:8px;padding:8px 10px;border:1px solid #ccd;border-radius:8px;font:inherit">
+        <textarea name="content" rows="6" placeholder="Contenido (texto libre, o pares P: pregunta / R: respuesta). Para URL se llena solo al procesar." style="width:100%;padding:8px 10px;border:1px solid #ccd;border-radius:8px;font:inherit"></textarea>
+        <div style="margin-top:8px"><button type="submit" class="save-btn">Guardar y procesar</button></div>
+    </form>
+</div>
+
+<div class="dash-card">
+    <h2>Probar antes de publicar</h2>
+    <form method="post" action="{% url 'knowledge_test' %}" class="dash-inline-form">
+        {% csrf_token %}
+        <input type="hidden" name="client" value="{{ client_obj.slug }}">
+        <input type="text" name="question" value="{{ test_question }}" placeholder="Haz una pregunta como visitante…" maxlength="2000" required style="flex:1;min-width:260px">
+        <select name="draft">
+            <option value="">Solo fuentes activas</option>
+            {% for s in sources %}{% if s.status == 'draft' %}
+            <option value="{{ s.pk }}" {% if tested_draft == s.pk|stringformat:'s' %}selected{% endif %}>+ borrador: {{ s.title }}</option>
+            {% endif %}{% endfor %}
+        </select>
+        <button type="submit" class="save-btn save-btn--sm">Probar</button>
+    </form>
+    {% if test_answer %}
+    <div class="dash-chat" style="margin-top:10px">
+        <div class="dash-chat__b dash-chat__b--user">{{ test_question }}</div>
+        <div class="dash-chat__b dash-chat__b--assistant">{{ test_answer }}</div>
+    </div>
+    {% endif %}
+</div>
+
+{% if archived %}
+<div class="dash-card">
+    <h2>Archivadas</h2>
+    <table class="dash-table"><tbody>
+        {% for s in archived %}
+        <tr><td>{{ s.title }}</td><td class="dash-sub">{{ s.updated_at|date:"M d, Y" }}</td>
+            <td><form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="delete"><button class="save-btn save-btn--sm">Borrar</button></form></td></tr>
+        {% endfor %}
+    </tbody></table>
+</div>
+{% endif %}
+{% endblock %}

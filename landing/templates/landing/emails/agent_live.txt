@@ -1,0 +1,15 @@
+{{ client.name }}, ya está funcionando.
+
+Tu agente de IA está en vivo en {{ site_url }} — contestando visitantes 24/7.
+
+QUE ESPERAR
+Cada visitante que hable con tu agente y deje sus datos llega como un lead — por correo y en tu dashboard.
+
+Ver mi dashboard: {{ dashboard_url }}
+
+Tip: entra a {{ site_url }} y pregúntale algo a tu propio agente — así ves exactamente lo que ven tus clientes.
+
+¿Dudas? Responde a este correo.
+
+— DOMINIO
+dominiopr.com

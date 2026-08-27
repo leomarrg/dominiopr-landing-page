@@ -1,0 +1,29 @@
+{% extends 'landing/dashboard_base.html' %}
+{% block title %}Auditoría{% endblock %}
+{% block content %}
+<h1 class="dash-h1">Auditoría</h1>
+<form class="dash-filters" method="get">
+    <input type="search" name="action" value="{{ cur_action }}" placeholder="Filtrar por acción (knowledge, user, stripe…)">
+    <button type="submit">Filtrar</button>
+    {% if cur_action %}<a class="dash-clear" href="{% url 'audit' %}">Limpiar</a>{% endif %}
+</form>
+<div class="dash-table-wrap">
+    <table class="dash-table">
+        <thead><tr><th>Fecha</th><th>Usuario</th><th>Organización</th><th>Acción</th><th>Objeto</th><th>Resultado</th></tr></thead>
+        <tbody>
+            {% for e in events %}
+            <tr>
+                <td class="dash-sub">{{ e.created_at|date:"M d, Y · g:i:s A" }}</td>
+                <td>{{ e.user.username|default:"sistema" }}</td>
+                <td>{{ e.client.name|default:"—" }}</td>
+                <td><code>{{ e.action }}</code></td>
+                <td class="dash-sub">{{ e.target|truncatechars:50 }}</td>
+                <td class="dash-sub">{{ e.result|truncatechars:50 }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6"><div class="dash-empty">Sin eventos de auditoría todavía.</div></td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

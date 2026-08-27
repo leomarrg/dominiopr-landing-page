@@ -1,0 +1,51 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DOMINIO — {% block title %}Dashboard{% endblock %}</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="preload" href="{% static 'landing/fonts/space-grotesk-latin-var.woff2' %}" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="{% static 'landing/css/fonts.css' %}">
+    <link rel="stylesheet" href="{% static 'landing/css/dashboard.css' %}">
+    <link rel="icon" href="{% static 'landing/images/brand/favicon-32.png' %}" sizes="32x32" type="image/png">
+    <link rel="apple-touch-icon" href="{% static 'landing/images/brand/apple-touch-icon.png' %}">
+    <style>
+        /* Small shared additions for the platform pages (Phase 2). */
+        .dash-pill { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+        .dash-pill--active { background:#e7f6ec; color:#1e7a34; }
+        .dash-pill--escalated { background:#fdecec; color:#a12626; }
+        .dash-pill--followup { background:#fdf3e0; color:#8a5a00; }
+        .dash-pill--closed_resolved { background:#e9edf5; color:#31405e; }
+        .dash-pill--closed_unresolved, .dash-pill--abandoned { background:#efefef; color:#666; }
+        .dash-pill--blocked { background:#333; color:#fff; }
+        .dash-pill--pending { background:#fdf3e0; color:#8a5a00; }
+        .dash-pill--confirmed { background:#e7f6ec; color:#1e7a34; }
+        .dash-pill--cancelled, .dash-pill--no_show { background:#fdecec; color:#a12626; }
+        .dash-pill--completed { background:#e9edf5; color:#31405e; }
+        .dash-pill--draft { background:#fdf3e0; color:#8a5a00; }
+        .dash-pill--error { background:#fdecec; color:#a12626; }
+        .dash-pill--archived { background:#efefef; color:#666; }
+        .dash-card { background:#fff; border:1px solid #e3e3ea; border-radius:12px; padding:16px 18px; margin:14px 0; }
+        .dash-card h2 { margin:0 0 10px; font-size:16px; }
+        .dash-inline-form { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+        .dash-inline-form input, .dash-inline-form select, .dash-inline-form textarea {
+            padding:8px 10px; border:1px solid #ccd; border-radius:8px; font:inherit; }
+        .dash-chat { display:flex; flex-direction:column; gap:8px; max-width:760px; }
+        .dash-chat__b { padding:10px 14px; border-radius:12px; max-width:82%; white-space:pre-wrap; font-size:14px; line-height:1.5; }
+        .dash-chat__b--user { align-self:flex-end; background:#12304a; color:#fff; }
+        .dash-chat__b--assistant { align-self:flex-start; background:#f0f2f6; color:#1a1a2e; }
+        .dash-actions-row { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
+        .dash-muted { color:#777; font-size:13px; }
+        .save-btn--sm { padding:6px 12px; font-size:13px; }
+    </style>
+</head>
+<body class="dash-body">
+    {% include 'landing/_dash_nav.html' with active=active_tab %}
+    <main class="dash-main">
+        {% block content %}{% endblock %}
+    </main>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

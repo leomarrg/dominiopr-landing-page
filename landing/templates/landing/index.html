@@ -4,12 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DOMINIO — Estudio de Software y Tecnología</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    {% include "landing/_seo.html" with title="DOMINIO — Estudio de Software y Tecnología en Puerto Rico" description="Diseñamos, construimos y manejamos tu tecnología: plataformas a la medida, dashboards, automatización e IT. Sistemas que funcionan en la operación real. Cuéntanos tu proyecto." path="/" %}
+    <link rel="preload" href="{% static 'landing/fonts/space-grotesk-latin-var.woff2' %}" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="{% static 'landing/css/fonts.css' %}">
     <link rel="stylesheet" href="{% static 'landing/css/style.css' %}">
-    <link rel="icon" type="image/png" href="{% static 'landing/images/logo/profile_pic@4x.PNG' %}">
     <style>
         .form-messages { display: flex; flex-direction: column; gap: 10px; }
         .form-message {
@@ -29,8 +27,11 @@
             color: #f0a0a0;
         }
     </style>
+    <script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "¿Qué hace DOMINIO?", "acceptedAnswer": {"@type": "Answer", "text": "Somos un estudio de software y tecnología en Puerto Rico. Diseñamos y construimos plataformas a la medida, dashboards y automatizaciones — y también manejamos el IT del día a día que mantiene todo corriendo. Una sola relación para tu tecnología, no diez proveedores sueltos."}}, {"@type": "Question", "name": "¿Para qué tipo de negocio o equipo trabajan?", "acceptedAnswer": {"@type": "Answer", "text": "Para organizaciones que ya sostienen su operación con hojas de cálculo, PDFs y herramientas que no se hablan entre sí, y necesitan un sistema hecho a su medida. Desde negocios en crecimiento hasta equipos con procesos internos complejos."}}, {"@type": "Question", "name": "¿Cuánto tarda un proyecto típico y cómo se cotiza?", "acceptedAnswer": {"@type": "Answer", "text": "Depende del alcance: empezamos entendiendo tu proceso y tu data antes de dar un estimado serio. Cuéntanos tu proyecto en el formulario de contacto y te respondemos con un próximo paso claro, incluyendo tiempo y costo aproximados."}}, {"@type": "Question", "name": "¿Qué es DOMINIO Chat 24/7?", "acceptedAnswer": {"@type": "Answer", "text": "Es un agente de IA entrenado con tu negocio que contesta a tus clientes, califica leads y toma citas — de día o de noche, sin que tu equipo tenga que estar pendiente. Lo instalamos nosotros en tu página en 48 horas."}}, {"@type": "Question", "name": "¿Cómo manejan la privacidad de la data de mis clientes o visitantes?", "acceptedAnswer": {"@type": "Answer", "text": "La información que recogemos se usa únicamente para darte seguimiento a ti o a tus clientes; no la vendemos ni la compartimos con terceros ajenos al servicio. Los detalles completos están en nuestra Política de Privacidad."}}, {"@type": "Question", "name": "¿Trabajan con negocios fuera de Puerto Rico?", "acceptedAnswer": {"@type": "Answer", "text": "Sí. Somos un equipo boricua, pero trabajamos con clientes dentro y fuera de la Isla — la mayoría de nuestro trabajo se coordina de forma remota."}}]}</script>
+    <script type="application/ld+json">{"@context": "https://schema.org", "@graph": [{"@type": ["ProfessionalService", "Organization"], "@id": "https://dominiopr.com/#organization", "name": "DOMINIO", "alternateName": "DOMINIO PR", "description": "Estudio de Software y Tecnología en Puerto Rico: plataformas a la medida, dashboards, automatización, gestión de IT y agentes de IA (DOMINIO Chat 24/7).", "url": "https://dominiopr.com/", "logo": {"@type": "ImageObject", "url": "https://dominiopr.com/static/landing/images/brand/icon-512.png", "width": 512, "height": 512}, "image": "https://dominiopr.com/static/landing/images/brand/og-image.png", "email": "hola@dominiopr.com", "priceRange": "$$", "address": {"@type": "PostalAddress", "addressRegion": "PR", "addressCountry": "PR"}, "areaServed": [{"@type": "AdministrativeArea", "name": "Puerto Rico"}, {"@type": "Country", "name": "Estados Unidos"}], "knowsLanguage": ["es-PR", "en"], "makesOffer": [{"@type": "Offer", "itemOffered": {"@type": "Service", "name": "Plataformas de software a la medida", "serviceType": "Desarrollo de software"}}, {"@type": "Offer", "itemOffered": {"@type": "Service", "name": "Dashboards y sistemas de reportes", "serviceType": "Business intelligence"}}, {"@type": "Offer", "itemOffered": {"@type": "Service", "name": "Gestión de tecnología e IT", "serviceType": "IT managed services"}}]}, {"@type": "WebSite", "@id": "https://dominiopr.com/#website", "url": "https://dominiopr.com/", "name": "DOMINIO", "inLanguage": "es-PR", "publisher": {"@id": "https://dominiopr.com/#organization"}}, {"@type": "Service", "@id": "https://dominiopr.com/#chat247", "name": "DOMINIO Chat 24/7", "serviceType": "Agente de IA para atención al cliente", "description": "Agente de inteligencia artificial entrenado con tu negocio: contesta a tus clientes, califica leads y agenda citas 24/7. Instalado y configurado por DOMINIO en 48 horas.", "provider": {"@id": "https://dominiopr.com/#organization"}, "areaServed": {"@type": "AdministrativeArea", "name": "Puerto Rico"}, "offers": {"@type": "AggregateOffer", "priceCurrency": "USD", "lowPrice": "99", "highPrice": "499", "offerCount": 3, "url": "https://dominiopr.com/get-started/"}}]}</script>
 </head>
 <body>
+    <a class="skip-link" href="#contenido">Saltar al contenido</a>
 
     <!-- ===== LOADING SCREEN ===== -->
     <div class="loader-overlay" id="loaderOverlay">
@@ -59,8 +60,8 @@
     <header class="header">
         <nav class="navbar-pill" aria-label="Principal">
             <div class="nav-logo">
-                <img src="{% static 'landing/images/logo/logo_home.PNG' %}" alt="Logo de Dominio" class="logo-desktop">
-                <img src="{% static 'landing/images/logo/profile_pic@4x.PNG' %}" alt="Dominio" class="logo-mobile">
+                <img src="{% static 'landing/images/brand/logo-wordmark.png' %}" alt="Logo de Dominio" class="logo-desktop">
+                <img src="{% static 'landing/images/brand/logo-mark.png' %}" alt="Logo de DOMINIO" class="logo-mobile">
             </div>
             <ul class="nav-links" id="navLinks">
                 <li><a href="#home" class="active">Inicio</a></li>
@@ -68,10 +69,11 @@
                 <li><a href="#ai-agents">Agentes de IA</a></li>
                 <li><a href="#process">Proceso</a></li>
                 <li><a href="#about">Nosotros</a></li>
+                <li><a href="#faq">FAQ</a></li>
                 <li><a href="#contact">Contacto</a></li>
             </ul>
             <div class="nav-profile">
-                <img src="{% static 'landing/images/logo/profile_pic@4x.PNG' %}" alt="Perfil">
+                <img src="{% static 'landing/images/brand/logo-mark.png' %}" alt="" aria-hidden="true">
             </div>
             <button class="nav-toggle" id="navToggle" aria-label="Abrir menú" aria-expanded="false">
                 <span></span>
@@ -80,6 +82,8 @@
             </button>
         </nav>
     </header>
+
+    <main id="contenido" tabindex="-1">
 
     <!-- ===== HERO SECTION ===== -->
     <section id="home" class="hero">
@@ -487,7 +491,7 @@
             <div class="ai-demo reveal-item" data-delay="7">
                 <div class="ai-demo__copy">
                     <h3>Míralo en vivo — ahora mismo</h3>
-                    <p>Este sitio tiene uno corriendo. Pregúntale lo que sea sobre DOMINIO — servicios, proceso, precios. Es exactamente el tipo de agente que te construiríamos, entrenado con tu negocio en vez del nuestro.</p>
+                    <p>Este sitio tiene uno corriendo. Pregúntale lo que sea sobre DOMINIO — servicios, proceso, precios. Es exactamente el tipo de agente que te construiríamos, entrenado con tu negocio en vez del nuestro. También puede tomar citas y reservaciones por ti — pregúntale al demo cómo agendar una.</p>
                 </div>
                 <div class="ai-demo__cta">
                     {% if AI_CHAT_ENABLED %}
@@ -500,6 +504,38 @@
     </section>
 
     <!-- ===== CONTACT SECTION ===== -->
+    <section id="faq" class="faq " aria-labelledby="faq-title">
+        <div class="container">
+            <p class="section-tag">Preguntas frecuentes</p>
+            <h2 class="section-title" id="faq-title">Lo que la gente nos pregunta antes de empezar.</h2>
+            <div class="faq-list">
+                <details class="faq-item">
+                    <summary>¿Qué hace DOMINIO?</summary>
+                    <p>Somos un estudio de software y tecnología en Puerto Rico. Diseñamos y construimos plataformas a la medida, dashboards y automatizaciones — y también manejamos el IT del día a día que mantiene todo corriendo. Una sola relación para tu tecnología, no diez proveedores sueltos.</p>
+                </details>
+                <details class="faq-item">
+                    <summary>¿Para qué tipo de negocio o equipo trabajan?</summary>
+                    <p>Para organizaciones que ya sostienen su operación con hojas de cálculo, PDFs y herramientas que no se hablan entre sí, y necesitan un sistema hecho a su medida. Desde negocios en crecimiento hasta equipos con procesos internos complejos.</p>
+                </details>
+                <details class="faq-item">
+                    <summary>¿Cuánto tarda un proyecto típico y cómo se cotiza?</summary>
+                    <p>Depende del alcance: empezamos entendiendo tu proceso y tu data antes de dar un estimado serio. Cuéntanos tu proyecto en el formulario de contacto y te respondemos con un próximo paso claro, incluyendo tiempo y costo aproximados.</p>
+                </details>
+                <details class="faq-item">
+                    <summary>¿Qué es DOMINIO Chat 24/7?</summary>
+                    <p>Es un agente de IA entrenado con tu negocio que contesta a tus clientes, califica leads y toma citas — de día o de noche, sin que tu equipo tenga que estar pendiente. Lo instalamos nosotros en tu página en 48 horas.</p>
+                </details>
+                <details class="faq-item">
+                    <summary>¿Cómo manejan la privacidad de la data de mis clientes o visitantes?</summary>
+                    <p>La información que recogemos se usa únicamente para darte seguimiento a ti o a tus clientes; no la vendemos ni la compartimos con terceros ajenos al servicio. Los detalles completos están en nuestra <a href="{% url 'privacy' %}">Política de Privacidad</a>.</p>
+                </details>
+                <details class="faq-item">
+                    <summary>¿Trabajan con negocios fuera de Puerto Rico?</summary>
+                    <p>Sí. Somos un equipo boricua, pero trabajamos con clientes dentro y fuera de la Isla — la mayoría de nuestro trabajo se coordina de forma remota.</p>
+                </details>
+            </div>
+        </div>
+    </section>
     <section id="contact" class="contacto reveal-section" data-reveal="contact">
         <div class="container">
             <div class="contact-layout">
@@ -522,17 +558,17 @@
                         <label>Sitio web<input type="text" name="website" tabindex="-1" autocomplete="off"></label>
                     </div>
                     <div class="form-row">
-                        <input type="text" name="name" placeholder="Nombre" value="{{ form.name.value|default:'' }}" required>
-                        <input type="email" name="email" placeholder="Email" value="{{ form.email.value|default:'' }}">
+                        <input type="text" name="name" aria-label="Nombre" placeholder="Nombre" value="{{ form.name.value|default:'' }}" required>
+                        <input type="email" name="email" aria-label="Email" placeholder="Email" value="{{ form.email.value|default:'' }}">
                     </div>
                     <div class="form-row">
-                        <input type="text" name="company" placeholder="Compañía / Organización" value="{{ form.company.value|default:'' }}">
-                        <input type="tel" name="phone" placeholder="(787) 123-4567" inputmode="tel" autocomplete="tel" maxlength="14" value="{{ form.phone.value|default:'' }}">
+                        <input type="text" name="company" aria-label="Compañía u organización" placeholder="Compañía / Organización" value="{{ form.company.value|default:'' }}">
+                        <input type="tel" name="phone" aria-label="Teléfono" placeholder="(787) 123-4567" inputmode="tel" autocomplete="tel" maxlength="14" value="{{ form.phone.value|default:'' }}">
                     </div>
                     {% if form.phone.errors %}<p style="color:#f0a0a0;font-size:.8rem;margin:-6px 0 0;">{{ form.phone.errors|striptags }}</p>{% endif %}
                     <p style="color:rgba(255,255,255,.5);font-size:.78rem;margin:-6px 0 0;">Déjanos un email o un teléfono — lo que te sea más cómodo.</p>
                     <div class="form-row">
-                        <select name="service" required>
+                        <select name="service" aria-label="Servicio de interés" required>
                             <option value="">Servicio que necesitas</option>
                             <option value="operational-platform" {% if form.service.value == 'operational-platform' %}selected{% endif %}>Plataformas Operacionales a la Medida</option>
                             <option value="data-dashboards" {% if form.service.value == 'data-dashboards' %}selected{% endif %}>Data, Dashboards y Sistemas de Reportes</option>
@@ -541,7 +577,7 @@
                             <option value="consulting" {% if form.service.value == 'consulting' %}selected{% endif %}>Estrategia de Producto y Consultoría Técnica</option>
                             <option value="it-services" {% if form.service.value == 'it-services' %}selected{% endif %}>Gestión de Tecnología y Soporte de IT</option>
                         </select>
-                        <select name="budget">
+                        <select name="budget" aria-label="Presupuesto estimado">
                             <option value="">Rango de presupuesto</option>
                             <option value="under-1000" {% if form.budget.value == 'under-1000' %}selected{% endif %}>Menos de $1,000</option>
                             <option value="1000-3000" {% if form.budget.value == '1000-3000' %}selected{% endif %}>$1,000 – $3,000</option>
@@ -550,7 +586,7 @@
                             <option value="not-sure" {% if form.budget.value == 'not-sure' %}selected{% endif %}>Todavía no estoy seguro</option>
                         </select>
                     </div>
-                    <textarea name="message" placeholder="Cuéntanos sobre el proyecto" rows="5" required>{{ form.message.value|default:'' }}</textarea>
+                    <textarea name="message" aria-label="Cuéntanos sobre el proyecto" placeholder="Cuéntanos sobre el proyecto" rows="5" required>{{ form.message.value|default:'' }}</textarea>
                     <button type="submit" class="btn-primary">Enviar mensaje</button>
                 </form>
             </div>
@@ -558,6 +594,8 @@
     </section>
 
     <!-- ===== FOOTER ===== -->
+    </main>
+
     <footer class="footer">
         <div class="container footer-content">
             <div class="footer-brand">
@@ -586,7 +624,7 @@
             <svg class="chat-fab__icon" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.6-.8L3 21l1.9-5.4A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z"/></svg>
             <span class="chat-fab__label">Pregúntale a DOMINIO</span>
         </button>
-        <div class="chat-panel" id="chatPanel" role="dialog" aria-label="Pregúntale a DOMINIO" aria-hidden="true">
+        <div class="chat-panel" id="chatPanel" role="dialog" aria-modal="true" aria-label="Pregúntale a DOMINIO" aria-hidden="true">
             <div class="chat-panel__head">
                 <div class="chat-panel__title">
                     <span class="chat-panel__dot" aria-hidden="true"></span>
@@ -597,9 +635,10 @@
                 </div>
                 <button type="button" class="chat-panel__close" id="chatClose" aria-label="Cerrar chat">&times;</button>
             </div>
-            <div class="chat-log" id="chatLog" aria-live="polite"></div>
+            <div class="chat-log" id="chatLog" role="log" aria-live="polite"></div>
             <form class="chat-input" id="chatForm">
                 <input type="text" id="chatText" name="message" autocomplete="off"
+                       aria-label="Escribe tu mensaje"
                        placeholder="Pregunta sobre servicios, agentes de IA, precios…" maxlength="2000" required>
                 <button type="submit" class="chat-send" id="chatSend" aria-label="Enviar">&#10148;</button>
             </form>
@@ -637,7 +676,11 @@
         }
         window.addEventListener('scroll', onScroll, { passive: true });
         window.addEventListener('resize', onScroll, { passive: true });
-        update();
+        // Setting --spin/--break invalidates style for the whole 3D subtree, so
+        // the first pass costs a full recalc + layout. Run it on the next frame
+        // instead of blocking the critical path — the loader covers the hero
+        // until well after this lands, so nothing visibly pops.
+        requestAnimationFrame(update);
     })();
     </script>
     <script>

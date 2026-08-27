@@ -1,0 +1,56 @@
+{% extends 'landing/dashboard_base.html' %}
+{% block title %}Conversación{% endblock %}
+{% block content %}
+<h1 class="dash-h1">Conversación — {{ conv.client.name }}</h1>
+<p class="dash-muted">
+    <span class="dash-pill dash-pill--{{ conv.state }}">{{ conv.get_state_display }}</span>
+    · Inició {{ conv.started_at|date:"M d, Y g:i A" }}
+    · Última actividad {{ conv.last_message_at|date:"M d, Y g:i A" }}
+    {% if conv.page_url %} · Página: <a href="{{ conv.page_url }}" target="_blank" rel="noopener">{{ conv.page_url|truncatechars:50 }}</a>{% endif %}
+    {% if conv.config_version %} · Config <code>{{ conv.config_version }}</code>{% endif %}
+</p>
+{% if conv.escalation_reason %}
+<div class="dash-card"><b>Motivo del escalamiento:</b> {{ conv.escalation_reason }}</div>
+{% endif %}
+{% if conv.lead %}
+<div class="dash-card">
+    <b>Lead capturado:</b> {{ conv.lead.name }}
+    {% if conv.lead.email %}· <a href="mailto:{{ conv.lead.email }}">{{ conv.lead.email }}</a>{% endif %}
+    {% if conv.lead.phone %}· {{ conv.lead.phone }}{% endif %}
+    — <a href="{% url 'dashboard' %}?q={{ conv.lead.email|default:conv.lead.name|urlencode }}">ver en Leads</a>
+</div>
+{% endif %}
+{% if survey %}
+<div class="dash-card"><b>Satisfacción:</b> {{ survey.score }}/5{% if survey.comment %} — “{{ survey.comment }}”{% endif %}</div>
+{% endif %}
+
+<div class="dash-card">
+    <h2>Transcript</h2>
+    <div class="dash-chat">
+        {% for m in msgs %}
+        <div class="dash-chat__b dash-chat__b--{{ m.role }}">{{ m.content }}</div>
+        {% empty %}
+        <p class="dash-muted">Sin mensajes guardados.</p>
+        {% endfor %}
+    </div>
+</div>
+
+{% if allowed %}
+<div class="dash-card">
+    <h2>Cambiar estado</h2>
+    <div class="dash-actions-row">
+        {% for s in allowed %}
+        <form method="post" action="{% url 'conversation_state' conv.pk %}">
+            {% csrf_token %}
+            <input type="hidden" name="state" value="{{ s }}">
+            <button type="submit" class="save-btn save-btn--sm">
+                {% if s == 'followup' %}Marcar en seguimiento{% elif s == 'closed_resolved' %}Cerrar — resuelta{% elif s == 'closed_unresolved' %}Cerrar — no resuelta{% elif s == 'blocked' %}Bloquear{% elif s == 'active' %}Desbloquear{% else %}{{ s }}{% endif %}
+            </button>
+        </form>
+        {% endfor %}
+    </div>
+    <p class="dash-muted">Cerrar una conversación requiere clasificar el resultado — así los reportes reflejan la realidad.</p>
+</div>
+{% endif %}
+<p><a href="{% url 'conversations' %}">← Volver a conversaciones</a></p>
+{% endblock %}

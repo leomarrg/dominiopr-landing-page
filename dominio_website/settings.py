@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.sitemaps',
     'landing',
 ]
 
@@ -84,7 +85,12 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    # Auto-provisioned accounts must replace their temp password before any
+    # /dashboard/ page (needs auth + messages above).
+    'landing.middleware.TempPasswordGateMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # CSP: blocks injected third-party scripts and off-site exfiltration.
+    'landing.middleware.ContentSecurityPolicyMiddleware',
 ]
 
 if DEBUG:
@@ -111,6 +117,13 @@ CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
         'LOCATION': 'dominio_cache',
+        # DatabaseCache defaults to MAX_ENTRIES=300 and culls the
+        # lexicographically SMALLEST keys. Our daily spend counters
+        # ('chat:client:*', 'chat:global:*') sort near the front, so under a
+        # burst of per-IP rate-limit keys ('rl:*') the caps would be evicted
+        # and the API budget would silently reset to zero — exactly the
+        # scenario they exist to guard against.
+        'OPTIONS': {'MAX_ENTRIES': 100000, 'CULL_FREQUENCY': 4},
     }
 }
 
@@ -133,6 +146,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'landing.context_processors.site_globals',
+                'landing.context_processors.dash_roles',
             ],
         },
     },
@@ -163,6 +177,9 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
+
+# Password-reset links die after one hour (Django default is 3 days).
+PASSWORD_RESET_TIMEOUT = int(os.environ.get('DJANGO_PASSWORD_RESET_TIMEOUT', '3600'))
 
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'America/Puerto_Rico'
@@ -217,12 +234,47 @@ if not DEBUG:
 # LOGGING — stdout so systemd/journalctl captures it
 # ============================================================
 
+# Who gets told when the site throws a 500. Without this, an unhandled error in
+# production is only a line in journald that nobody reads — the first signal is
+# a customer complaining, or silence where a sale should have been.
+# Uses Django's built-in AdminEmailHandler: no extra service, no new dependency.
+ADMINS = [
+    (name.strip(), addr.strip())
+    for name, addr in (
+        pair.split(':', 1) if ':' in pair else ('DOMINIO', pair)
+        for pair in os.environ.get(
+            'DJANGO_ADMINS', os.environ.get('DJANGO_CONTACT_NOTIFY_EMAIL', '')).split(',')
+        if pair.strip()
+    )
+]
+# DEFAULT_FROM_EMAIL is defined further down, so read the env directly here.
+SERVER_EMAIL = os.environ.get(
+    'DJANGO_SERVER_EMAIL',
+    os.environ.get('DJANGO_DEFAULT_FROM_EMAIL', 'DOMINIO <hola@dominiopr.com>'))
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'filters': {
+        'require_debug_false': {'()': 'django.utils.log.RequireDebugFalse'},
+    },
+    'formatters': {
+        # Timestamp + level + logger, so journald lines are actually diagnosable.
+        'standard': {
+            'format': '{asctime} {levelname} {name} {message}',
+            'style': '{',
+        },
+    },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
+            'formatter': 'standard',
+        },
+        'mail_admins': {
+            'level': 'ERROR',
+            'filters': ['require_debug_false'],
+            'class': 'django.utils.log.AdminEmailHandler',
+            'include_html': True,
         },
     },
     'root': {
@@ -233,6 +285,18 @@ LOGGING = {
         'django': {
             'handlers': ['console'],
             'level': os.environ.get('DJANGO_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+        # Unhandled 500s.
+        'django.request': {
+            'handlers': ['console', 'mail_admins'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        # Our own code: a failed provisioning or a Stripe error must reach a human.
+        'landing': {
+            'handlers': ['console', 'mail_admins'],
+            'level': 'INFO',
             'propagate': False,
         },
     },
@@ -255,6 +319,8 @@ EMAIL_PORT = int(os.environ.get('DJANGO_EMAIL_PORT', '587'))
 EMAIL_USE_TLS = os.environ.get('DJANGO_EMAIL_USE_TLS', 'True').lower() in ('true', '1', 'yes')
 EMAIL_HOST_USER = os.environ.get('DJANGO_EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('DJANGO_EMAIL_HOST_PASSWORD', '')
+# Never let a slow/dead SMTP host pin a Gunicorn worker (512MB box, 2 workers).
+EMAIL_TIMEOUT = int(os.environ.get('DJANGO_EMAIL_TIMEOUT', '10'))
 DEFAULT_FROM_EMAIL = os.environ.get(
     'DJANGO_DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'no-reply@dominiopr.com'
 )
@@ -282,6 +348,11 @@ ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
 # defense per-IP rate limits can't provide: it caps the worst-case daily API
 # spend even under a distributed/botnet attack. Tune to your budget.
 DOMINIO_AGENT_DAILY_CAP = int(os.environ.get('DOMINIO_AGENT_DAILY_CAP', '2000'))
+# The public /api/demo/ endpoint needs its OWN budget. Sharing the tenants'
+# counter meant an anonymous visitor could exhaust it and take every paying
+# client's agent offline for the rest of the day, on DOMINIO's token bill.
+DOMINIO_DEMO_DAILY_CAP = int(os.environ.get('DOMINIO_DEMO_DAILY_CAP', '150'))
+DOMINIO_DEMO_IP_DAILY_CAP = int(os.environ.get('DOMINIO_DEMO_IP_DAILY_CAP', '20'))
 # Haiku is the right tier for a fast, low-cost FAQ/sales chat. We read the
 # project's ANTHROPIC_MODEL_FAST convention, with DOMINIO_AGENT_MODEL as an
 # explicit override and a safe default.
@@ -293,3 +364,44 @@ DOMINIO_AGENT_MODEL = (
 # Cap how much history a single conversation can send back to the API, to
 # bound cost/abuse from a public widget.
 DOMINIO_AGENT_MAX_TURNS = int(os.environ.get('DOMINIO_AGENT_MAX_TURNS', '12'))
+# M-12: which model provider the agent engine uses (only 'anthropic' today).
+DOMINIO_AGENT_PROVIDER = os.environ.get('DOMINIO_AGENT_PROVIDER', 'anthropic')
+
+
+# ============================================================
+# PAYMENTS — Stripe subscriptions (M-01). Empty keys = signup keeps the
+# email-coordination flow (same graceful-degradation pattern as the agent).
+# Card data never touches this server: hosted Checkout + signed webhooks.
+# ============================================================
+
+STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY', '')
+STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
+# Price ids per plan/period, e.g. STRIPE_PRICE_STARTER_MONTHLY=price_123
+STRIPE_PRICES = {
+    f'{plan}:{period}': os.environ.get(f'STRIPE_PRICE_{plan.upper()}_{period.upper()}', '')
+    for plan in ('starter', 'pro', 'scale')
+    for period in ('monthly', 'annual')
+}
+# One-time setup fee ("instalación y configuración") per plan, charged in the
+# same Checkout as the first period. e.g. STRIPE_PRICE_PRO_SETUP=price_456
+for _plan in ('starter', 'pro', 'scale'):
+    STRIPE_PRICES[f'{_plan}:setup'] = os.environ.get(f'STRIPE_PRICE_{_plan.upper()}_SETUP', '')
+STRIPE_PRICES = {k: v for k, v in STRIPE_PRICES.items() if v}
+
+# Sales tax (IVU). Prices are advertised WITHOUT tax, so the tax is added on
+# top at Checkout. Set to a Stripe Tax Rate id (`manage.py stripe_bootstrap
+# --tax-rate 4`) and every line item — subscription and setup fee — carries it.
+# Empty = no tax line, which is the pre-2026-08 behaviour: keep it empty only
+# while you genuinely owe none, because Stripe will not add it retroactively.
+STRIPE_TAX_RATE_ID = os.environ.get('STRIPE_TAX_RATE_ID', '')
+
+
+# ============================================================
+# NOTIFICATIONS — Twilio WhatsApp/SMS (M-06). Outbound alerts to tenants only;
+# unset = silent no-op (email remains the always-on channel).
+# ============================================================
+
+TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
+TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')
+TWILIO_FROM_SMS = os.environ.get('TWILIO_FROM_SMS', '')
+TWILIO_FROM_WHATSAPP = os.environ.get('TWILIO_FROM_WHATSAPP', '')  # e.g. whatsapp:+1787...

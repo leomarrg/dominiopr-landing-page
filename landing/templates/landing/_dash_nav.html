@@ -3,12 +3,42 @@
 <header class="dash-topbar">
     <div class="dash-brand">
         <a href="{% url 'dashboard' %}" class="dash-brand__home" aria-label="Inicio del dashboard de DOMINIO">
-            <img src="{% static 'landing/images/logo/logo_home.PNG' %}" alt="DOMINIO">
+            <img src="{% static 'landing/images/brand/logo-wordmark.png' %}" alt="DOMINIO">
         </a>
         <nav class="dash-nav" aria-label="Secciones">
             <a href="{% url 'dashboard' %}"
                class="dash-nav__link {% if active == 'leads' %}is-active{% endif %}"
                {% if active == 'leads' %}aria-current="page"{% endif %}>Leads</a>
+            <a href="{% url 'conversations' %}"
+               class="dash-nav__link {% if active == 'conversations' %}is-active{% endif %}"
+               {% if active == 'conversations' %}aria-current="page"{% endif %}>Conversaciones</a>
+            {% if HAS_BOOKINGS %}
+            <a href="{% url 'bookings' %}"
+               class="dash-nav__link {% if active == 'bookings' %}is-active{% endif %}"
+               {% if active == 'bookings' %}aria-current="page"{% endif %}>Citas</a>
+            {% endif %}
+            <a href="{% url 'reports' %}"
+               class="dash-nav__link {% if active == 'reports' %}is-active{% endif %}"
+               {% if active == 'reports' %}aria-current="page"{% endif %}>Reportes</a>
+            {% if IS_ORG_ADMIN %}
+            <a href="{% url 'knowledge' %}"
+               class="dash-nav__link {% if active == 'knowledge' %}is-active{% endif %}"
+               {% if active == 'knowledge' %}aria-current="page"{% endif %}>Conocimiento</a>
+            <a href="{% url 'dash_users' %}"
+               class="dash-nav__link {% if active == 'users' %}is-active{% endif %}"
+               {% if active == 'users' %}aria-current="page"{% endif %}>Usuarios</a>
+            <a href="{% url 'audit' %}"
+               class="dash-nav__link {% if active == 'audit' %}is-active{% endif %}"
+               {% if active == 'audit' %}aria-current="page"{% endif %}>Auditoría</a>
+            {% if not request.user.is_staff %}
+            <a href="{% url 'install' %}"
+               class="dash-nav__link {% if active == 'install' %}is-active{% endif %}"
+               {% if active == 'install' %}aria-current="page"{% endif %}>Instalación</a>
+            <a href="{% url 'billing' %}"
+               class="dash-nav__link {% if active == 'billing' %}is-active{% endif %}"
+               {% if active == 'billing' %}aria-current="page"{% endif %}>Facturación</a>
+            {% endif %}
+            {% endif %}
             {% if request.user.is_staff %}
             <a href="{% url 'clients_list' %}"
                class="dash-nav__link {% if active == 'agents' %}is-active{% endif %}"

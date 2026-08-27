@@ -1,0 +1,37 @@
+{% load static %}<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% include "landing/_seo.html" with title=page_title description=page_description path=request.path noindex=True %}
+    <link rel="preload" href="{% static 'landing/fonts/space-grotesk-latin-var.woff2' %}" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="{% static 'landing/css/fonts.css' %}">
+    <style>
+        :root{--primary:#0b1a2b;--primary-light:#12304a;--accent:#34d6c8;--white:#fff}
+        *{box-sizing:border-box}
+        body{margin:0;min-height:100vh;overflow-x:hidden;display:flex;align-items:center;justify-content:center;background:var(--primary);color:var(--white);font-family:'Montserrat',Arial,sans-serif;padding:24px}
+        main{max-width:560px;text-align:center;background:var(--primary-light);border:1px solid rgba(52,214,200,.2);border-radius:20px;padding:44px 32px}
+        .code{font-family:'Space Grotesk',sans-serif;color:var(--accent);font-size:.85rem;letter-spacing:.25em;text-transform:uppercase;margin:0 0 10px}
+        h1{font-family:'Space Grotesk',sans-serif;font-size:1.9rem;line-height:1.15;margin:0 0 14px}
+        p{color:rgba(255,255,255,.75);line-height:1.6;margin:0 0 26px;font-size:1rem}
+        .actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+        a.btn{display:inline-block;padding:13px 24px;border-radius:999px;font-weight:600;text-decoration:none;font-size:.95rem;min-height:44px}
+        a.btn-primary{background:var(--accent);color:var(--primary)}
+        a.btn-outline{border:1px solid rgba(52,214,200,.5);color:var(--accent)}
+        a.btn:focus-visible{outline:3px solid #fff;outline-offset:3px}
+        img{width:56px;height:56px;border-radius:14px;margin-bottom:18px}
+    </style>
+</head>
+<body>
+    <main>
+        <img src="{% static 'landing/images/brand/icon-192.png' %}" alt="Logo de DOMINIO" width="56" height="56">
+        <p class="code">{{ code }}</p>
+        <h1>{{ heading }}</h1>
+        <p>{{ body }}</p>
+        <div class="actions">
+            <a class="btn btn-primary" href="/">Volver al inicio</a>
+            <a class="btn btn-outline" href="{{ secondary_href }}">Escríbenos</a>
+        </div>
+    </main>
+</body>
+</html>

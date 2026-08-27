@@ -1,0 +1,26 @@
+Gracias, {{ client.name }}.
+
+Tu pago del plan {{ plan_name }} se procesó correctamente y tu cuenta ya está lista.
+
+QUE PASA AHORA
+1. Cuéntanos cómo entrar a tu página (o reenvía este correo a tu webmaster): {{ install_url }}
+2. Lo instalamos y configuramos por ti en {{ setup_hours }} horas.
+3. Te avisamos por correo en cuanto esté en vivo.
+{% if login %}
+TU DASHBOARD
+{{ login.url }}
+Correo: {{ login.username }}{% if login.password %}
+Contraseña temporera: {{ login.password }}
+(Por favor cámbiala después de tu primer inicio de sesión.){% endif %}
+{% endif %}
+PLAN B — INSTALARLO TÚ
+Si prefieres instalarlo tú mismo (o tu webmaster), pega esta línea antes de </body>:
+
+{{ embed }}
+
+Si tienes webmaster, reenvíale este correo.
+
+¿Dudas? Responde a este correo.
+
+— DOMINIO
+dominiopr.com

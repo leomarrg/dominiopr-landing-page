@@ -1,0 +1,45 @@
+{% extends 'landing/dashboard_base.html' %}
+{% block title %}Conversaciones{% endblock %}
+{% block content %}
+<h1 class="dash-h1">Conversaciones</h1>
+
+<section class="dash-stats">
+    <div class="dash-stat"><div class="dash-stat__num">{{ stats.total }}</div><div class="dash-stat__label">Total</div></div>
+    <div class="dash-stat dash-stat--accent"><div class="dash-stat__num">{{ stats.escalated }}</div><div class="dash-stat__label">Escaladas</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{{ stats.with_lead }}</div><div class="dash-stat__label">Con lead</div></div>
+</section>
+
+<form class="dash-filters" method="get">
+    <input type="search" name="q" value="{{ q }}" placeholder="Buscar en mensajes o leads…">
+    <select name="state">
+        <option value="">Todos los estados</option>
+        {% for val, label in state_choices %}
+        <option value="{{ val }}" {% if cur_state == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
+    <button type="submit">Filtrar</button>
+    {% if q or cur_state %}<a class="dash-clear" href="{% url 'conversations' %}">Limpiar</a>{% endif %}
+</form>
+
+<div class="dash-table-wrap">
+    <table class="dash-table">
+        <thead><tr><th>Cliente</th><th>Estado</th><th>Mensajes</th><th>Lead</th><th>Página</th><th>Última actividad</th></tr></thead>
+        <tbody>
+            {% for c in conversations %}
+            <tr>
+                <td><a href="{% url 'conversation_detail' c.pk %}"><b>{{ c.client.name }}</b></a>
+                    <div class="dash-sub">{{ c.widget_session|truncatechars:12 }}</div></td>
+                <td><span class="dash-pill dash-pill--{{ c.state }}">{{ c.get_state_display }}</span>
+                    {% if c.escalation_reason %}<div class="dash-sub">{{ c.escalation_reason|truncatechars:60 }}</div>{% endif %}</td>
+                <td>{{ c.n_messages }}</td>
+                <td>{% if c.lead %}{{ c.lead.name }}{% else %}<span class="dash-muted">—</span>{% endif %}</td>
+                <td class="dash-sub">{{ c.page_url|truncatechars:40|default:"—" }}</td>
+                <td class="dash-sub">{{ c.last_message_at|date:"M d, g:i A" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6"><div class="dash-empty">Todavía no hay conversaciones guardadas. Aparecerán aquí según los visitantes usen el chat.</div></td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

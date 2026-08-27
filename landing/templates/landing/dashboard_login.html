@@ -6,15 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DOMINIO — Iniciar sesión</title>
     <meta name="robots" content="noindex, nofollow">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preload" href="{% static 'landing/fonts/space-grotesk-latin-var.woff2' %}" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="{% static 'landing/css/fonts.css' %}">
     <link rel="stylesheet" href="{% static 'landing/css/dashboard.css' %}">
-    <link rel="icon" type="image/png" href="{% static 'landing/images/logo/profile_pic@4x.PNG' %}">
+    <link rel="icon" href="{% static 'landing/images/brand/favicon-32.png' %}" sizes="32x32" type="image/png">
+    <link rel="apple-touch-icon" href="{% static 'landing/images/brand/apple-touch-icon.png' %}">
 </head>
 <body class="dash-login-body">
     <div class="dash-login-card">
-        <img src="{% static 'landing/images/logo/logo_home.PNG' %}" alt="DOMINIO">
+        <img src="{% static 'landing/images/brand/logo-wordmark.png' %}" alt="DOMINIO">
         <h1>Dashboard de Leads</h1>
         <p>Inicia sesión para administrar tus leads</p>
         {% if form.errors %}
@@ -22,10 +22,11 @@
         {% endif %}
         <form method="post">
             {% csrf_token %}
-            <input type="text" name="username" placeholder="Usuario" autocomplete="username" required autofocus>
-            <input type="password" name="password" placeholder="Contraseña" autocomplete="current-password" required>
+            <input type="text" name="username" aria-label="Usuario" placeholder="Usuario" autocomplete="username" required autofocus>
+            <input type="password" name="password" aria-label="Contraseña" placeholder="Contraseña" autocomplete="current-password" required>
             <button type="submit">Iniciar sesión</button>
         </form>
+        <p style="margin:18px 0 0;"><a href="{% url 'password_reset' %}" style="color:var(--muted);font-size:.85rem;">¿Olvidaste tu contraseña?</a></p>
     </div>
 </body>
 </html>

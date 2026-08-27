@@ -4,10 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Política de Privacidad | DOMINIO</title>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    {% include "landing/_seo.html" with title="Política de Privacidad | DOMINIO" description="Cómo DOMINIO recopila, usa y protege la información de visitantes, leads y clientes en nuestro sitio y en DOMINIO Chat 24/7. Conoce tus derechos aquí." path="/privacy/" %}
+    <link rel="preload" href="{% static 'landing/fonts/space-grotesk-latin-var.woff2' %}" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="{% static 'landing/css/fonts.css' %}">
     <link rel="stylesheet" href="{% static 'landing/css/style.css' %}">
-    <link rel="icon" type="image/png" href="{% static 'landing/images/logo/profile_pic@4x.PNG' %}">
     <style>
         .legal-page {
             padding: 140px 0 80px;
@@ -67,6 +67,8 @@
     </style>
 </head>
 <body>
+    <a class="skip-link" href="#contenido">Saltar al contenido</a>
+    <main id="contenido" tabindex="-1">
     <div class="legal-page">
         <div class="container">
             <div class="legal-content">
@@ -95,7 +97,14 @@
                 <h2>3. Divulgación de Información</h2>
                 <p>No vendemos, intercambiamos ni alquilamos su información personal a terceros. Solo compartimos su información en los siguientes casos:</p>
                 <ul>
-                    <li><strong>Proveedores de servicios:</strong> herramientas de terceros de confianza que usamos para operar nuestro negocio (por ejemplo, hosting, email, manejo de proyectos) bajo acuerdos estrictos de confidencialidad</li>
+                    <li><strong>Proveedores de servicios:</strong> herramientas de terceros de confianza que usamos para operar nuestro negocio, bajo acuerdos estrictos de confidencialidad. En concreto:
+                        <ul>
+                            <li><strong>Stripe</strong> — procesa los pagos y las suscripciones. Recibe tu nombre, email y datos de facturación. Nosotros nunca vemos ni guardamos tu tarjeta.</li>
+                            <li><strong>Anthropic</strong> — provee el modelo de inteligencia artificial detrás de DOMINIO Chat 24/7. Recibe el texto de las conversaciones del chat para poder generar las respuestas.</li>
+                            <li><strong>Google Analytics</strong> — mide el tráfico del sitio, y solo si aceptas las cookies.</li>
+                            <li><strong>Proveedores de correo y hosting</strong> — entregan nuestros emails y alojan el sitio.</li>
+                        </ul>
+                    </li>
                     <li><strong>Requisitos legales:</strong> cuando lo exija la ley, una orden judicial o para proteger nuestros derechos legales</li>
                     <li><strong>Con su consentimiento:</strong> cuando usted nos ha dado permiso explícito para compartir información específica</li>
                 </ul>
@@ -109,7 +118,7 @@
                 <h2>6. Cookies y Rastreo</h2>
                 <p><strong>Cookies esenciales.</strong> Usamos cookies estrictamente necesarias que mantienen el sitio seguro y funcionando (por ejemplo, el token de seguridad que protege nuestro formulario de contacto). Estas siempre están activas y no se pueden desactivar.</p>
                 <p><strong>Cookies de análisis.</strong> Con su consentimiento, usamos <strong>Google Analytics 4</strong> para entender cuántas personas visitan nuestro sitio, qué páginas ven y si son visitantes nuevos o recurrentes. Estas cookies establecen un identificador aleatorio; habilitamos la anonimización de IP para que Google no almacene su dirección IP completa. No usamos cookies de publicidad, y no vendemos ni compartimos su información personal para publicidad conductual entre contextos.</p>
-                <p><strong>Su elección.</strong> Cuando usted visita por primera vez, un aviso le permite <em>Aceptar</em> o <em>Rechazar</em> las cookies de análisis, y no se establece ninguna cookie de análisis a menos que usted acepte. Puede cambiar su decisión en cualquier momento usando el enlace de <a href="#" id="cookieSettings">Configuración de Cookies</a> en el pie de página, o borrando las cookies en su navegador. También puede instalar el <a href="https://tools.google.com/dlpage/gaoptout" target="_blank" rel="noopener">Complemento de Inhabilitación para Navegadores de Google Analytics</a>.</p>
+                <p><strong>Su elección.</strong> Cuando usted visita por primera vez, un aviso le permite <em>Aceptar</em> o <em>Rechazar</em> las cookies de análisis, y no se establece ninguna cookie de análisis a menos que usted acepte. Puede cambiar su decisión en cualquier momento usando el enlace de <a href="#" class="js-cookie-settings">Configuración de Cookies</a> en el pie de página, o borrando las cookies en su navegador. También puede instalar el <a href="https://tools.google.com/dlpage/gaoptout" target="_blank" rel="noopener">Complemento de Inhabilitación para Navegadores de Google Analytics</a>.</p>
 
                 <h2>7. Sus Derechos</h2>
                 <p>Dependiendo de dónde usted resida, puede tener derechos bajo leyes como la Ley de Privacidad del Consumidor de California (CCPA/CPRA) y las leyes de privacidad aplicables de Puerto Rico y de los Estados Unidos, incluyendo el derecho a:</p>
@@ -138,6 +147,7 @@
         </div>
     </div>
 
+    </main>
     <footer class="footer">
         <div class="container footer-content">
             <div class="footer-brand">

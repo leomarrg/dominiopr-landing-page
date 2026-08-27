@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>DOMINIO Chat 24/7 — Phase 2: Plan de Mejoras e Implementación</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<style>
+  @page { size: Letter; margin: 20mm 18mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: #1a1a2e; font-size: 10pt; line-height: 1.5; margin: 0; }
+  h1 { font-size: 17pt; margin: 0 0 4px; }
+  h2 { font-size: 13.5pt; margin: 24px 0 8px; border-bottom: 1.5px solid #d8d8e0; padding-bottom: 4px; page-break-after: avoid; }
+  h3 { font-size: 11pt; margin: 14px 0 6px; page-break-after: avoid; }
+  p { margin: 5px 0; text-align: justify; }
+  ul, ol { margin: 5px 0 8px; padding-left: 20px; }
+  li { margin: 2.5px 0; }
+  code { font-family: Consolas, monospace; font-size: 8.8pt; background: #f2f2f5; padding: 1px 4px; border-radius: 3px; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 8.8pt; page-break-inside: avoid; }
+  th, td { border: 1px solid #c8c8d0; padding: 4.5px 7px; text-align: left; vertical-align: top; }
+  th { background: #1a1a2e; color: #fff; font-weight: 600; }
+  tr:nth-child(even) td { background: #f7f7fa; }
+  .cover { height: 88vh; display: flex; flex-direction: column; justify-content: center; text-align: center; page-break-after: always; }
+  .cover .kicker { text-transform: uppercase; letter-spacing: 4px; color: #b8860b; font-weight: 600; font-size: 10pt; }
+  .cover h1 { font-size: 26pt; margin: 10px 0 4px; }
+  .cover .sub { font-size: 13pt; color: #555; margin-bottom: 30px; }
+  .cover .meta { color: #777; font-size: 10pt; line-height: 1.9; }
+  .toc { page-break-after: always; }
+  .toc ol { columns: 2; column-gap: 40px; font-size: 9.5pt; }
+  .fig { margin: 10px 0 14px; page-break-inside: avoid; text-align: center; }
+  .fig .mermaid { display: inline-block; text-align: left; max-width: 100%; }
+  .figcap { font-size: 8.5pt; color: #666; margin-top: 4px; text-align: center; font-style: italic; }
+  .box { background: #f7f5ef; border-left: 4px solid #b8860b; padding: 8px 12px; margin: 10px 0; page-break-inside: avoid; }
+  .req { border: 1px solid #d8d8e0; border-radius: 6px; padding: 10px 14px; margin: 12px 0; page-break-inside: avoid; }
+  .req h3 { margin-top: 0; }
+  .req .tags { font-size: 8.5pt; margin-bottom: 6px; }
+  .pill { display: inline-block; border-radius: 10px; padding: 1px 9px; font-weight: 600; font-size: 8pt; margin-right: 5px; }
+  .p0 { background: #7a1e1e; color: #fff; }
+  .p1 { background: #8a5a00; color: #fff; }
+  .p2 { background: #3a3a5e; color: #fff; }
+  .eff { background: #e8e8ef; color: #1a1a2e; }
+  .pb { page-break-before: always; }
+  .footer-note { margin-top: 26px; font-size: 8.5pt; color: #888; border-top: 1px solid #ddd; padding-top: 6px; }
+</style>
+</head>
+<body>
+
+<!-- ==================== PORTADA ==================== -->
+<div class="cover">
+  <div class="kicker">DOMINIO · dominiopr.com</div>
+  <h1>DOMINIO Chat 24/7</h1>
+  <div class="sub">Phase 2 — Plan de Mejoras e Implementación<br>De la base en producción a la plataforma centralizada: requisitos priorizados, diseño técnico y roadmap</div>
+  <div class="meta">
+    Propietario del documento: DOMINIO · Clasificación: uso interno y comercial<br>
+    Responsable y único desarrollador: Leomar Rodríguez González<br>
+    Repositorio: <code>dominiopr-landing-page</code> (Django / Python)<br>
+    24 de julio de 2026 · Versión 2.0
+  </div>
+</div>
+
+<!-- ==================== CONTROL ==================== -->
+<h2>Control del documento</h2>
+<table>
+  <tr><th>Versión</th><th>Fecha</th><th>Autor</th><th>Descripción del cambio</th></tr>
+  <tr><td>1.0</td><td>22 de julio de 2026</td><td>Leomar Rodríguez González</td><td>Especificación de mejoras M-01…M-14 desde el análisis de brechas.</td></tr>
+  <tr><td>1.1</td><td>24 de julio de 2026</td><td>Leomar Rodríguez González</td><td>Reconciliación con la especificación oficial; se añaden M-15…M-19.</td></tr>
+  <tr><td>2.0</td><td>24 de julio de 2026</td><td>Leomar Rodríguez González</td><td>Reescritura limpia como plan de implementación de la especificación unificada (Phase 1 v2.0).</td></tr>
+</table>
+
+<!-- ==================== TOC ==================== -->
+<div class="toc">
+  <h2>Tabla de contenido</h2>
+  <ol>
+    <li>Introducción y alcance</li>
+    <li>Metodología y trazabilidad</li>
+    <li>Resumen de mejoras y priorización</li>
+    <li>Mejoras P0 — desbloquean el negocio</li>
+    <li>Mejoras P1 — la plataforma centralizada</li>
+    <li>Mejoras P2 — expansión por demanda</li>
+    <li>Cambios al modelo de datos</li>
+    <li>Impacto en la arquitectura</li>
+    <li>Riesgos de la fase</li>
+    <li>Roadmap de implementación</li>
+    <li>Métricas de éxito</li>
+    <li>Glosario (delta)</li>
+    <li>Referencias</li>
+  </ol>
+</div>
+
+<!-- ==================== 1 ==================== -->
+<h2>1. Introducción y alcance</h2>
+<p><em>Phase 1 — Especificación y Diseño del Sistema</em> (v2.0) define el producto completo DOMINIO Chat 24/7 y marca el estado real de cada requisito: ✔ en producción, ⚠ parcial o ✘ planificado. Este documento es el otro lado de esa moneda: <strong>el plan de implementación de todo lo ⚠/✘</strong>, organizado como 18 mejoras (M-01…M-19; M-08 quedó absorbida por M-16) con prioridad, esfuerzo, diseño técnico compatible con la arquitectura actual, criterios de aceptación y un roadmap por iteraciones.</p>
+<p>El norte del producto guía la priorización: <strong>una plataforma multi-tenant centralizada donde cada cliente atiende sus conversaciones y leads en su propio espacio, con separación total de datos por organización, y donde todo es comprensible sin conocimiento técnico</strong>. La experiencia del visitante (chat → lead → cita) ya está resuelta y endurecida; lo que esta fase construye es la capa de operación del negocio: cobrar, ver y gobernar lo que el agente conversa, y darle a cada cliente su consola.</p>
+<p><strong>Fuera de alcance:</strong> chat de voz, conversación dentro de WhatsApp/redes (solo notificaciones salientes), automatizaciones autónomas en sistemas externos, y cambios de posicionamiento comercial.</p>
+
+<!-- ==================== 2 ==================== -->
+<h2>2. Metodología y trazabilidad</h2>
+<ol>
+  <li><strong>Re-elicitación desde la idea de negocio</strong> ("agentes de IA manejados, 24/7, por suscripción, para PYMEs de PR") sin mirar el código.</li>
+  <li><strong>Fusión con la especificación oficial del producto</strong> (visión, RF-01…34, roles, estados, gobierno de IA, criterios de aceptación) — hoy integrada en Phase 1 v2.0.</li>
+  <li><strong>Comparación contra el sistema en producción</strong>: cada requisito quedó marcado ✔/⚠/✘ en el catálogo de Phase 1.</li>
+  <li><strong>Este plan:</strong> todo requisito ⚠/✘ tiene exactamente una mejora M-xx que lo completa. Trazabilidad directa:</li>
+</ol>
+<table>
+  <tr><th>Requisitos de Phase 1 (⚠/✘)</th><th>Mejora</th></tr>
+  <tr><td>RF-34, AC-12 (cobro de suscripción)</td><td>M-01</td></tr>
+  <tr><td>RF-22 (historial), AC-06</td><td>M-02 (+M-16)</td></tr>
+  <tr><td>RF-25 (reportes), AC-10, OBJ-05</td><td>M-03</td></tr>
+  <tr><td>RF-32 (cuota por organización)</td><td>M-04</td></tr>
+  <tr><td>Gestión de citas: horarios, operación, recordatorios (12.3, AC-11)</td><td>M-05</td></tr>
+  <tr><td>RF-28 (WhatsApp/SMS)</td><td>M-06</td></tr>
+  <tr><td>RF-24/RF-29 (export CSV)</td><td>M-07</td></tr>
+  <tr><td>RNF-19 (suite de pruebas), CP-01…10</td><td>M-09</td></tr>
+  <tr><td>RF-30, RNF-03/23 (retención, backups RPO/RTO, DPA, consentimiento)</td><td>M-10</td></tr>
+  <tr><td>Email transaccional confiable</td><td>M-11</td></tr>
+  <tr><td>RNF-24 (abstracción del proveedor de IA)</td><td>M-12</td></tr>
+  <tr><td>RNF-15 (WCAG 2.1 AA)</td><td>M-13</td></tr>
+  <tr><td>RNF-17 (idioma primario por organización)</td><td>M-14</td></tr>
+  <tr><td>RF-18…21, AC-05 (fuentes de conocimiento)</td><td>M-15</td></tr>
+  <tr><td>RF-10…12, RF-22/23, estados 12.1, AC-11 (bandeja y atención híbrida)</td><td>M-16</td></tr>
+  <tr><td>RF-26/27, AC-09, matriz 9.1 (roles y auditoría)</td><td>M-17</td></tr>
+  <tr><td>RF-13 (encuesta CSAT)</td><td>M-18</td></tr>
+  <tr><td>RF-05/21, gobierno 18.3 (respuesta segura medible, evaluación, versionado)</td><td>M-19</td></tr>
+</table>
+
+<!-- ==================== 3 ==================== -->
+<h2 class="pb">3. Resumen de mejoras y priorización</h2>
+<table>
+  <tr><th>ID</th><th>Mejora</th><th>Stakeholder que la exige</th><th>Prioridad</th><th>Esfuerzo</th></tr>
+  <tr><td>M-01</td><td>Cobro y suscripciones (Stripe)</td><td>Operador</td><td>P0</td><td>M</td></tr>
+  <tr><td>M-02</td><td>Historial de conversaciones persistido</td><td>Operador y cliente</td><td>P0</td><td>M</td></tr>
+  <tr><td>M-04</td><td>Cuotas de uso por organización</td><td>Operador</td><td>P0</td><td>S</td></tr>
+  <tr><td>M-09</td><td>Suite de pruebas automatizadas</td><td>Operador (mantenibilidad)</td><td>P0</td><td>M</td></tr>
+  <tr><td>M-03</td><td>Analítica por organización</td><td>Operador y cliente</td><td>P1</td><td>M</td></tr>
+  <tr><td>M-05</td><td>Gestión de citas completa</td><td>Cliente y visitante</td><td>P1</td><td>L</td></tr>
+  <tr><td>M-10</td><td>Retención, backups (RPO/RTO), consentimiento y DPA</td><td>Operador (legal)</td><td>P1</td><td>S</td></tr>
+  <tr><td>M-11</td><td>Email transaccional dedicado</td><td>Operador</td><td>P1</td><td>S</td></tr>
+  <tr><td>M-15</td><td>Base de conocimiento gestionada</td><td>Cliente y operador</td><td>P1</td><td>L</td></tr>
+  <tr><td>M-16</td><td>Consola de conversaciones y atención híbrida (absorbe M-08)</td><td>Cliente</td><td>P1</td><td>L</td></tr>
+  <tr><td>M-17</td><td>Roles granulares y auditoría</td><td>Cliente y operador</td><td>P1</td><td>M</td></tr>
+  <tr><td>M-19</td><td>Gobierno de IA: evaluación, versionado, respuesta segura medible</td><td>Operador</td><td>P1</td><td>M</td></tr>
+  <tr><td>M-06</td><td>Notificaciones WhatsApp/SMS</td><td>Cliente</td><td>P2</td><td>M</td></tr>
+  <tr><td>M-07</td><td>Export de leads (CSV)</td><td>Cliente</td><td>P2</td><td>S</td></tr>
+  <tr><td>M-12</td><td>Abstracción del proveedor de IA</td><td>Operador (riesgo)</td><td>P2</td><td>S</td></tr>
+  <tr><td>M-13</td><td>Accesibilidad WCAG 2.1 AA</td><td>Visitante</td><td>P2</td><td>S</td></tr>
+  <tr><td>M-14</td><td>Idioma primario por organización</td><td>Cliente</td><td>P2</td><td>S</td></tr>
+  <tr><td>M-18</td><td>Encuesta de satisfacción (CSAT)</td><td>Operador y cliente</td><td>P2</td><td>S</td></tr>
+</table>
+<ul>
+  <li><strong>P0 — desbloquea el negocio:</strong> sin esto no se puede cobrar, sostener la promesa del servicio manejado ni proteger presupuesto y producción.</li>
+  <li><strong>P1 — la plataforma centralizada:</strong> materializa OBJ-05/OBJ-06: cada cliente ve, entiende y opera lo suyo.</li>
+  <li><strong>P2 — expansión:</strong> requiere demanda real (≥2 clientes pidiéndolo) antes de entrar a desarrollo.</li>
+  <li><strong>Esfuerzo:</strong> S ≈ horas–2 días · M ≈ 3–7 días · L ≈ 2+ semanas (un desarrollador con asistencia de IA).</li>
+</ul>
+<div class="box"><strong>Lectura ejecutiva:</strong> primero la base segura (M-09, M-04), después cobrar (M-01, M-10), después sostener el servicio manejado con data (M-02, M-03, M-11) y el valor al cliente (M-05, M-07); la Iteración 5 construye la plataforma centralizada completa (M-17 → M-15 → M-19 → M-16).</div>
+
+<!-- ==================== 4 ==================== -->
+<h2 class="pb">4. Mejoras P0 — desbloquean el negocio</h2>
+
+<div class="req">
+<h3>M-01 · Cobro y suscripciones</h3>
+<div class="tags"><span class="pill p0">P0</span><span class="pill eff">Esfuerzo M</span><span class="pill eff">Depende de: —</span></div>
+<p><strong>Requisito (RF-34, AC-12):</strong> el signup de un plan debe terminar en un pago recurrente real, sin coordinación manual. Stripe como pasarela (Checkout + Billing, mensual/anual para los 4 planes); ATH Móvil como método local a evaluar en una segunda iteración.</p>
+<p><strong>Diseño propuesto:</strong> entidad <code>Subscription</code> ligada a <code>Client</code> (plan, período, estado, ids de Stripe); <code>get_started</code> redirige a Stripe Checkout; webhook <code>/api/stripe/webhook/</code> verificado por firma e idempotente activa o suspende el agente según el estado del pago (reutiliza <code>is_active</code>). Job diario de reconciliación contra el API de Stripe. El alta del agente sigue siendo servicio manejado — disparada por el pago. Sin credenciales de Stripe configuradas, el signup degrada al flujo actual por email (mismo patrón que <code>ANTHROPIC_API_KEY</code>).</p>
+<p><strong>Métodos de pago (alternos y automáticos):</strong></p>
+<table>
+  <tr><th>Método</th><th>Recurrente automático</th><th>Rol en el producto</th></tr>
+  <tr><td>Tarjetas (Stripe Billing)</td><td>✅ Sí</td><td>Camino principal: suscripción mensual/anual con activación y suspensión automáticas.</td></tr>
+  <tr><td>Apple Pay / Google Pay</td><td>✅ Sí</td><td>Vienen incluidos con Stripe Checkout — se activan en la configuración, sin código adicional.</td></tr>
+  <tr><td>ATH Móvil</td><td>⚠ No (pago push)</td><td>Método alterno clave para PR: pagos únicos (plan anual o setup inicial) con confirmación; no sirve para recurrencia automática — el sistema registra el pago y programa el vencimiento.</td></tr>
+  <tr><td>PayPal (suscripciones)</td><td>✅ Sí</td><td>P2 por demanda: para clientes que no quieren dar tarjeta.</td></tr>
+</table>
+<p><strong>Criterios de aceptación:</strong> (1) un prospecto paga un plan y recibe confirmación sin intervención humana; (2) un pago fallido/cancelado suspende el widget en ≤24 h con aviso por email; (3) webhooks idempotentes y verificados; (4) ninguna tarjeta toca el servidor (PCI delegado a Stripe); (5) un pago por ATH Móvil puede registrarse con su vencimiento y el sistema avisa antes de expirar.</p>
+</div>
+
+<div class="req">
+<h3>M-02 · Historial de conversaciones persistido</h3>
+<div class="tags"><span class="pill p0">P0</span><span class="pill eff">Esfuerzo M</span><span class="pill eff">Depende de: M-10 (retención)</span></div>
+<p><strong>Requisito (RF-22):</strong> guardar las conversaciones por organización para (a) auditar qué contesta el agente, (b) afinar el conocimiento con preguntas reales — la promesa "afinamos tu agente todos los meses" necesita esta data — y (c) alimentar analítica, consola y gobierno de IA (M-03/M-16/M-19).</p>
+<p><strong>Diseño propuesto:</strong> entidades <code>Conversation</code> (organización, sesión efímera del widget, página de origen, lead vinculado, estado, versión de configuración, tokens) y <code>ChatMessage</code> (rol, texto, orden). <code>chat_api</code> ya recibe el historial completo por turno: upsert por id de sesión generado por el widget. El demo público permanece efímero (privacidad del prospecto). Lectura con scoping por membresía.</p>
+<p><strong>Criterios de aceptación:</strong> (1) cada conversación del widget es consultable por su organización en ≤1 min; (2) se vincula al lead cuando el agente lo captura; (3) el demo no persiste nada; (4) la retención sigue M-10 y el borrado por organización elimina sus conversaciones.</p>
+</div>
+
+<div class="req">
+<h3>M-04 · Cuotas de uso por organización</h3>
+<div class="tags"><span class="pill p0">P0</span><span class="pill eff">Esfuerzo S</span><span class="pill eff">Depende de: —</span></div>
+<p><strong>Requisito (RF-32):</strong> el tope global diario protege el presupuesto total, pero un solo cliente con tráfico alto (o atacado) puede agotarlo para todos. Cada organización necesita su cuota diaria alineada con su plan.</p>
+<p><strong>Diseño propuesto:</strong> campo <code>daily_message_cap</code> en <code>Client</code> (default por plan); contador en cache por organización/día (mismo patrón fixed-window vigente); al agotarse, el widget de esa organización degrada al mensaje de "usa el formulario" sin afectar a las demás. El tope global se mantiene como respaldo.</p>
+<p><strong>Criterios de aceptación:</strong> (1) agotar la cuota de la organización A no afecta a la B; (2) la cuota es visible y editable en el Factory; (3) el operador recibe aviso al 80% de consumo.</p>
+</div>
+
+<div class="req">
+<h3>M-09 · Suite de pruebas automatizadas</h3>
+<div class="tags"><span class="pill p0">P0</span><span class="pill eff">Esfuerzo M</span><span class="pill eff">Depende de: — (previa a las demás)</span></div>
+<p><strong>Requisito (RNF-19, CP-01…10):</strong> los flujos críticos (chat, validación de leads, reservas y anti doble-reserva, límites y cuotas, aislamiento multi-tenant, webhooks de pago) deben tener pruebas de regresión ejecutables antes de cada deploy — condición para construir el resto sin romper producción.</p>
+<p><strong>Diseño propuesto:</strong> runner de Django + cliente de pruebas: unitarias para validadores y handlers de tools (SDK de Anthropic mockeado — el modelo nunca se llama en tests) e integración para endpoints con límites y scoping. Cobertura inicial: <code>chat_api</code>, <code>_chat_lead_handler</code>, <code>_booking_handler</code>, aislamiento del dashboard y (al existir) webhook de Stripe. Ejecución en pre-deploy o GitHub Actions; el deploy aborta si fallan.</p>
+<p><strong>Criterios de aceptación:</strong> (1) <code>manage.py test</code> verde en &lt;2 min sin tocar APIs externas; (2) deploy bloqueado en rojo; (3) los 6 flujos críticos con camino feliz + 2 bordes cada uno, incluyendo pruebas adversariales de prompt injection a nivel de handlers.</p>
+</div>
+
+<!-- ==================== 5 ==================== -->
+<h2 class="pb">5. Mejoras P1 — la plataforma centralizada</h2>
+
+<div class="req">
+<h3>M-03 · Analítica por organización</h3>
+<div class="tags"><span class="pill p1">P1</span><span class="pill eff">Esfuerzo M</span><span class="pill eff">Depende de: M-02</span></div>
+<p><strong>Requisito (RF-25, OBJ-05):</strong> que el operador y cada cliente vean el valor en números: conversaciones/día, tasa de conversión chat→lead, preguntas sin respuesta útil, páginas que originan leads, y costo de API por organización.</p>
+<p><strong>Diseño propuesto:</strong> agregaciones ORM sobre <code>Conversation</code>/<code>ChatMessage</code>/<code>ContactSubmission</code> (sin infraestructura nueva); panel de métricas con filtros de fecha en el dashboard; costo alimentado por el <code>usage</code> de cada respuesta del API, guardado por conversación.</p>
+<p><strong>Criterios de aceptación (AC-10):</strong> (1) el cliente ve conversaciones, leads y conversión de los últimos 30 días; (2) el operador ve costo por organización y global del mes; (3) lista de las 20 preguntas recientes sin respuesta satisfactoria para el ciclo de afinado.</p>
+</div>
+
+<div class="req">
+<h3>M-05 · Gestión de citas completa</h3>
+<div class="tags"><span class="pill p1">P1</span><span class="pill eff">Esfuerzo L</span><span class="pill eff">Depende de: M-11 (volumen de email)</span></div>
+<p><strong>Requisito (AC-11, 12.3 de Phase 1):</strong> el agente ya crea reservas; falta que el cliente las opere: horario laboral y duración por servicio, confirmar/cancelar/completar desde el dashboard, recordatorios automáticos, y (posterior) sincronización con Google Calendar.</p>
+<p><strong>Diseño propuesto:</strong> entidad <code>AvailabilityRule</code> por organización (días/horas, antelación mínima, duración de slot); <code>create_booking</code> valida contra esas reglas además de las actuales; sección "Citas" en el dashboard con las transiciones ya modeladas (pending → confirmed → completed/no_show/cancelled); recordatorio por email 24 h antes vía cron.</p>
+<p><strong>Criterios de aceptación:</strong> (1) el agente no ofrece horas fuera del horario configurado; (2) confirmar o cancelar toma ≤2 clics y el visitante recibe el email correspondiente; (3) recordatorio de 24 h automático; (4) los tenants sin reglas configuradas siguen funcionando como hoy.</p>
+</div>
+
+<div class="req">
+<h3>M-10 · Retención, backups, consentimiento y DPA</h3>
+<div class="tags"><span class="pill p1">P1</span><span class="pill eff">Esfuerzo S</span><span class="pill eff">Depende de: —</span></div>
+<p><strong>Requisito (RF-30, RNF-03/23):</strong> DOMINIO procesa PII de los visitantes de terceros. Hace falta: política de retención publicada y aplicada automáticamente, localizar/exportar/anonimizar/eliminar datos a solicitud, backups automáticos con restauración probada (RPO 24 h / RTO 8 h), aviso de consentimiento en la captura, y anexo de procesamiento de datos (DPA) en los términos.</p>
+<p><strong>Diseño propuesto:</strong> comando <code>purge_expired</code> (cron) con retención configurable por organización (default: conversaciones 12 meses); snapshot diario de PostgreSQL fuera del servidor con restauración de prueba mensual documentada; línea de consentimiento en el flujo de captura del agente; actualización de <code>terms</code>/<code>privacy</code> con el DPA.</p>
+<p><strong>Criterios de aceptación:</strong> (1) la política es pública y el sistema la cumple solo; (2) existe backup restaurable de ≤24 h con restauración ensayada; (3) una solicitud de borrado se ejecuta y queda auditada (con M-17); (4) el visitante ve el aviso de uso de datos antes de dejar los suyos (CU-02 de la especificación).</p>
+</div>
+
+<div class="req">
+<h3>M-11 · Email transaccional dedicado</h3>
+<div class="tags"><span class="pill p1">P1</span><span class="pill eff">Esfuerzo S</span><span class="pill eff">Depende de: —</span></div>
+<p><strong>Requisito:</strong> Gmail SMTP tiene techo de volumen (~500/día) y no escala con clientes activos. Migrar a SES o Postmark con dominio verificado.</p>
+<p><strong>Diseño propuesto:</strong> mismo backend de email de Django — cambio de configuración + verificación de dominio con SPF/DKIM/DMARC alineados; Gmail queda como respaldo configurable.</p>
+<p><strong>Criterios de aceptación:</strong> (1) emails salen autenticados y sin techo diario relevante; (2) failover documentado; (3) tasa de rebote visible.</p>
+</div>
+
+<div class="req">
+<h3>M-15 · Base de conocimiento gestionada</h3>
+<div class="tags"><span class="pill p1">P1</span><span class="pill eff">Esfuerzo L</span><span class="pill eff">Depende de: M-17 (roles), M-19 (evaluación)</span></div>
+<p><strong>Requisito (RF-18…21, AC-05):</strong> sustituir el campo único <code>system_prompt</code> por fuentes gestionables por organización — URL, documento (PDF/DOCX/TXT), FAQ, texto manual — con ciclo de vida completo (cargar → validar → extraer → probar → activar → actualizar → archivar) y <strong>prueba antes de publicar</strong>.</p>
+<p><strong>Diseño propuesto:</strong> entidades <code>KnowledgeSource</code> (organización, tipo, origen, estado, fecha de revisión) y <code>KnowledgeFragment</code> (texto limpio, orden). Un compilador concatena los fragmentos <em>activos</em> en el contexto del agente — compatible byte a byte con el motor actual y el prompt caching. Consola de prueba: preguntas contra una versión borrador viendo qué fragmentos participaron. Validación de archivos: tipos permitidos, tamaño máximo, texto extraíble (mitiga R-13). <strong>RAG con índice vectorial: diferido</strong> hasta que el conocimiento de una organización no quepa en el presupuesto de contexto — decisión registrada para evitar infraestructura prematura.</p>
+<p><strong>Criterios de aceptación:</strong> (1) añadir una fuente la deja procesada o en error, nunca a medias; (2) solo fuentes activas participan en respuestas; (3) toda activación pasó por al menos una pregunta de prueba; (4) los tenants con solo texto manual siguen funcionando sin cambios.</p>
+</div>
+
+<div class="req">
+<h3>M-16 · Consola de conversaciones y atención híbrida</h3>
+<div class="tags"><span class="pill p1">P1</span><span class="pill eff">Esfuerzo L</span><span class="pill eff">Depende de: M-02, M-17 · Absorbe la antigua M-08</span></div>
+<p><strong>Requisito (RF-10…12, RF-22/23):</strong> la bandeja centralizada donde cada cliente atiende lo suyo: listar/filtrar/buscar/abrir conversaciones, etiquetarlas, escalarlas con contexto y cerrarlas clasificando el resultado — con el ciclo de estados de Phase 1 (12.1).</p>
+<p><strong>Diseño propuesto:</strong> campo <code>state</code> en <code>Conversation</code> (<code>activa → escalada → en_seguimiento → cerrada_resuelta / cerrada_no_resuelta / abandonada / bloqueada</code>). Nueva tool <code>request_human</code> en el motor (mismo patrón que <code>capture_lead</code>): captura contacto y motivo, marca <code>escalada</code> y notifica con el transcript (email; WhatsApp con M-06). Reglas de escalamiento (12.2 de Phase 1) como configuración por organización. Bandeja en el dashboard con filtros y respuesta por email desde la conversación (reutiliza <code>lead_email</code>). Chat humano en tiempo real (websockets): backlog por demanda — coherente con un solo operador.</p>
+<p><strong>Criterios de aceptación:</strong> (1) "quiero hablar con una persona" siempre produce conversación <code>escalada</code> con contacto, motivo y transcript (HU-04); (2) cada organización ve solo su bandeja (AC-07); (3) cerrar exige clasificar resultado; (4) fuera de horario se comunica la expectativa sin prometer tiempos no configurados (AC-11).</p>
+</div>
+
+<div class="req">
+<h3>M-17 · Roles granulares y auditoría</h3>
+<div class="tags"><span class="pill p1">P1</span><span class="pill eff">Esfuerzo M</span><span class="pill eff">Depende de: —</span></div>
+<p><strong>Requisito (RF-26/27, AC-09, matriz 9.1 de Phase 1):</strong> pasar del binario miembro/staff a: <strong>agente</strong> (atiende conversaciones y prospectos permitidos) y <strong>administrador de organización</strong> (además gestiona conocimiento, usuarios y configuración de su organización); DOMINIO como administrador de plataforma. Bitácora de acciones administrativas críticas.</p>
+<p><strong>Diseño propuesto:</strong> campo <code>role</code> en <code>Membership</code> (<code>agent</code>/<code>org_admin</code>) validado en servidor en cada vista (RNF de autorización); entidad <code>AuditEvent</code> (usuario, organización, acción, objeto, resultado, fecha, IP) escrita desde los puntos críticos: conocimiento, usuarios, configuración de agentes, exportaciones y borrados. Invitaciones por email para usuarios nuevos de una organización. Vista de auditoría (total para el operador, parcial para el org_admin).</p>
+<p><strong>Criterios de aceptación:</strong> (1) un agente no puede tocar fuentes, usuarios ni configuración (CP-06); (2) toda acción crítica queda en bitácora con autor y fecha (AC-09); (3) el org_admin invita/desactiva usuarios de su organización sin intervención de DOMINIO; (4) el aislamiento se verifica con pruebas dedicadas (M-09).</p>
+</div>
+
+<div class="req">
+<h3>M-19 · Gobierno de IA: evaluación, versionado y respuesta segura medible</h3>
+<div class="tags"><span class="pill p1">P1</span><span class="pill eff">Esfuerzo M</span><span class="pill eff">Depende de: M-02</span></div>
+<p><strong>Requisito (RF-05/21, 18.3 de Phase 1):</strong> la regla fundamental ("reconocer que no sabe antes que inventar") ya vive en el motor — falta poder <strong>probarla y medirla</strong>: conjunto de evaluación por organización, versionado de la configuración del agente y registro de respuestas sin evidencia.</p>
+<p><strong>Diseño propuesto:</strong> (a) <em>conjunto de evaluación</em>: preguntas representativas con resultado esperado por organización (parte del checklist de onboarding — Apéndice B de Phase 1); un comando las corre contra el agente en borrador y reporta desviaciones antes de activar cambios (integra con la consola de prueba de M-15); (b) <em>versionado</em>: historial del conocimiento compilado y el saludo, con quién y cuándo (sobre <code>AuditEvent</code>); (c) <em>trazabilidad</em>: cada conversación registra la versión de configuración usada (campo en <code>Conversation</code>, M-02).</p>
+<p><strong>Criterios de aceptación:</strong> (1) ningún cambio de conocimiento se activa sin pasar la evaluación de su organización (CP-01/CP-02); (2) toda respuesta es atribuible a una versión de configuración; (3) las preguntas sin respuesta útil quedan medidas (meta &lt;10%) y alimentan el ciclo mensual de afinado.</p>
+</div>
+
+<!-- ==================== 6 ==================== -->
+<h2 class="pb">6. Mejoras P2 — expansión por demanda</h2>
+<table>
+  <tr><th>ID</th><th>Mejora</th><th>Diseño en una línea</th><th>Criterio de aceptación clave</th></tr>
+  <tr><td>M-06 <span class="pill p2">P2</span></td><td>Notificaciones WhatsApp/SMS</td><td>Twilio como canal adicional de los avisos de lead/cita/escalamiento; teléfono y preferencia de canal en <code>Client</code>; plantillas pre-aprobadas; solo saliente — el chat del visitante permanece en el widget.</td><td>Aviso en ≤1 min; falla del canal degrada a email sin perder el aviso; costo por mensaje registrado.</td></tr>
+  <tr><td>M-07 <span class="pill p2">P2</span></td><td>Export de leads (CSV)</td><td><code>dashboard/export.csv</code> con los filtros activos, scoping por organización, UTF-8 con BOM (Excel); registrado en auditoría.</td><td>El CSV respeta filtros y organización; abre en Excel con acentos intactos.</td></tr>
+  <tr><td>M-12 <span class="pill p2">P2</span></td><td>Abstracción del proveedor de IA</td><td>Interfaz interna en <code>agent.py</code> (completar, con tools) con implementación Anthropic; segunda implementación de contingencia tras un flag.</td><td>Cambiar de proveedor es configuración, no código de vistas.</td></tr>
+  <tr><td>M-13 <span class="pill p2">P2</span></td><td>Accesibilidad WCAG 2.1 AA</td><td>Focus trap, teclado completo, <code>aria-live</code> para respuestas, contraste verificado en temas derivados.</td><td>Auditoría axe/Lighthouse sin errores críticos en ambos widgets.</td></tr>
+  <tr><td>M-14 <span class="pill p2">P2</span></td><td>Idioma primario por organización</td><td>Campo <code>primary_language</code> en <code>Client</code> que ajusta la regla de idioma del prompt (es-PR default, en-US opcional).</td><td>Un cliente en inglés recibe agente inglés-primero sin tocar las reglas compartidas.</td></tr>
+  <tr><td>M-18 <span class="pill p2">P2</span></td><td>Encuesta CSAT</td><td>Entidad <code>Survey</code> por conversación; prompt de un toque en el widget al cierre; agregado en M-03.</td><td>Puntuar toma un toque o se ignora sin fricción; promedio visible; una encuesta por conversación.</td></tr>
+</table>
+
+<!-- ==================== 7 ==================== -->
+<h2 class="pb">7. Cambios al modelo de datos</h2>
+<p>Todo es aditivo — ninguna mejora altera destructivamente las tablas en producción, y toda entidad nueva pertenece a una organización (regla de integridad de Phase 1):</p>
+<div class="fig">
+<pre class="mermaid">
+erDiagram
+  CLIENT ||--o| SUBSCRIPTION : "M-01 (1 activa)"
+  CLIENT ||--o{ CONVERSATION : "M-02"
+  CONVERSATION ||--o{ CHAT_MESSAGE : "M-02"
+  CONVERSATION |o--o| CONTACT_SUBMISSION : "lead capturado"
+  CONVERSATION ||--o| SURVEY : "M-18"
+  CLIENT ||--o{ AVAILABILITY_RULE : "M-05"
+  CLIENT ||--o{ KNOWLEDGE_SOURCE : "M-15"
+  KNOWLEDGE_SOURCE ||--o{ KNOWLEDGE_FRAGMENT : "M-15"
+  CLIENT ||--o{ AUDIT_EVENT : "M-17"
+  CLIENT ||--o{ CONTACT_SUBMISSION : "existente"
+  CLIENT ||--o{ BOOKING : "existente"
+
+  SUBSCRIPTION {
+    int client_id FK
+    varchar plan "4 planes"
+    varchar period "monthly-annual"
+    varchar status "active-past_due-canceled"
+    varchar stripe_customer_id
+    varchar stripe_subscription_id
+    datetime current_period_end
+  }
+  CONVERSATION {
+    int client_id FK
+    varchar widget_session "id efimero del widget"
+    int lead_id FK "SET_NULL, nullable"
+    varchar page_url
+    varchar state "M-16 activa-escalada-cerrada..."
+    varchar close_reason "M-16 resuelta-no_resuelta-abandono"
+    varchar config_version "M-19 trazabilidad"
+    int tokens_used "M-03 costo"
+    datetime started_at
+    datetime last_message_at
+  }
+  CHAT_MESSAGE {
+    int conversation_id FK
+    varchar role "user-assistant"
+    text content
+    int position
+    datetime created_at
+  }
+  KNOWLEDGE_SOURCE {
+    int client_id FK
+    varchar kind "url-documento-faq-texto"
+    varchar status "borrador-activa-error-archivada"
+    varchar origin "url o nombre de archivo"
+    datetime review_by "fecha de revision M-15"
+  }
+  KNOWLEDGE_FRAGMENT {
+    int source_id FK
+    text content "texto limpio"
+    int position
+  }
+  AUDIT_EVENT {
+    int client_id FK "nullable si es global"
+    int user_id FK
+    varchar action "que se hizo"
+    varchar target "sobre que objeto"
+    varchar result
+    datetime created_at
+  }
+  SURVEY {
+    int conversation_id FK "unica por conversacion"
+    int score "1-5"
+    text comment "opcional"
+    datetime created_at
+  }
+  AVAILABILITY_RULE {
+    int client_id FK
+    int weekday "0-6"
+    time open_time
+    time close_time
+    int slot_minutes
+  }
+  CLIENT {
+    int daily_message_cap "M-04"
+    varchar notify_phone "M-06"
+    varchar notify_channel "email-whatsapp-sms"
+    varchar primary_language "M-14"
+    int retention_months "M-10"
+  }
+  MEMBERSHIP {
+    varchar role "M-17 agent-org_admin"
+  }
+</pre>
+<div class="figcap">Figura 1 — Delta del modelo de datos: 8 entidades nuevas y campos nuevos en <code>Client</code>, <code>Conversation</code> y <code>Membership</code>, sobre el ERD vigente de Phase 1 (Figura 5).</div>
+</div>
+
+<!-- ==================== 8 ==================== -->
+<h2 class="pb">8. Impacto en la arquitectura</h2>
+<p>La arquitectura de Phase 1 (monolito Django en capas + servicios externos manejados) se mantiene. Esta fase añade: webhooks entrantes (Stripe), un canal saliente (Twilio), jobs programados (recordatorios, retención, evaluación, backups) y dos módulos internos (base de conocimiento y consola):</p>
+<div class="fig">
+<pre class="mermaid">
+flowchart TB
+  subgraph SRV ["AWS Lightsail — Django (sin cambios de plataforma)"]
+    V2["Capa de aplicación existente<br/>+ /api/stripe/webhook (M-01)<br/>+ cuotas por organización (M-04)<br/>+ export CSV (M-07)<br/>+ roles y auditoría (M-17)"]
+    A1["Motor del agente<br/>+ tool request_human (M-16)<br/>+ interfaz de proveedor (M-12)<br/>+ prompt compilado desde fuentes (M-15)"]
+    KB["Base de conocimiento (M-15)<br/>fuentes por organización → validar →<br/>probar (M-19) → activar"]
+    CONS["Consola de conversaciones (M-16)<br/>bandeja, estados, cierre,<br/>seguimiento humano"]
+    JOBS["Jobs programados (cron)<br/>recordatorios de citas (M-05)<br/>purge_expired (M-10)<br/>evaluación del agente (M-19)<br/>reconciliación Stripe (M-01)"]
+    AN["Analítica (M-03)<br/>agregaciones ORM sobre<br/>conversaciones, leads y CSAT (M-18)"]
+  end
+  DB[("PostgreSQL<br/>+ 8 tablas nuevas")]
+  BK[("Backups diarios<br/>fuera del servidor (M-10)")]
+  STRIPE["Stripe<br/>Checkout + Billing"]
+  TW["Twilio<br/>WhatsApp / SMS (M-06)"]
+  MAIL["SES / Postmark (M-11)"]
+  ANT["Anthropic Claude<br/>(sin cambios)"]
+  STRIPE -->|"webhooks firmados"| V2
+  V2 -->|"checkout redirect"| STRIPE
+  V2 --> DB
+  KB --> A1
+  CONS --> DB
+  JOBS --> DB
+  DB --> BK
+  A1 <--> ANT
+  V2 --> MAIL
+  V2 --> TW
+  AN --> DB
+</pre>
+<div class="figcap">Figura 2 — Arquitectura con las mejoras de la fase. Todo aditivo; no hay migración de plataforma.</div>
+</div>
+<p><strong>Decisión explícita:</strong> no se adopta cola de mensajes ni workers dedicados (Celery/Redis) en esta fase — los volúmenes se sirven con cron y llamadas síncronas con timeout. Introducir esa infraestructura antes de necesitarla contradiría el principio de austeridad operable de Phase 1.</p>
+
+<!-- ==================== 9 ==================== -->
+<h2>9. Riesgos de la fase</h2>
+<table>
+  <tr><th>Riesgo</th><th>Prob.</th><th>Impacto</th><th>Mitigación</th></tr>
+  <tr><td>Errores en el flujo de cobro (webhooks perdidos, estados desincronizados)</td><td>Media</td><td>Alto</td><td>Webhooks idempotentes + reconciliación diaria + modo test end-to-end; M-09 cubre el webhook con pruebas.</td></tr>
+  <tr><td>Guardar conversaciones amplía la superficie de privacidad (PII conversacional)</td><td>Media</td><td>Alto</td><td>M-02 se implementa junto con M-10 (retención, borrado, consentimiento); acceso solo con scoping; el demo sigue efímero.</td></tr>
+  <tr><td>Crecimiento de BD y servidor de 512 MB por historial, fuentes y analítica</td><td>Media</td><td>Medio</td><td>Retención automática, índices, agregaciones bajo demanda; upgrade de Lightsail solo si las métricas lo piden.</td></tr>
+  <tr><td>Archivos maliciosos o pesados en fuentes de conocimiento</td><td>Media</td><td>Alto</td><td>Tipos permitidos, tamaño máximo, extracción aislada, estado de error visible (M-15).</td></tr>
+  <tr><td>Amplitud de la plataforma vs. capacidad de un único desarrollador</td><td>Alta</td><td>Alto</td><td>MVP acotado por mejora (M-15 sin RAG, M-16 sin chat en vivo); roadmap serializado; P2 exige ≥2 solicitudes reales; control de cambios.</td></tr>
+  <tr><td>Aprobación de plantillas de WhatsApp demorada</td><td>Media</td><td>Bajo</td><td>SMS como fallback; el email nunca se elimina.</td></tr>
+  <tr><td>Regresiones al tocar flujos críticos en producción</td><td>Alta sin M-09</td><td>Alto</td><td>M-09 va primero y bloquea el deploy en rojo.</td></tr>
+</table>
+
+<!-- ==================== 10 ==================== -->
+<h2 class="pb">10. Roadmap de implementación</h2>
+<div class="fig">
+<pre class="mermaid">
+gantt
+  dateFormat YYYY-MM-DD
+  title Fase 2 - iteraciones propuestas (inicio agosto 2026)
+  section It. 1 - Base segura
+    M-09 Pruebas automatizadas       :a1, 2026-08-03, 10d
+    M-04 Cuotas por organizacion     :a2, after a1, 4d
+  section It. 2 - Cobro
+    M-01 Stripe Checkout + webhooks  :b1, after a2, 12d
+    M-10 Retencion + backups + DPA   :b2, after a2, 6d
+  section It. 3 - Servicio manejado
+    M-02 Historial de conversaciones :c1, after b1, 10d
+    M-03 Analitica por organizacion  :c2, after c1, 8d
+    M-11 Email transaccional         :c3, after b1, 4d
+  section It. 4 - Valor al cliente
+    M-05 Gestion de citas            :d1, after c2, 14d
+    M-07 Export CSV                  :d2, after c2, 3d
+  section It. 5 - Plataforma centralizada
+    M-17 Roles y auditoria           :f1, after d1, 6d
+    M-15 Base de conocimiento        :f2, after f1, 14d
+    M-19 Gobierno de IA              :f3, after f2, 6d
+    M-16 Consola de conversaciones   :f4, after f2, 12d
+    Diseno visual del panel          :f5, after f4, 5d
+  section Backlog validado por demanda
+    M-06 WhatsApp-SMS                :e1, after f4, 8d
+    M-18 Encuesta CSAT               :e2, after f4, 3d
+</pre>
+<div class="figcap">Figura 3 — Roadmap tentativo. M-12/M-13/M-14 se intercalan como tareas cortas. La duración total (~4 meses de trabajo neto) es consistente con la estimación de 8–12 semanas de la especificación para la primera versión completa de plataforma, ejecutada por una persona.</div>
+</div>
+
+<!-- ==================== 11 ==================== -->
+<h2>11. Métricas de éxito de la fase</h2>
+<ul>
+  <li><strong>Negocio:</strong> ≥1 cliente pagando por Stripe sin intervención manual; costo de API por organización conocido y por debajo del precio de su plan.</li>
+  <li><strong>Producto:</strong> conversión chat→lead visible por organización; ≥1 ciclo mensual de afinado usando conversaciones reales; cada cliente atiende su bandeja sin ayuda de DOMINIO.</li>
+  <li><strong>Ingeniería:</strong> deploy bloqueado por pruebas; restauración de backup ensayada; cero incidentes de presupuesto por organización desbordada; cero fugas entre organizaciones.</li>
+</ul>
+<p>Los indicadores de producto de Phase 1 (99.5% disponibilidad, &lt;8 s de respuesta, ≥70% resolución automática, &lt;10% sin respuesta útil, CSAT ≥4/5) se vuelven medibles al completar M-02/M-03/M-16/M-18/M-19 y se validan en el piloto.</p>
+
+<!-- ==================== 12 ==================== -->
+<h2>12. Glosario (delta sobre Phase 1)</h2>
+<table>
+  <tr><td><strong>Checkout / Billing (Stripe)</strong></td><td>Página de pago alojada y administración de suscripciones recurrentes.</td></tr>
+  <tr><td><strong>Consola de conversaciones</strong></td><td>Bandeja del dashboard donde el cliente lista, filtra, escala y cierra conversaciones.</td></tr>
+  <tr><td><strong>CSAT</strong></td><td>Puntuación de satisfacción (1–5) al cierre de una conversación.</td></tr>
+  <tr><td><strong>DPA</strong></td><td>Data Processing Agreement — anexo que define cómo DOMINIO procesa datos personales capturados para sus clientes.</td></tr>
+  <tr><td><strong>Fixed-window counter</strong></td><td>Conteo por ventana de tiempo en cache, ya usado para límites globales y reutilizado para cuotas por organización.</td></tr>
+  <tr><td><strong>Idempotencia (webhook)</strong></td><td>Procesar el mismo evento repetido sin duplicar efectos.</td></tr>
+  <tr><td><strong>Reconciliación</strong></td><td>Job que compara el estado local de suscripciones contra Stripe y corrige divergencias.</td></tr>
+  <tr><td><strong>Conjunto de evaluación</strong></td><td>Preguntas representativas con resultado esperado que un agente debe pasar antes de publicar cambios.</td></tr>
+</table>
+
+<!-- ==================== 13 ==================== -->
+<h2>13. Referencias</h2>
+<ol style="font-size:9pt">
+  <li>DOMINIO, <em>DOMINIO Chat 24/7 — Phase 1: Especificación oficial del producto y diseño del sistema</em>, v2.0, 24 de julio de 2026 (repositorio <code>dominiopr-landing-page</code>).</li>
+  <li>Stripe, "Checkout, Billing and Webhooks Documentation," 2026. https://docs.stripe.com/</li>
+  <li>Twilio, "WhatsApp Business API and Programmable Messaging," 2026. https://www.twilio.com/docs</li>
+  <li>Django Software Foundation, "Testing in Django," 2026. https://docs.djangoproject.com/en/stable/topics/testing/</li>
+  <li>Anthropic, "Claude API — Messages, Tool Use and Prompt Caching," 2026. https://docs.anthropic.com/</li>
+  <li>W3C, "Web Content Accessibility Guidelines (WCAG) 2.1," 2018. https://www.w3.org/TR/WCAG21/</li>
+  <li>Amazon Web Services, "Amazon SES Documentation," 2026. https://docs.aws.amazon.com/ses/</li>
+</ol>
+
+<div class="footer-note">DOMINIO Chat 24/7 · dominiopr.com — Phase 2: Plan de Mejoras e Implementación · v2.0 · 24 de julio de 2026 · © 2026 DOMINIO. Documento de uso interno y comercial.</div>
+
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', flowchart: { htmlLabels: true } });
+</script>
+</body>
+</html>

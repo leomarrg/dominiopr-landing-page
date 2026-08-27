@@ -299,3 +299,59 @@ El DNS wildcard `*.dominiopr.com` ya cubre cualquier subdominio nuevo — no toc
 - **CSRF errors al enviar el form** → revisa `DJANGO_CSRF_TRUSTED_ORIGINS` en `.env` incluye el dominio HTTPS.
 - **SSL expirado** → certbot debería renovar solo. Verifica con `sudo certbot renew --dry-run`.
 - **El workflow de GitHub falla** → revisa los Actions logs; el problema más común es el SSH key mal pegado en secrets (debe incluir las líneas BEGIN/END).
+
+## Phase 2 — operación de la plataforma
+
+**Antes de cada deploy** (bloquea si falla — M-09):
+```bash
+python manage.py test landing
+```
+
+**Cron del sistema** (usuario de la app):
+```cron
+# M-05: recordatorios de citas (~24h antes), cada hora
+0 * * * * cd /ruta/app && venv/bin/python manage.py send_booking_reminders
+# M-10: retención de conversaciones por tenant, diario
+30 3 * * * cd /ruta/app && venv/bin/python manage.py purge_expired
+# M-10: backup de PostgreSQL con copia fuera del servidor
+15 4 * * * /var/www/dominio/deploy/backup_db.sh >> /home/ubuntu/dominio-cron.log 2>&1
+# M-01: reconciliación de suscripciones contra Stripe, diario
+45 4 * * * cd /ruta/app && venv/bin/python manage.py reconcile_stripe
+```
+
+**Stripe (M-01):** configura las claves y precios en `.env` (ver `.env.example`) y
+apunta el webhook del dashboard de Stripe a `https://dominiopr.com/api/stripe/webhook/`
+con los eventos `checkout.session.completed`, `customer.subscription.updated`,
+`customer.subscription.deleted`. Sin claves, el signup sigue coordinándose por email.
+
+**Evaluación del agente (M-19):** antes de activar cambios de conocimiento de un
+cliente: `python manage.py agent_eval --client SLUG --file evals/SLUG.txt`
+(formato: `pregunta | fragmento esperado`, una por línea).
+
+## Lanzamiento self-serve (Stripe + correo)
+
+Guias paso a paso, en orden, para dejar cobros y correo listos sin tocar codigo:
+
+1. `docs/lanzamiento/01-stripe.md` — productos y 9 precios (mensual, anual, instalacion por plan), webhook, Customer Portal, correos de Stripe, prueba en test mode y paso a live.
+2. `docs/lanzamiento/02-correo.md` — alias `hola@dominiopr.com` sobre el buzon `leomar@dominiopr.com` en Microsoft 365, correo transaccional por Resend (DNS en GoDaddy, API key, `.env`), DMARC y Postmaster Tools, newsletters desde `news.dominiopr.com`.
+3. `docs/lanzamiento/03-checklist-lanzamiento.md` — checklist de go-live: `.env` completo, migraciones, reinicio, cron con rutas reales, compra real de $1 con reembolso, entregabilidad, webhook, backups y rollback.
+
+Variables nuevas o que cambian de valor en `/var/www/dominio/.env` (detalle en `.env.example`):
+
+| Variable                        | Valor de lanzamiento                     |
+|---------------------------------|------------------------------------------|
+| `DJANGO_EMAIL_HOST`             | `smtp.resend.com` (antes `smtp.gmail.com`) |
+| `DJANGO_EMAIL_PORT`             | `587`                                    |
+| `DJANGO_EMAIL_USE_TLS`          | `True`                                   |
+| `DJANGO_EMAIL_HOST_USER`        | `resend` (literal)                       |
+| `DJANGO_EMAIL_HOST_PASSWORD`    | API key de Resend (`re_...`)             |
+| `DJANGO_DEFAULT_FROM_EMAIL`     | `"DOMINIO <hola@dominiopr.com>"`         |
+| `DJANGO_CONTACT_NOTIFY_EMAIL`   | `leomar@dominiopr.com`                   |
+| `DJANGO_EMAIL_TIMEOUT`          | `10` (nueva)                             |
+| `STRIPE_SECRET_KEY`             | `sk_live_...`                            |
+| `STRIPE_WEBHOOK_SECRET`         | `whsec_...` del endpoint live            |
+| `STRIPE_PRICE_STARTER_SETUP`    | `price_...` (nueva, cargo unico $500)    |
+| `STRIPE_PRICE_PRO_SETUP`        | `price_...` (nueva, cargo unico $1,000)  |
+| `STRIPE_PRICE_SCALE_SETUP`      | `price_...` (nueva, cargo unico $2,500)  |
+
+Tras editar `.env` hay que reiniciar: `sudo systemctl restart gunicorn-dominio` (systemd solo lee el archivo al arrancar). Nota para la seccion de cron de arriba: la ruta real es `/var/www/dominio`. La base es SQLite y `deploy/backup_db.sh` hace una copia consistente con la API `.backup` de sqlite3 (gzip, retiene 14 dias).

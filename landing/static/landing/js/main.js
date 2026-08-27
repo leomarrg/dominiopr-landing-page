@@ -632,10 +632,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const bentoCards = document.querySelectorAll('.bento-item--flippable');
-        bentoCards.forEach(card => measureFaces(card, '.bento-flip-front', '.bento-flip-back'));
-
         const visualCards = document.querySelectorAll('.visual-card');
-        visualCards.forEach(card => measureFaces(card, '.visual-flip-front', '.visual-flip-back'));
+
+        // Each measureFaces() call forces a synchronous reflow; doing them all
+        // on DOMContentLoaded cost a ~390ms long task on mobile, right as the
+        // loader lifts. Measure when the thread is idle instead, and lazily on
+        // first flip for anyone who taps before the idle callback runs.
+        function ensureMeasured(card) {
+            if (card.dataset.frontHeight !== undefined) return;
+            const isBento = card.classList.contains('bento-item--flippable');
+            measureFaces(card,
+                isBento ? '.bento-flip-front' : '.visual-flip-front',
+                isBento ? '.bento-flip-back' : '.visual-flip-back');
+        }
+
+        const idle = window.requestIdleCallback || function (fn) { return setTimeout(fn, 200); };
+        idle(function () {
+            bentoCards.forEach(ensureMeasured);
+            visualCards.forEach(ensureMeasured);
+        });
 
         // Smooth JS-driven height animation (bypasses CSS transition issues)
         function animateHeight(card, from, to, duration, delay) {
@@ -662,6 +677,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function openCard(card) {
+            ensureMeasured(card);
             const frontH = parseInt(card.dataset.frontHeight, 10) || 0;
             const backH = parseInt(card.dataset.backHeight, 10) || 0;
             card.style.minHeight = frontH + 'px';
@@ -670,6 +686,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function closeCard(card) {
+            ensureMeasured(card);
             const frontH = parseInt(card.dataset.frontHeight, 10) || 0;
             const backH = parseInt(card.dataset.backHeight, 10) || 0;
             const currentH = card.getBoundingClientRect().height;
