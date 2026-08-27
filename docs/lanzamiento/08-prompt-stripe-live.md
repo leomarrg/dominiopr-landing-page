@@ -59,8 +59,8 @@ Stripe lo rechazó con *"Only live keys can access this method"*, por eso va aqu
 
 En **Public business information**, llena los enlaces públicos:
 
-- Terms of service: `https://dominiopr.com/terminos/`
-- Privacy policy: `https://dominiopr.com/privacidad/`
+- Terms of service: `https://dominiopr.com/terms/`
+- Privacy policy: `https://dominiopr.com/privacy/`
 
 El customer portal los muestra desde ahí. En sandbox esa sección salía vacía con
 el aviso *"Settings that affect your live integration are hidden in test mode"*.

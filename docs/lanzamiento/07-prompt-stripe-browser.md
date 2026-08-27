@@ -113,7 +113,7 @@ Luego crea un **promotion code** para ese cupón con el código `LANZAMIENTO`
    `DOMINIOPR`.
 2. **Settings → Billing → Customer portal:** actívalo. Permite que el cliente
    actualice su método de pago y cancele. Enlaza los términos de
-   `https://dominiopr.com/terminos/`.
+   `https://dominiopr.com/terms/`.
 3. **Settings → Billing → Automatic collection / Subscriptions:** en el manejo de
    pagos fallidos, después de los reintentos escoge **Cancel the subscription**.
    Esto es importante: es lo que hace que mi aplicación desactive al cliente sola.
