@@ -1846,6 +1846,21 @@ class SignupMisconfigurationTests(TestCase):
         self.assertEqual([m for m in mail.outbox if 'Falta configurar' in m.subject], [])
 
 
+class LegalSlugRedirectTests(TestCase):
+    """The site is in Spanish; /terms/ and /privacy/ are not. Everyone guesses
+    the Spanish slug — it already put two 404s into the live Stripe portal."""
+
+    def test_spanish_slugs_redirect_permanently(self):
+        for wrong, right in (('/terminos/', '/terms/'), ('/privacidad/', '/privacy/')):
+            resp = self.client.get(wrong)
+            self.assertEqual(resp.status_code, 301, wrong)
+            self.assertEqual(resp['Location'], right)
+
+    def test_the_real_pages_still_answer(self):
+        for url in ('/terms/', '/privacy/'):
+            self.assertEqual(self.client.get(url).status_code, 200, url)
+
+
 class ReceiptTests(TestCase):
     """The printed receipt on /bienvenida/ must show the number the card was
     actually charged. It is built from the plan table, not from Stripe, so

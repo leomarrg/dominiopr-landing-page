@@ -19,6 +19,7 @@ from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import include, path, reverse_lazy
 from django.contrib.sitemaps.views import sitemap
+from django.views.generic import RedirectView
 
 from landing import platform_views, seo, views
 
@@ -60,6 +61,12 @@ urlpatterns = [
     path('sitemap.xml', sitemap, {'sitemaps': seo.SITEMAPS}, name='sitemap'),
     path('site.webmanifest', seo.webmanifest, name='webmanifest'),
     path('privacy/', views.privacy, name='privacy'),
+    # El sitio esta en espanol pero estas dos rutas nacieron en ingles, asi que
+    # todo el mundo (nosotros incluidos) teclea el slug espanol y se come un
+    # 404. Ya paso una vez con los enlaces legales del portal de Stripe. 301
+    # permanente: no son URLs nuevas que indexar, son el mismo documento.
+    path('terminos/', RedirectView.as_view(pattern_name='terms', permanent=True)),
+    path('privacidad/', RedirectView.as_view(pattern_name='privacy', permanent=True)),
 
     # Branded internal dashboard (custom backend, not Django admin)
     path('dashboard/', views.dashboard, name='dashboard'),
