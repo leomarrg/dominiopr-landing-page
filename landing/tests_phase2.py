@@ -661,7 +661,8 @@ class SelfServeProvisioningTests(TestCase):
             ('pro', 'annual', 'stripe', 'active', 'cus_new', 'sub_new', 'cs_test_1'))
         user = get_user_model().objects.get(username='ana@acme.com')
         membership = Membership.objects.get(user=user, client=client)
-        self.assertTrue(membership.must_change_password)
+        # No first-login gate: the customer sets their own password via the link.
+        self.assertFalse(membership.must_change_password)
         self.lead.refresh_from_db()
         self.assertEqual(self.lead.status, 'won')
         sent = [(m.subject, m.to) for m in mail.outbox]
@@ -1160,11 +1161,12 @@ class WebhookHardeningTests(TestCase):
                          ('cus_A', 'active'))
         user = get_user_model().objects.get(username='ana@acme.com')
         self.assertTrue(Membership.objects.filter(user=user, client=c,
-                                                  must_change_password=True).exists())
+                                                  must_change_password=False).exists())
         subjects = [(m.subject, m.to) for m in mail.outbox]
         welcome = [m for m in mail.outbox if m.to == ['ana@acme.com']]
         self.assertEqual(len(welcome), 1, subjects)
-        self.assertIn('Contraseña temporera', welcome[0].body)
+        self.assertIn('/dashboard/activar/', welcome[0].body)
+        self.assertNotIn('temporera', welcome[0].body)
         self.assertTrue(any(s.startswith('[Cliente vinculado]') and to == ['ops@example.com']
                             for s, to in subjects), subjects)
 
@@ -1902,6 +1904,75 @@ class SignupMisconfigurationTests(TestCase):
         fall back to the email flow quietly, not spam ops on every signup."""
         self._signup()
         self.assertEqual([m for m in mail.outbox if 'Falta configurar' in m.subject], [])
+
+
+class WelcomeLinkTests(TestCase):
+    """The welcome email used to carry a plaintext temporary password, valid
+    until the customer got around to changing it. Now it carries a one-time
+    link. These pin the properties that make the link safe."""
+
+    def setUp(self):
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+        from landing.tokens import welcome_token
+        self.c = Client.objects.create(slug='acme', name='Acme PR', system_prompt='x',
+                                       notify_email='ana@acme.com')
+        self.username, self.url = views._provision_client_login(self.c)
+        self.user = get_user_model().objects.get(username='ana@acme.com')
+        self.uid = urlsafe_base64_encode(force_bytes(self.user.pk))
+        self.token = welcome_token.make_token(self.user)
+
+    def test_no_password_ever_leaves_the_server(self):
+        self.assertIsNotNone(self.url)
+        self.assertIn('/dashboard/activar/', self.url)
+        # The account has a real (unguessable) password so the "forgot
+        # password" form still finds it if the welcome email is lost.
+        self.assertTrue(self.user.has_usable_password())
+        self.assertFalse(Membership.objects.get(user=self.user).must_change_password)
+
+    def test_link_lets_the_customer_set_a_password_once(self):
+        path = self.url.replace('https://dominiopr.com', '')
+        resp = self.client.get(path, follow=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.context['validlink'])
+        resp = self.client.post(resp.redirect_chain[-1][0],
+                                {'new_password1': 'Muy-Segura-2026!', 'new_password2': 'Muy-Segura-2026!'})
+        self.assertEqual(resp.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('Muy-Segura-2026!'))
+        # Used once: the token embedded the old hash, so it is dead now.
+        resp = self.client.get(path, follow=True)
+        self.assertFalse(resp.context['validlink'])
+
+    def test_link_outlives_a_reset_token_but_not_a_week(self):
+        from landing.tokens import welcome_token
+        from unittest.mock import patch
+        import datetime
+        five_days = datetime.datetime.now() + datetime.timedelta(days=5)
+        eight_days = datetime.datetime.now() + datetime.timedelta(days=8)
+        with patch.object(welcome_token, '_now', return_value=five_days):
+            self.assertTrue(welcome_token.check_token(self.user, self.token))
+        with patch.object(welcome_token, '_now', return_value=eight_days):
+            self.assertFalse(welcome_token.check_token(self.user, self.token))
+
+    def test_reset_and_welcome_tokens_are_not_interchangeable(self):
+        """Different salts: a 7-day welcome token must never be accepted by the
+        1-hour reset view, or the reset window would silently become a week."""
+        from django.contrib.auth.tokens import default_token_generator
+        self.assertFalse(default_token_generator.check_token(self.user, self.token))
+        reset = default_token_generator.make_token(self.user)
+        resp = self.client.get(reverse('welcome_set_password',
+                                       kwargs={'uidb64': self.uid, 'token': reset}), follow=True)
+        self.assertFalse(resp.context['validlink'])
+
+    def test_resend_rotates_the_password_and_mints_a_new_link(self):
+        self.user.set_password('la-que-tenia')
+        self.user.save()
+        _, url2 = views._provision_client_login(self.c, reset_password=True)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.check_password('la-que-tenia'))
+        self.assertIsNotNone(url2)
+        self.assertNotEqual(url2, self.url)
 
 
 class LegalSlugRedirectTests(TestCase):

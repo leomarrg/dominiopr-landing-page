@@ -12,6 +12,8 @@
 #
 # Restore (the drill, run monthly and write down the date):
 #   sudo systemctl stop gunicorn-dominio
+#   # La BD corre en modo WAL: un cp a secas deja fuera lo que aun esta en db.sqlite3-wal.
+#   sqlite3 /var/www/dominio/db.sqlite3 'PRAGMA wal_checkpoint(TRUNCATE);'
 #   cp /var/www/dominio/db.sqlite3 /home/ubuntu/db-antes-de-restaurar-$(date +%F-%H%M).sqlite3
 #   gunzip -c /var/backups/dominio/db-YYYYMMDD.sqlite3.gz > /var/www/dominio/db.sqlite3
 #   sudo systemctl start gunicorn-dominio

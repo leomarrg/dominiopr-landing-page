@@ -163,6 +163,23 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': os.environ.get('DJANGO_DB_PATH', BASE_DIR / 'db.sqlite3'),
+        # gunicorn runs threaded workers (8 requests in flight), and SQLite's
+        # default mode lets ONE writer block every reader. Without this the
+        # first two overlapping chat turns produce "database is locked".
+        'OPTIONS': {
+            # How long a connection waits for a lock before giving up. Django's
+            # default is 5s; a chat turn that queued behind a lead insert on a
+            # busy second should wait, not 500.
+            'timeout': 20,
+            # BEGIN IMMEDIATE takes the write lock up front instead of
+            # upgrading a read lock mid-transaction — the upgrade is where
+            # SQLite deadlocks two writers and errors out without retrying.
+            'transaction_mode': 'IMMEDIATE',
+            # WAL: readers never block on the writer and vice versa. NORMAL
+            # sync is safe with WAL (a crash loses at most the last
+            # transaction, never corrupts) and avoids an fsync per write.
+            'init_command': 'PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;',
+        },
     }
 }
 

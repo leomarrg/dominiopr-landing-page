@@ -26,7 +26,10 @@ from django.template.loader import render_to_string
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.text import slugify
-from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.encoding import force_bytes
+from django.utils.http import url_has_allowed_host_and_scheme, urlsafe_base64_encode
+
+from landing.tokens import welcome_token
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
@@ -336,9 +339,9 @@ def _provision_client_login(client, reset_password=False):
 
     One login can manage SEVERAL agents: if the email already has an account, we
     just add a membership to this client. `reset_password=True` (used by the
-    Resend action) sets a fresh temp password so the owner can hand the client a
-    working credential even if the first email was lost. Returns (username,
-    temp_password); temp_password is None when reusing a login without a reset.
+    Resend action) rotates the password and mints a fresh one-time link so the
+    owner can re-send access even if the first email was lost. Returns (username,
+    setup_url); setup_url is None when reusing a login without a reset.
     Staff accounts are never scoped into a tenant.
     """
     User = get_user_model()
@@ -352,21 +355,34 @@ def _provision_client_login(client, reset_password=False):
         logger.warning('Skipped login provisioning: %s is a staff account', email)
         return None, None
 
-    temp_password = None
+    # The account gets a random password nobody ever sees — not even the log —
+    # and the customer picks their own through a one-time link. A real (if
+    # unknown) password rather than set_unusable_password() so that the
+    # "forgot password" form still finds the account if the welcome email is
+    # lost: PasswordResetForm skips users without a usable password.
+    setup_url = None
     if user is None:
-        temp_password = secrets.token_urlsafe(12)
-        user = User.objects.create_user(username=email, email=email, password=temp_password)
+        user = User.objects.create_user(username=email, email=email,
+                                        password=secrets.token_urlsafe(32))
+        setup_url = _welcome_link(user)
     elif reset_password:
-        temp_password = secrets.token_urlsafe(12)
-        user.set_password(temp_password)
+        user.set_password(secrets.token_urlsafe(32))
         user.save(update_fields=['password'])
-        Membership.objects.filter(user=user).update(must_change_password=True)
+        setup_url = _welcome_link(user)
 
-    # Link the user to this client (a user may manage many agents).
-    Membership.objects.get_or_create(
-        user=user, client=client,
-        defaults={'must_change_password': bool(temp_password)})
-    return user.get_username(), temp_password
+    # Link the user to this client (a user may manage many agents). No
+    # first-login gate: they never had a password to change.
+    Membership.objects.get_or_create(user=user, client=client,
+                                     defaults={'must_change_password': False})
+    return user.get_username(), setup_url
+
+
+def _welcome_link(user):
+    """Absolute one-time URL where `user` sets their first password."""
+    return settings.SITE_URL + reverse('welcome_set_password', kwargs={
+        'uidb64': urlsafe_base64_encode(force_bytes(user.pk)),
+        'token': welcome_token.make_token(user),
+    })
 
 
 # ============================================================
@@ -1290,7 +1306,7 @@ def _provision_paid_client(request, *, email, plan, period, meta, cust_id, sub_i
             existing.is_active = True
             if lead is not None and lead.status != 'won':
                 ContactSubmission.objects.filter(pk=lead.pk).update(status='won')
-            username, temp_password = _provision_client_login(existing)
+            username, setup_url = _provision_client_login(existing)
         client, created = existing, False
     else:
         prompt_lines = [f'Negocio: {company}']
@@ -1331,7 +1347,7 @@ def _provision_paid_client(request, *, email, plan, period, meta, cust_id, sub_i
                 Subscription.objects.update_or_create(client=client, defaults=sub_defaults)[0])
             if lead is not None and lead.status != 'won':
                 ContactSubmission.objects.filter(pk=lead.pk).update(status='won')
-            username, temp_password = _provision_client_login(client)
+            username, setup_url = _provision_client_login(client)
         created = True
 
         # Best-effort greeting from the seed knowledge (same as the factory form).
@@ -1343,12 +1359,12 @@ def _provision_paid_client(request, *, email, plan, period, meta, cust_id, sub_i
             logger.exception('Greeting generation failed for %s', client.slug)
 
     dashboard_url = settings.SITE_URL + reverse('dashboard')
-    login = ({'username': username, 'password': temp_password, 'url': dashboard_url}
+    login = ({'username': username, 'setup_url': setup_url, 'url': dashboard_url}
              if username else None)
     embed = _embed_snippet(settings.SITE_URL, client.slug)
     install_url = settings.SITE_URL + reverse('install')
 
-    # The temp password exists in exactly one place: this email. If it does not
+    # The activation link exists in exactly one place: this email. If it does not
     # send, the buyer has paid and cannot get in — so the result is checked, not
     # discarded, and the ops alert below is escalated.
     welcome_sent = _send_welcome_email(client, _plan_name(plan), login, install_url, embed,
@@ -2025,6 +2041,13 @@ class DashboardPasswordResetConfirmView(PasswordResetConfirmView):
         return response
 
 
+class WelcomeSetPasswordView(DashboardPasswordResetConfirmView):
+    """The link in the welcome email: same form and template as a reset, but
+    validated with the 7-day welcome token instead of the 1-hour reset one.
+    Single-use falls out of the token embedding the password hash."""
+    token_generator = welcome_token
+
+
 # ============================================================
 # CLIENT SELF-SERVICE — install details + billing
 # ============================================================
@@ -2433,11 +2456,11 @@ def client_resend_onboarding(request, pk):
     login = None
     try:
         with transaction.atomic():
-            username, temp_password = _provision_client_login(client, reset_password=True)
+            username, setup_url = _provision_client_login(client, reset_password=True)
         if username:
             login = {
                 'username': username,
-                'password': temp_password,
+                'setup_url': setup_url,
                 'url': request.build_absolute_uri(reverse('dashboard')),
             }
     except Exception:
@@ -2528,11 +2551,11 @@ def client_form(request, pk=None):
                 login_note = ''
                 try:
                     with transaction.atomic():
-                        username, temp_password = _provision_client_login(obj)
+                        username, setup_url = _provision_client_login(obj)
                     if username:
                         login = {
                             'username': username,
-                            'password': temp_password,  # None when reusing a login
+                            'setup_url': setup_url,  # None when reusing a login
                             'url': request.build_absolute_uri(reverse('dashboard')),
                         }
                     elif obj.notify_email:

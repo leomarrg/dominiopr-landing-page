@@ -23,10 +23,19 @@ RuntimeDirectory=gunicorn-dominio
 RuntimeDirectoryMode=0755
 # Tuned for a 512MB-1GB instance:
 #   --workers 2          fits low-RAM boxes (raise to 3 only with >=2GB RAM)
+#   --worker-class gthread --threads 4
+#                        Every chat turn waits 10-20s on Anthropic while doing
+#                        nothing. With sync workers that wait held a whole
+#                        process, so TWO simultaneous conversations blocked the
+#                        entire site. Threads release the GIL during network
+#                        I/O and cost a few MB each, not a process: 2x4 = 8
+#                        requests in flight for the RAM of 2.
 #   --max-requests       recycle workers periodically to release leaked memory
 #   --timeout 60         kill a worker stuck >60s (was the default 30s)
 ExecStart=/var/www/dominio/venv/bin/gunicorn \
     --workers 2 \
+    --worker-class gthread \
+    --threads 4 \
     --max-requests 500 \
     --max-requests-jitter 50 \
     --timeout 60 \

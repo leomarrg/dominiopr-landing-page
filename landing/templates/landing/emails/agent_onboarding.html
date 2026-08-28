@@ -17,11 +17,11 @@
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px;">
   <tr><td style="background:rgba(59,192,199,0.06); border:1px solid rgba(59,192,199,0.3); border-radius:8px; padding:16px 18px; font-size:14px; color:rgba(255,255,255,0.85); line-height:1.8;">
     <a href="{{ login.url }}" style="color:#3bc0c7; text-decoration:none; font-weight:600;">{{ login.url }}</a><br>
-    <strong style="color:rgba(255,255,255,0.6);">Correo:</strong> {{ login.username }}{% if login.password %}<br>
-    <strong style="color:rgba(255,255,255,0.6);">Contraseña temporera:</strong> <span style="font-family:Menlo,Consolas,monospace; color:#ffffff;">{{ login.password }}</span>{% endif %}
+    <strong style="color:rgba(255,255,255,0.6);">Correo:</strong> {{ login.username }}{% if login.setup_url %}<br>
+    <a href="{{ login.setup_url }}" style="display:inline-block; margin-top:8px; background:#3bc0c7; color:#0b1220; text-decoration:none; font-weight:700; padding:10px 16px; border-radius:6px;">Crear mi contraseña</a>{% endif %}
   </td></tr>
 </table>
-{% if login.password %}<p style="margin:0 0 14px; color:rgba(255,255,255,0.6); font-size:13px;">Por favor cambia tu contraseña después de iniciar sesión por primera vez.</p>{% endif %}
+{% if login.setup_url %}<p style="margin:0 0 14px; color:rgba(255,255,255,0.6); font-size:13px;">El enlace vale 7 días y una sola vez. Si caduca, usa "¿Olvidaste tu contraseña?" con este mismo correo.</p>{% endif %}
 {% endif %}
 
 <p style="margin:18px 0 0;">¿Necesitas ayuda para instalarlo? Solo responde a este correo.</p>

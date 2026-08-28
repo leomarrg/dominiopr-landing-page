@@ -11,9 +11,9 @@ Works on WordPress, Wix, Squarespace, Shopify, or plain HTML. Paste it in your s
 YOUR LEADS DASHBOARD
 See every lead, update its status, and reply by email — all in one place:
 {{ login.url }}
-Email: {{ login.username }}{% if login.password %}
-Temporary password: {{ login.password }}
-(Please change your password after your first sign-in.){% endif %}
+Email: {{ login.username }}{% if login.setup_url %}
+Crea tu contraseña aquí (vale 7 días, una sola vez):
+{% autoescape off %}{{ login.setup_url }}{% endautoescape %}{% endif %}
 {% endif %}
 Need a hand installing it? Just reply to this email.
 

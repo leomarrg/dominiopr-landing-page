@@ -8,10 +8,11 @@ QUE PASA AHORA
 3. Te avisamos por correo en cuanto esté en vivo.
 {% if login %}
 TU DASHBOARD
-{{ login.url }}
-Correo: {{ login.username }}{% if login.password %}
-Contraseña temporera: {{ login.password }}
-(Por favor cámbiala después de tu primer inicio de sesión.){% endif %}
+Correo: {{ login.username }}{% if login.setup_url %}
+Crea tu contraseña aquí (vale 7 días, una sola vez):
+{{ login.setup_url }}
+Si caduca, usa "¿Olvidaste tu contraseña?" en {{ login.url }} con este mismo correo.{% else %}
+{{ login.url }}{% endif %}
 {% endif %}
 {% if setup_fee_charged %}LA INSTALACIÓN VA POR NUESTRA CUENTA
 Ya la pagaste con tu plan: nosotros la hacemos. No tienes que tocar código.
