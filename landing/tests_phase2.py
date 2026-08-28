@@ -416,7 +416,11 @@ class StripeWebhookTests(TestCase):
         self.client_obj.refresh_from_db()
         self.assertEqual(sub.status, 'canceled')
         self.assertFalse(self.client_obj.is_active)
-        self.assertTrue([m for m in mail.outbox if 'Reembolso' in m.subject])
+        alert = [m for m in mail.outbox if 'Reembolso' in m.subject][0]
+        # Pausar el servicio NO detiene el cobro en Stripe. Si la alerta no lo
+        # dice, se reembolsa a alguien y se le sigue cobrando el mes siguiente.
+        self.assertIn('SIGUE VIVA', alert.body)
+        self.assertIn(sub.stripe_subscription_id, alert.body)
 
     def test_partial_refund_does_not_stop_the_service(self):
         """A goodwill $20 back is not the end of the relationship. Cutting the

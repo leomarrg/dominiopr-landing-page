@@ -1690,8 +1690,16 @@ def _handle_stripe_event(request, event_type, obj):
                 body=(f'{"Un chargeback" if disputed else "Un reembolso total"} entro '
                       f'para {sub.client.name} '
                       f'({sub.order_number or sub.stripe_subscription_id}).\n\n'
-                      f'El widget quedo pausado y la suscripcion marcada cancelada.\n'
-                      + ('Responde la disputa en Stripe con la evidencia: orden, '
+                      f'El widget quedo pausado y la suscripcion marcada cancelada '
+                      f'AQUI.\n\n'
+                      f'*** OJO: en Stripe la suscripcion SIGUE VIVA y volvera a '
+                      f'cobrar en la proxima fecha de renovacion. ***\n'
+                      f'Esto no se cancela solo a proposito: un reembolso de buena '
+                      f'voluntad de un mes no debe matarle la cuenta a un cliente '
+                      f'que se queda. Si esta venta se deshace, cancelala tu en:\n'
+                      f'https://dashboard.stripe.com/subscriptions/'
+                      f'{sub.stripe_subscription_id}\n'
+                      + ('\nResponde la disputa en Stripe con la evidencia: orden, '
                          'pago, usuario, fecha y servicio entregado. Tienes dias '
                          'contados.\n' if disputed else '')
                       + f'\nCliente: {sub.client.notify_email}\nPlan: {sub.plan}/{sub.period}'))
