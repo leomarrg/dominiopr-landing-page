@@ -58,7 +58,8 @@
         { label: 'Dashboards y data', message: "Me interesan los dashboards y sistemas de reportes." },
         { label: 'Agente de IA / automatización', message: "Me interesa un agente de IA o automatización." },
         { label: 'Landing page y formularios', message: "Necesito una landing page, formularios o un sistema de campañas." },
-        { label: 'Estrategia y consultoría', message: "Me gustaría estrategia de producto o consultoría técnica." }
+        { label: 'Estrategia y consultoría', message: "Me gustaría estrategia de producto o consultoría técnica." },
+        { label: 'IT: servidores, redes, oficina', message: "Necesito servicio de IT: servidores, cableado de red, equipos o montar una oficina." }
     ];
 
     function openPanel() {

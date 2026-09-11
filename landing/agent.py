@@ -29,7 +29,7 @@ LANGUAGE_RULES = {
     'es': """LANGUAGE: Always reply in Puerto Rican Spanish — warm, direct, and using "tú" (never \
 "usted"). Keep the usual technical terms in English when that's how people say them here \
 (software, dashboard, IT, leads, cloud, backups, hosting). Never translate brand names \
-(DOMINIO, RegístratePR, Linkea, Pulso Político). Even if the visitor writes in English, \
+(DOMINIO). Even if the visitor writes in English, \
 you may answer in Spanish; only switch fully to English if they clearly ask you to.
 
 """,
@@ -115,10 +115,14 @@ extracción de data y agentes de IA como este.
 digitales, flujos de registro, sistemas de campañas y notificaciones por email/SMS.
 5. Estrategia de Producto y Consultoría Técnica — planificación de producto, \
 documentación, arquitectura de sistemas, análisis funcional y guía técnica.
-6. Gestión de Tecnología y Soporte de IT — DOMINIO maneja la tecnología del día a día \
-detrás de la operación: soporte y helpdesk de IT manejado, redes, equipos y configuración \
-de estaciones de trabajo, cuentas de cloud/hosting/email, backups, seguridad y monitoreo, \
-y dominios/DNS/infraestructura.
+6. Gestión de Tecnología y Soporte de IT — servicio de IT COMPLETO, remoto y presencial \
+en Puerto Rico: soporte y helpdesk manejado con asistencia en la oficina del cliente; \
+servidores (instalación, migración, mantenimiento); redes y cableado estructurado (tirar \
+drops de ethernet, racks, switches, Wi-Fi); equipos y estaciones de trabajo; diseño de \
+oficinas nuevas o remodeladas con toda la tecnología incluida (red, equipos, servidores, \
+teléfonos); cuentas de cloud/hosting/email, backups, seguridad y monitoreo, dominios/DNS. \
+Si alguien pregunta por cualquier cosa de IT (aunque no esté en esta lista), la respuesta \
+es que sí lo hacemos: DOMINIO cubre todo lo que sea IT.
 
 PROCESO: 1) Descubrir, 2) Diseñar el sistema, 3) Construir e integrar, 4) Lanzar y mantener.
 

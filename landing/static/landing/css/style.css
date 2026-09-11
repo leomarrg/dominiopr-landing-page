@@ -509,13 +509,11 @@ p {
    view (JS adds .pips-in), pip by pip, slow enough to watch. Pips render
    normally without JS / outside a reveal section. transform/opacity only.
    ========================================================================== */
-.reveal-section .problem-card .dn-pip,
-.reveal-section .product-card .dn-pip {
+.reveal-section .problem-card .dn-pip {
     opacity: 0;
     transform: scale(0.35);
 }
-.problem-card.pips-in .dn-pip,
-.product-card.pips-in .dn-pip {
+.problem-card.pips-in .dn-pip {
     animation: pipPop 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
     /* short base + generous per-pip stagger so the build is clearly visible */
     animation-delay: calc(180ms + (var(--pip-i, 0) * 240ms));
@@ -928,16 +926,6 @@ section > .container > .section-tag {
     grid-column: 2;
 }
 
-.bento-item--product {
-    grid-column: 1 / -1;
-    flex-direction: row;
-    align-items: center;
-    gap: 24px;
-    text-decoration: none;
-    color: var(--white);
-    cursor: pointer;
-}
-
 .bento-icon {
     font-size: 2rem;
     color: var(--accent);
@@ -971,97 +959,6 @@ section > .container > .section-tag {
 
 .bento-item--main p {
     font-size: 1rem;
-}
-
-.bento-item--product .bento-icon {
-    margin-bottom: 0;
-    font-size: 1.8rem;
-    flex-shrink: 0;
-}
-
-.bento-product-content {
-    flex: 1;
-}
-
-.bento-product-content h3 {
-    margin-bottom: 4px;
-}
-
-.bento-product-title {
-    font-family: 'Montserrat', sans-serif;
-    font-weight: 700;
-    font-size: clamp(1.5rem, 4vw, 2.5rem);
-    color: var(--white);
-    letter-spacing: -0.02em;
-    white-space: nowrap;
-    flex-shrink: 0;
-}
-
-/* ===== BENTO PRODUCT 3D ROTATOR ===== */
-.bento-product-rotator {
-    position: relative;
-    display: inline-block;
-    flex-shrink: 0;
-    font-family: 'Montserrat', sans-serif;
-    font-weight: 700;
-    font-size: clamp(1.5rem, 4vw, 2.5rem);
-    color: var(--white);
-    letter-spacing: -0.02em;
-    line-height: 1;
-    perspective: 1200px;
-}
-
-.bento-product-sizer {
-    display: inline-block;
-    visibility: hidden;
-    white-space: nowrap;
-}
-
-.bento-product-stage {
-    position: absolute;
-    inset: 0;
-    transform-style: preserve-3d;
-    animation:
-        bentoProductSpin 9s infinite cubic-bezier(0.45, 0.05, 0.55, 0.95),
-        bentoProductGlow 9s infinite ease-in-out;
-}
-
-.bento-product-face {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    white-space: nowrap;
-    backface-visibility: hidden;
-}
-
-.bento-product-face:nth-child(1) { transform: translateZ(0.29em); }
-.bento-product-face:nth-child(2) { transform: rotateX(120deg) translateZ(0.29em); }
-.bento-product-face:nth-child(3) { transform: rotateX(240deg) translateZ(0.29em); }
-
-@keyframes bentoProductSpin {
-    0%, 25%   { transform: rotateX(0deg); }
-    33%, 58%  { transform: rotateX(-120deg); }
-    66%, 91%  { transform: rotateX(-240deg); }
-    100%      { transform: rotateX(-360deg); }
-}
-
-@keyframes bentoProductGlow {
-    0%        { text-shadow: 0 0 0 rgba(59, 192, 199, 0); }
-    8%        { text-shadow: 0 0 26px rgba(59, 192, 199, 1), 0 0 52px rgba(59, 192, 199, 0.6); }
-    25%       { text-shadow: 0 0 0 rgba(59, 192, 199, 0); }
-    33%       { text-shadow: 0 0 0 rgba(59, 192, 199, 0); }
-    41%       { text-shadow: 0 0 26px rgba(59, 192, 199, 1), 0 0 52px rgba(59, 192, 199, 0.6); }
-    58%       { text-shadow: 0 0 0 rgba(59, 192, 199, 0); }
-    66%       { text-shadow: 0 0 0 rgba(59, 192, 199, 0); }
-    74%       { text-shadow: 0 0 26px rgba(59, 192, 199, 1), 0 0 52px rgba(59, 192, 199, 0.6); }
-    91%       { text-shadow: 0 0 0 rgba(59, 192, 199, 0); }
-    100%      { text-shadow: 0 0 0 rgba(59, 192, 199, 0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .bento-product-stage { animation: none; }
 }
 
 /* ===== BENTO FLIP CARDS ===== */
@@ -1609,16 +1506,6 @@ section > .container > .section-tag {
         grid-column: auto;
     }
 
-    .bento-item--product {
-        grid-column: auto;
-        flex-direction: column;
-        text-align: center;
-    }
-
-    .bento-item--product .bento-icon {
-        margin-bottom: 12px;
-    }
-
     /* Normalize all bento icons to same size on mobile */
     .bento-icon {
         font-size: 1.5rem !important;
@@ -1853,7 +1740,6 @@ section > .container > .section-tag {
    into place rather than fall. Shorter than text so they follow the heading. */
 .reveal-section .problem-card.reveal-item,
 .reveal-section .process-step.reveal-item,
-.reveal-section .product-card.reveal-item,
 .reveal-section .ai-use-card.reveal-item {
     transform: translateY(20px) scale(0.985);
     transition:
@@ -1862,7 +1748,6 @@ section > .container > .section-tag {
 }
 .reveal-section .problem-card.reveal-item.is-visible,
 .reveal-section .process-step.reveal-item.is-visible,
-.reveal-section .product-card.reveal-item.is-visible,
 .reveal-section .ai-use-card.reveal-item.is-visible {
     transform: translateY(0) scale(1);
 }
@@ -1897,7 +1782,6 @@ section > .container > .section-tag {
     }
     .reveal-section .problem-card.reveal-item,
     .reveal-section .process-step.reveal-item,
-    .reveal-section .product-card.reveal-item,
     .reveal-section .ai-use-card.reveal-item {
         transform: translateY(16px) scale(0.99);
     }
@@ -1905,8 +1789,7 @@ section > .container > .section-tag {
         transform: translateY(0) scale(1);
     }
     /* Slightly tighter pip build on mobile (each card still fires on its own). */
-    .problem-card.pips-in .dn-pip,
-    .product-card.pips-in .dn-pip {
+    .problem-card.pips-in .dn-pip {
         animation-duration: 560ms;
         animation-delay: calc(120ms + (var(--pip-i, 0) * 190ms));
     }
@@ -1921,7 +1804,6 @@ section > .container > .section-tag {
     }
     /* Pips fully assembled, no pop/glow. */
     .reveal-section .problem-card .dn-pip,
-    .reveal-section .product-card .dn-pip,
     .reveal-section .process-step .p-pip {
         opacity: 1 !important;
         transform: none !important;
@@ -1929,7 +1811,7 @@ section > .container > .section-tag {
     }
 }
 
-/* Section intro paragraph (used in problems, services, process, products) */
+/* Section intro paragraph (used in problems, services, process) */
 .section-intro {
     text-align: center;
     color: rgba(255, 255, 255, 0.7);
@@ -2218,87 +2100,6 @@ section > .container > .section-tag {
 }
 
 /* ==========================================================================
-   PDF UPDATE — Products Section (Showcase)
-   ========================================================================== */
-.products-section {
-    background: var(--primary);
-    padding: 100px 0;
-}
-
-.products-rotator-wrap {
-    display: flex;
-    justify-content: center;
-    margin: 0 auto 56px;
-}
-
-.products-section .bento-product-rotator {
-    font-size: clamp(2rem, 5vw, 3.2rem);
-}
-
-.product-showcase {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 20px;
-}
-
-.product-card {
-    position: relative;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: var(--radius);
-    padding: 36px 32px 32px;
-    transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1),
-                border-color 0.4s ease,
-                background 0.4s ease,
-                box-shadow 0.4s ease;
-    overflow: hidden;
-}
-
-.product-card:hover {
-    transform: translateY(-4px);
-    border-color: rgba(59, 192, 199, 0.45);
-    background: rgba(59, 192, 199, 0.04);
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
-}
-
-.product-card__badge {
-    display: inline-block;
-    font-size: 0.75rem;
-    font-weight: 700;
-    color: var(--accent);
-    letter-spacing: 2px;
-    margin-bottom: 14px;
-    opacity: 0.85;
-}
-
-.product-card h3 {
-    font-size: 1.4rem;
-    color: var(--white);
-    margin-bottom: 10px;
-    letter-spacing: -0.01em;
-}
-
-.product-card p {
-    color: rgba(255, 255, 255, 0.72);
-    font-size: 0.95rem;
-    line-height: 1.6;
-}
-
-.product-card__line {
-    position: absolute;
-    left: 0;
-    bottom: 0;
-    height: 2px;
-    width: 0;
-    background: var(--accent);
-    transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.product-card:hover .product-card__line {
-    width: 100%;
-}
-
-/* ==========================================================================
    PDF UPDATE — About Section (3 principles + split layout)
    ========================================================================== */
 .nosotros .nosotros-layout {
@@ -2407,8 +2208,7 @@ a:focus-visible,
 button:focus-visible,
 .bento-item--flippable:focus-visible,
 .visual-card:focus-visible,
-.problem-card:focus-visible,
-.product-card:focus-visible {
+.problem-card:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 4px;
 }
@@ -2480,10 +2280,6 @@ select:focus-visible {
         margin: 0;
     }
 
-    .product-showcase {
-        grid-template-columns: 1fr;
-    }
-
     .contact-layout {
         grid-template-columns: 1fr;
         gap: 36px;
@@ -2517,22 +2313,12 @@ select:focus-visible {
     }
 
     .problem-section,
-    .process-section,
-    .products-section {
+    .process-section {
         padding: 72px 0;
     }
 
-    .problem-card,
-    .product-card {
+    .problem-card {
         padding: 28px 22px;
-    }
-
-    .product-showcase {
-        gap: 14px;
-    }
-
-    .product-card h3 {
-        font-size: 1.2rem;
     }
 
     /* Reduce hero domino noise on mobile */

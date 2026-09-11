@@ -551,7 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // not when the tall parent section first peeks in — so cards below the fold
     // don't build off-screen.
     (function initPipReveals() {
-        const cards = document.querySelectorAll('.problem-card, .product-card');
+        const cards = document.querySelectorAll('.problem-card');
         if (!cards.length) return;
 
         if (REDUCE_MOTION) {
