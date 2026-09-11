@@ -651,8 +651,13 @@ class SelfServeProvisioningTests(TestCase):
         self.assertEqual(client.daily_message_cap, 500)
         self.assertEqual(client.website_url, 'https://www.acme.com')
         self.assertEqual(client.allowed_origins, 'acme.com, www.acme.com')
-        self.assertIn('ferretería', client.system_prompt)
+        # The prompt is public (the agent repeats it to visitors): the owner's
+        # phone and checkout notes must land in install_notes, not there.
+        self.assertNotIn('ferretería', client.system_prompt)
+        self.assertNotIn('7871234567', client.system_prompt)
         self.assertIn('Configuración inicial', client.system_prompt)
+        self.assertIn('ferretería', client.install_notes)
+        self.assertIn('+17871234567', client.install_notes)
         self.assertEqual(client.greeting, 'Hola, soy Acme.')
         sub = client.subscription
         self.assertEqual(
@@ -2287,3 +2292,70 @@ class SecurityHeaderTests(TestCase):
         self.assertEqual(resp.headers.get('X-Frame-Options'), 'DENY')
         self.assertEqual(resp.headers.get('X-Content-Type-Options'), 'nosniff')
         self.assertEqual(resp.headers.get('Referrer-Policy'), 'same-origin')
+
+
+# token_hex output: escapejs leaves it verbatim in the served JS.
+HEX_TOKEN = '0123456789abcdef' * 3
+
+
+class ChatAbuseContainmentTests(TestCase):
+    """Pentest 2026-09-11: the widget token is public and Origin is forgeable,
+    so a scripted bot can reach the tool handlers of any tenant. These pin the
+    containment: per-tenant daily caps, no token for a foreign page, and no
+    formula injection in the CSV the tenant opens in Excel."""
+
+    def setUp(self):
+        cache.clear()
+        self.c = Client.objects.create(
+            slug='acme', widget_token=HEX_TOKEN, name='Acme', system_prompt='x',
+            notify_email='o@acme.com', allowed_origins='acme.com, www.acme.com', is_active=True)
+        self.rf = RequestFactory()
+
+    @override_settings(DOMINIO_TENANT_ACTION_DAILY_CAP=2)
+    def test_tenant_daily_lead_cap_stops_persisting(self):
+        handle = _chat_lead_handler(self.rf.post('/api/chat/'), self.c)
+        for i in range(2):
+            handle({'name': f'Bot {i}', 'email': f'b{i}@x.com', 'service': 'ai-automation'})
+        self.assertEqual(ContactSubmission.objects.filter(client=self.c).count(), 2)
+        before = len(mail.outbox)
+        reply = handle({'name': 'Bot 3', 'email': 'b3@x.com', 'service': 'ai-automation'})
+        self.assertIn('Anotado', reply)
+        self.assertEqual(ContactSubmission.objects.filter(client=self.c).count(), 2)
+        self.assertEqual(len(mail.outbox), before)  # no notification, no relay
+
+    @override_settings(DOMINIO_TENANT_ACTION_DAILY_CAP=2)
+    def test_tenant_cap_is_per_tenant(self):
+        other = Client.objects.create(slug='otro', widget_token='t' * 48, name='Otro',
+                                      system_prompt='x', notify_email='o@otro.com', is_active=True)
+        handle = _chat_lead_handler(self.rf.post('/api/chat/'), self.c)
+        for i in range(3):
+            handle({'name': f'Bot {i}', 'email': f'b{i}@x.com', 'service': 'ai-automation'})
+        other_handle = _chat_lead_handler(self.rf.post('/api/chat/'), other)
+        other_handle({'name': 'Real', 'email': 'r@x.com', 'service': 'ai-automation'})
+        self.assertEqual(ContactSubmission.objects.filter(client=other).count(), 1)
+
+    def test_widget_js_withholds_token_from_a_foreign_page(self):
+        resp = self.client.get(reverse('widget_js'), {'key': 'acme'},
+                               HTTP_REFERER='https://evil.example/copy-of-snippet')
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn(HEX_TOKEN, resp.content.decode())
+
+    def test_widget_js_serves_token_to_own_site_and_without_referer(self):
+        own = self.client.get(reverse('widget_js'), {'key': 'acme'},
+                              HTTP_REFERER='https://www.acme.com/contacto')
+        self.assertIn(HEX_TOKEN, own.content.decode())
+        none = self.client.get(reverse('widget_js'), {'key': 'acme'})
+        self.assertIn(HEX_TOKEN, none.content.decode())
+
+    def test_csv_export_neutralises_formulas(self):
+        User = get_user_model()
+        staff = User.objects.create_user('staff', 's@dominiopr.com', 'pw', is_staff=True)
+        self.client.force_login(staff)
+        ContactSubmission.objects.create(
+            client=self.c, name='=HYPERLINK("http://evil")', email='e@x.com',
+            company='+cmd|calc', service='ai-automation', message='@SUM(A1)', source='chat')
+        body = self.client.get(reverse('export_leads')).content.decode('utf-8-sig')
+        self.assertIn("'=HYPERLINK", body)
+        self.assertIn("'+cmd|calc", body)
+        self.assertIn("'@SUM(A1)", body)
+        self.assertNotIn('\n=HYPERLINK', body)

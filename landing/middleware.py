@@ -91,6 +91,12 @@ class ContentSecurityPolicyMiddleware:
         "object-src 'none'"
     )
 
+    # The admin previews social media by URL (M-20), and that media lives on a
+    # CDN/bucket, not on 'self'. Widening img-src ONLY here keeps the public
+    # site's policy untouched: /admin/ is staff-only and behind login, and an
+    # image source cannot execute anything.
+    ADMIN_POLICY = POLICY.replace("img-src 'self' data:", "img-src 'self' data: https:")
+
     def __init__(self, get_response):
         self.get_response = get_response
 
@@ -101,5 +107,6 @@ class ContentSecurityPolicyMiddleware:
         # while risking confusion when debugging their page.
         if request.path == '/widget.js':
             return response
-        response.setdefault('Content-Security-Policy', self.POLICY)
+        policy = self.ADMIN_POLICY if request.path.startswith('/admin/') else self.POLICY
+        response.setdefault('Content-Security-Policy', policy)
         return response

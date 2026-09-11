@@ -319,6 +319,15 @@ def reports(request):
 # M-07 — CSV export (audited, scoped, Excel-friendly)
 # ============================================================
 
+def _csv_safe(value):
+    """Neutralise spreadsheet formula injection. A visitor who names himself
+    `=HYPERLINK("http://evil")` would otherwise become a live formula the
+    moment the tenant opens leads.csv in Excel. The leading apostrophe makes
+    Excel/LibreOffice treat the cell as text."""
+    text = '' if value is None else str(value)
+    return "'" + text if text[:1] in ('=', '+', '-', '@', '\t', '\r', '\n') else text
+
+
 @login_required
 def export_leads_csv(request):
     qs = leads_for(request.user)
@@ -341,11 +350,11 @@ def export_leads_csv(request):
     writer.writerow(['Nombre', 'Email', 'Teléfono', 'Compañía', 'Servicio',
                      'Fuente', 'Estado', 'Página', 'Mensaje', 'Fecha'])
     for lead in qs[:5000]:
-        writer.writerow([
+        writer.writerow([_csv_safe(v) for v in (
             lead.name, lead.email, lead.phone, lead.company,
             lead.get_service_display(), lead.get_source_display(),
             lead.get_status_display(), lead.page_url,
-            lead.message[:1000], lead.created_at.strftime('%Y-%m-%d %H:%M')])
+            lead.message[:1000], lead.created_at.strftime('%Y-%m-%d %H:%M'))])
     _audit(request, 'leads.export', target=f'{qs.count()} filas',
            result=f'filtros source={source} status={status} q={q[:40]}')
     return resp

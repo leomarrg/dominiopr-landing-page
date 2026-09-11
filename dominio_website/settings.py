@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'django.contrib.sitemaps',
     'landing',
+    'social',
 ]
 
 # django-browser-reload only in DEBUG (dev convenience)
@@ -370,6 +371,10 @@ DOMINIO_AGENT_DAILY_CAP = int(os.environ.get('DOMINIO_AGENT_DAILY_CAP', '2000'))
 # client's agent offline for the rest of the day, on DOMINIO's token bill.
 DOMINIO_DEMO_DAILY_CAP = int(os.environ.get('DOMINIO_DEMO_DAILY_CAP', '150'))
 DOMINIO_DEMO_IP_DAILY_CAP = int(os.environ.get('DOMINIO_DEMO_IP_DAILY_CAP', '20'))
+# Per-tenant, per-day ceiling on leads, bookings and human escalations a chat
+# can create. The widget token is public by construction, so this is what
+# stops a scripted bot from filling one client's CRM and phone with junk.
+DOMINIO_TENANT_ACTION_DAILY_CAP = int(os.environ.get('DOMINIO_TENANT_ACTION_DAILY_CAP', '40'))
 # Haiku is the right tier for a fast, low-cost FAQ/sales chat. We read the
 # project's ANTHROPIC_MODEL_FAST convention, with DOMINIO_AGENT_MODEL as an
 # explicit override and a safe default.
@@ -422,3 +427,27 @@ TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
 TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')
 TWILIO_FROM_SMS = os.environ.get('TWILIO_FROM_SMS', '')
 TWILIO_FROM_WHATSAPP = os.environ.get('TWILIO_FROM_WHATSAPP', '')  # e.g. whatsapp:+1787...
+
+
+# ============================================================
+# SOCIAL PUBLISHING (M-20) — Instagram/Facebook via the Meta Graph API and
+# TikTok photo posts via the Content Posting API. No SDKs: plain HTTPS, same
+# pattern as Stripe. A platform with no credentials is refused loudly by
+# `publish_due` instead of half-publishing.
+# ============================================================
+
+SOCIAL_GRAPH_VERSION = os.environ.get('SOCIAL_GRAPH_VERSION', 'v21.0')
+# One long-lived Page access token covers both Facebook and the Instagram
+# Business account linked to that Page.
+SOCIAL_META_ACCESS_TOKEN = os.environ.get('SOCIAL_META_ACCESS_TOKEN', '')
+SOCIAL_IG_USER_ID = os.environ.get('SOCIAL_IG_USER_ID', '')
+SOCIAL_FB_PAGE_ID = os.environ.get('SOCIAL_FB_PAGE_ID', '')
+SOCIAL_TIKTOK_ACCESS_TOKEN = os.environ.get('SOCIAL_TIKTOK_ACCESS_TOKEN', '')
+# An app that has not passed TikTok's content-posting audit may ONLY publish
+# with SELF_ONLY; anything else is rejected at init.
+SOCIAL_TIKTOK_PRIVACY_LEVEL = os.environ.get(
+    'SOCIAL_TIKTOK_PRIVACY_LEVEL', 'PUBLIC_TO_EVERYONE')
+# Attempts before a post is marked failed, and the ceiling on the exponential
+# backoff between them (8 attempts capped at 30 min ~= 1h of retrying).
+SOCIAL_MAX_ATTEMPTS = int(os.environ.get('SOCIAL_MAX_ATTEMPTS', '8'))
+SOCIAL_BACKOFF_CAP_SECONDS = int(os.environ.get('SOCIAL_BACKOFF_CAP_SECONDS', '1800'))

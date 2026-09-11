@@ -131,6 +131,33 @@ def _client_ip(request):
     return request.META.get('REMOTE_ADDR')
 
 
+
+def _tenant_action_cap_hit(kind, client_obj):
+    """Per-tenant, per-day ceiling on the side effects a chat can trigger
+    (leads, bookings, escalations to a human).
+
+    The widget token is public by construction (/widget.js hands it to any
+    page that knows the slug, and the slug is the company name) and the Origin
+    header is whatever a script says it is, so the per-IP caps alone let a
+    distributed bot fill one client's CRM, agenda and phone. This bounds that
+    to one day's worth per tenant. Returns True when today's cap is already
+    reached (the caller answers politely without persisting anything);
+    otherwise counts the action and returns False.
+    """
+    if client_obj is None:
+        return False
+    cap = int(getattr(settings, 'DOMINIO_TENANT_ACTION_DAILY_CAP', 40))
+    key = f'tenantcap:{kind}:{client_obj.slug}:{timezone.localdate():%Y%m%d}'
+    used = cache.get(key, 0)
+    if used >= cap:
+        if used == cap:  # one warning per tenant per day, not one per attempt
+            logger.warning('Tenant %s hit the daily %s cap (%s) — likely abuse',
+                           client_obj.slug, kind, cap)
+            cache.set(key, used + 1, 86400)
+        return True
+    cache.set(key, used + 1, 86400)
+    return False
+
 def _single_line(value, limit=None):
     """Collapse CR/LF/tabs so user text can never inject email headers or
     break a subject line. Optionally truncates."""
@@ -232,7 +259,7 @@ def _send_lead_emails(submission, notify_to=None):
     # 1) Internal notification to the business inbox.
     if notify_to:
         _send_html_email(
-            subject=f'New lead for {business}: {submission.name}',
+            subject=f'Nuevo lead para {business}: {submission.name}',
             to=[notify_to],
             html_template='landing/emails/lead_notification.html',
             txt_template='landing/emails/lead_notification.txt',
@@ -244,7 +271,7 @@ def _send_lead_emails(submission, notify_to=None):
     # email (phone-only leads can't be emailed; the team follows up by phone).
     if submission.email:
         _send_html_email(
-            subject=f'We received your request — {business}',
+            subject=f'Recibimos tu solicitud — {business}',
             to=[submission.email],
             html_template='landing/emails/lead_confirmation.html',
             txt_template='landing/emails/lead_confirmation.txt',
@@ -262,7 +289,7 @@ def _send_booking_emails(booking, notify_to=None, business='DOMINIO'):
 
     if notify_to:
         _send_html_email(
-            subject=f'New booking for {business}: {booking.name} — {local:%b %d, %I:%M %p}',
+            subject=f'Nueva cita para {business}: {booking.name} — {local:%d/%m %I:%M %p}',
             to=[notify_to],
             html_template='landing/emails/booking_notification.html',
             txt_template='landing/emails/booking_notification.txt',
@@ -270,7 +297,7 @@ def _send_booking_emails(booking, notify_to=None, business='DOMINIO'):
             reply_to=[booking.email],
         )
     _send_html_email(
-        subject=f'Your booking is received — {business}',
+        subject=f'Recibimos tu cita — {business}',
         to=[booking.email],
         html_template='landing/emails/booking_confirmation.html',
         txt_template='landing/emails/booking_confirmation.txt',
@@ -280,7 +307,9 @@ def _send_booking_emails(booking, notify_to=None, business='DOMINIO'):
 
 
 def _send_onboarding_email(client, embed_snippet, login=None):
-    """Email the client their install instructions when their agent goes live.
+    """Email the client the DIY install instructions (snippet + dashboard login).
+    Only for clients set up by hand who install the widget themselves; a
+    self-serve buyer gets `_send_welcome_email` (DOMINIO installs for them).
 
     `login` (optional) is {'username', 'password'|None, 'url'} so the client also
     gets their dashboard credentials — the 'Your own leads dashboard' they're
@@ -288,7 +317,7 @@ def _send_onboarding_email(client, embed_snippet, login=None):
     """
     reply_to = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
     return _send_html_email(
-        subject=f'Your AI agent is live — install instructions ({client.name})',
+        subject=f'Instala tu agente de IA — instrucciones ({client.name})',
         to=[client.notify_email],
         html_template='landing/emails/agent_onboarding.html',
         txt_template='landing/emails/agent_onboarding.txt',
@@ -484,6 +513,8 @@ def _chat_lead_handler(request, client_obj=None, page_url='', conversation=None)
         if cache.get(cap_key, 0) >= 5:
             logger.warning('Chat lead cap reached for IP %s', ip)
             return 'Anotado — el equipo ya tiene tu solicitud y te dará seguimiento por email.'
+        if _tenant_action_cap_hit('lead', client_obj):
+            return 'Anotado — el equipo ya tiene tu solicitud y te dará seguimiento por email.'
 
         service = data.get('service')
         if service not in valid_services:
@@ -548,6 +579,8 @@ def _human_handler(request, client_obj=None, conversation=None, page_url=''):
         ip = _client_ip(request) or 'unknown'
         cap_key = f'humancap:{ip}'
         if cache.get(cap_key, 0) >= 5:
+            return 'Anotado — el equipo ya fue notificado y te dará seguimiento.'
+        if _tenant_action_cap_hit('human', client_obj):
             return 'Anotado — el equipo ya fue notificado y te dará seguimiento.'
         cache.set(cap_key, cache.get(cap_key, 0) + 1, 3600)
 
@@ -620,6 +653,8 @@ def _booking_handler(request, client_obj=None):
         ip = _client_ip(request) or 'unknown'
         cap_key = f'bookcap:{ip}'
         if cache.get(cap_key, 0) >= 5:
+            return 'Anotado — el equipo te dará seguimiento para confirmar tu hora.'
+        if _tenant_action_cap_hit('booking', client_obj):
             return 'Anotado — el equipo te dará seguimiento para confirmar tu hora.'
 
         # Parse the requested time; the backend decides validity, not the model.
@@ -1309,16 +1344,20 @@ def _provision_paid_client(request, *, email, plan, period, meta, cust_id, sub_i
             username, setup_url = _provision_client_login(existing)
         client, created = existing, False
     else:
+        # Everything in system_prompt is effectively PUBLIC: the agent repeats
+        # it to any visitor who asks ("what's the owner's cell?"). The owner's
+        # contact and what they told us at checkout are for DOMINIO's install
+        # crew, so they go to install_notes (staff-only), never to the prompt.
         prompt_lines = [f'Negocio: {company}']
         if website:
             prompt_lines.append(f'Sitio web: {website}')
+        prompt_lines.append('')
+        notes_lines = []
         if contact_name or contact_phone:
-            prompt_lines.append(
+            notes_lines.append(
                 f'Contacto: {contact_name or "—"}' + (f' ({contact_phone})' if contact_phone else ''))
         if lead is not None and lead.message.strip():
-            prompt_lines.append('')
-            prompt_lines.append(f'Lo que el cliente nos contó al registrarse:\n{lead.message.strip()}')
-        prompt_lines.append('')
+            notes_lines.append(f'Lo que el cliente nos contó al registrarse:\n{lead.message.strip()}')
         prompt_lines.append('(Configuración inicial. DOMINIO completará el conocimiento del '
                             'negocio durante la instalación.)')
         limits = PLAN_LIMITS.get(plan, PLAN_LIMITS['starter'])
@@ -1333,6 +1372,7 @@ def _provision_paid_client(request, *, email, plan, period, meta, cust_id, sub_i
                             system_prompt='\n'.join(prompt_lines),
                             notify_email=email, allowed_origins=_origins_from_website(website),
                             website_url=website, notify_phone=contact_phone,
+                            install_notes='\n'.join(notes_lines),
                             daily_message_cap=limits['daily_message_cap'],
                             enable_bookings=limits['enable_bookings'],
                             is_active=True, onboarding_sent=True, setup_status='pending',
@@ -2386,12 +2426,19 @@ def widget_js(request):
         cache.set(seen_key, 1, 600)
         Client.objects.filter(pk=client_obj.pk).update(widget_last_seen_at=timezone.now())
     t = _widget_theme(client_obj)
+    # The token is minted on first serve so tenants created before it existed
+    # heal themselves. It is NOT a secret (the slug is the company name), it
+    # only raises the bar for the casual copy of a snippet onto another site:
+    # when the tenant has an allowlist and the browser tells us which page is
+    # loading the script, a page outside that list gets the widget without a
+    # token, so its chats are refused. No Referer (privacy policies, scripts)
+    # still gets the token — the daily per-tenant caps are the real bound.
+    referer_host = (urlparse(request.META.get('HTTP_REFERER', '')).hostname or '').lower()
+    token_ok = not (client_obj.allowed_origins and referer_host
+                    and referer_host not in set(client_obj.origin_list()))
     ctx = {
         'slug': client_obj.slug,
-        # Minted on first serve so tenants created before this existed heal
-        # themselves. Handing it out here is safe: reaching this line already
-        # required knowing the key, and the widget must present it to chat.
-        'widget_token': client_obj.ensure_widget_token(),
+        'widget_token': client_obj.ensure_widget_token() if token_ok else '',
         'name': client_obj.name,
         'greeting': client_obj.greeting or agent.DEFAULT_GREETING,
         'color': t['accent'],
@@ -2448,8 +2495,13 @@ def client_toggle_active(request, pk):
 @staff_required
 @require_POST
 def client_resend_onboarding(request, pk):
-    """Re-send the install email (snippet + a fresh dashboard login) for a client.
-    Use when the first email was lost or never sent."""
+    """Re-send the client's first email with a fresh dashboard activation link.
+    Use when the first email was lost or never sent.
+
+    Which email depends on the flow the client is in: a self-serve buyer still
+    `pending` was promised "we install it for you" in the welcome email, so
+    that is what gets re-sent — never the DIY install email, which would hand
+    them back the work they paid for and claim the agent is live."""
     client = get_object_or_404(Client, pk=pk)
     embed = (f'<script src="{request.build_absolute_uri("/widget.js")}'
              f'?key={client.slug}" async></script>')
@@ -2465,10 +2517,19 @@ def client_resend_onboarding(request, pk):
             }
     except Exception:
         logger.exception('Resend provision failed for %s', client.slug)
-    sent = _send_onboarding_email(client, embed, login=login)
+    if client.setup_status == 'pending':
+        sub = getattr(client, 'subscription', None)
+        sent = _send_welcome_email(
+            client, _plan_name(sub.plan if sub else ''), login,
+            request.build_absolute_uri(reverse('install')), embed,
+            setup_fee_charged=bool(sub and sub.setup_fee_charged))
+        label = 'de bienvenida'
+    else:
+        sent = _send_onboarding_email(client, embed, login=login)
+        label = 'de instalación'
     Client.objects.filter(pk=client.pk).update(onboarding_sent=True)
     if sent:
-        messages.success(request, f'Email de instalación reenviado a {client.notify_email}.')
+        messages.success(request, f'Email {label} reenviado a {client.notify_email}.')
     else:
         messages.error(
             request,

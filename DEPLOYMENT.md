@@ -97,6 +97,10 @@ pip install -r requirements.txt
 # Crear el .env de producción
 cp .env.example .env
 nano .env   # edita: pon un SECRET_KEY nuevo, DJANGO_DEBUG=False
+# Para que el chatbot 'Ask DOMINIO' y su mini CRM funcionen hace falta ademas:
+#   ANTHROPIC_API_KEY            (sin ella el widget se oculta, el resto del sitio sigue)
+#   DJANGO_EMAIL_HOST/USER/PASSWORD + DJANGO_CONTACT_NOTIFY_EMAIL  (leads y citas por correo)
+# Todo lo demas (Stripe, Twilio, SOCIAL_*) es opcional y degrada sin romper.
 # Genera SECRET_KEY así (en otra ventana o después):
 # python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
 
@@ -304,7 +308,8 @@ El DNS wildcard `*.dominiopr.com` ya cubre cualquier subdominio nuevo — no toc
 
 **Antes de cada deploy** (bloquea si falla — M-09):
 ```bash
-python manage.py test landing
+python manage.py test landing social
+python manage.py preflight   # Stripe, SMTP, IA y Django reales (--stripe|--email|--ai|--django para uno solo)
 ```
 
 **Cron del sistema** (usuario de la app):
@@ -313,11 +318,21 @@ python manage.py test landing
 0 * * * * cd /ruta/app && venv/bin/python manage.py send_booking_reminders
 # M-10: retención de conversaciones por tenant, diario
 30 3 * * * cd /ruta/app && venv/bin/python manage.py purge_expired
-# M-10: backup de PostgreSQL con copia fuera del servidor
+# M-10: backup de SQLite (API .backup, integridad verificada); la copia fuera del servidor sigue comentada en backup_db.sh
 15 4 * * * /var/www/dominio/deploy/backup_db.sh >> /home/ubuntu/dominio-cron.log 2>&1
+# M-20: publicar en redes los posts aprobados que ya vencieron, cada 5 min
+*/5 * * * * cd /ruta/app && venv/bin/python manage.py publish_due
 # M-01: reconciliación de suscripciones contra Stripe, diario
 45 4 * * * cd /ruta/app && venv/bin/python manage.py reconcile_stripe
 ```
+
+**Redes sociales (M-20):** app `social/` (Instagram/Facebook via Graph API, TikTok via
+Content Posting API; sin dependencias nuevas). Al desplegarla por primera vez:
+`migrate` (crea `social_post`), instalar el cron `publish_due` de arriba y poner en `.env`
+`SOCIAL_META_ACCESS_TOKEN` (token de pagina de larga duracion), `SOCIAL_IG_USER_ID`,
+`SOCIAL_FB_PAGE_ID` y `SOCIAL_TIKTOK_ACCESS_TOKEN`. Sin credenciales el comando no publica
+y lo dice en el log; nunca publica a medias. El CSP de `/admin/` permite `img-src https:`
+para previsualizar el media de los posts (solo staff, detras de login).
 
 **Stripe (M-01):** configura las claves y precios en `.env` (ver `.env.example`) y
 apunta el webhook del dashboard de Stripe a `https://dominiopr.com/api/stripe/webhook/`
