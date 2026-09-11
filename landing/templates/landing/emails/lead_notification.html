@@ -3,7 +3,7 @@
 {% block content %}
 <h1 style="margin:0 0 6px; color:#ffffff; font-size:21px; font-weight:700;">Nueva consulta de proyecto</h1>
 <p style="margin:0 0 28px; color:#3bc0c7; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:1.5px;">
-  Recibida {{ submission.created_at|date:"M j, Y \a\t g:i A" }}
+  Recibida {{ submission.created_at|date:"d/m/Y, g:i A" }}
 </p>
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -70,7 +70,7 @@
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:30px;">
   <tr>
     <td style="border-radius:8px; background:#3bc0c7;">
-      <a href="mailto:{{ submission.email }}?subject=Re: your inquiry to {{ business|default:'DOMINIO' }}"
+      <a href="mailto:{{ submission.email }}?subject=Re: tu consulta a {{ business|default:'DOMINIO' }}"
          style="display:inline-block; padding:13px 30px; font-family:'Helvetica Neue',Arial,sans-serif; color:#0b0d12; font-size:14px; font-weight:700; text-decoration:none;">
         Responder a {{ submission.name }}
       </a>

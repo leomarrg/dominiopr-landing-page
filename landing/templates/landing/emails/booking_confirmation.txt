@@ -1,10 +1,10 @@
-Thank you, {{ booking.name }}.
+Gracias, {{ booking.name }}.
 
-Your booking request is received:
-When: {{ local_start|date:"l, M j, Y \a\t g:i A" }}
-{% if booking.service %}For:  {{ booking.service }}
+Recibimos tu solicitud de cita:
+Cuándo: {{ local_start|date:"d/m/Y, g:i A" }}
+{% if booking.service %}Para:   {{ booking.service }}
 {% endif %}
-We'll confirm shortly. If you need to change the time, just reply to this email.
+Te confirmamos en breve. Si necesitas cambiar la hora, solo responde a este correo.
 
-— The {{ business|default:"DOMINIO" }} team
-{% if business and business != "DOMINIO" %}Powered by DOMINIO · dominiopr.com{% else %}dominiopr.com{% endif %}
+— El equipo de {{ business|default:"DOMINIO" }}
+{% if business and business != "DOMINIO" %}Desarrollado por DOMINIO · dominiopr.com{% else %}dominiopr.com{% endif %}

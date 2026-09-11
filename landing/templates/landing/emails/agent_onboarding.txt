@@ -1,21 +1,21 @@
-Your AI agent is live, {{ client.name }}.
+Tu agente de IA está listo, {{ client.name }}.
 
-Install it on your website by pasting this one line just before </body>:
+Instálalo en tu página web pegando esta línea justo antes de </body>:
 
 {% autoescape off %}{{ embed }}{% endautoescape %}
 
-That's it — your agent will appear on your site, answer visitors 24/7, and email you every lead.
+Eso es todo — tu agente aparece en tu página, atiende a los visitantes 24/7 y te envía cada lead por correo.
 
-Works on WordPress, Wix, Squarespace, Shopify, or plain HTML. Paste it in your site's "custom code" / header-footer area.
+Funciona en WordPress, Wix, Squarespace, Shopify o HTML simple. Pégala en el área de "código personalizado" / header-footer de tu página.
 {% if login %}
-YOUR LEADS DASHBOARD
-See every lead, update its status, and reply by email — all in one place:
+TU DASHBOARD DE LEADS
+Ve cada lead, actualiza su estado y responde por correo — todo en un solo lugar:
 {{ login.url }}
-Email: {{ login.username }}{% if login.setup_url %}
+Correo: {{ login.username }}{% if login.setup_url %}
 Crea tu contraseña aquí (vale 7 días, una sola vez):
 {% autoescape off %}{{ login.setup_url }}{% endautoescape %}{% endif %}
 {% endif %}
-Need a hand installing it? Just reply to this email.
+¿Necesitas ayuda para instalarlo? Solo responde a este correo.
 
 — DOMINIO
 dominiopr.com

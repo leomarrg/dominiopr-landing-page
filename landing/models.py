@@ -151,19 +151,19 @@ class ContactSubmission(models.Model):
     """A lead captured from the landing page contact form."""
 
     SERVICE_CHOICES = [
-        ('operational-platform', 'Custom Operational Platforms'),
-        ('data-dashboards', 'Data, Dashboards & Reporting Systems'),
-        ('ai-automation', 'AI, Automation & Workflow Optimization'),
-        ('landing-campaigns', 'Landing Pages, Forms & Campaign Systems'),
-        ('consulting', 'Product Strategy & Technical Consulting'),
-        ('it-services', 'Technology Management & IT Support'),
+        ('operational-platform', 'Plataformas Operacionales a la Medida'),
+        ('data-dashboards', 'Data, Dashboards y Sistemas de Reportes'),
+        ('ai-automation', 'IA, Automatización y Optimización de Flujos'),
+        ('landing-campaigns', 'Landing Pages, Formularios y Sistemas de Campaña'),
+        ('consulting', 'Estrategia de Producto y Consultoría Técnica'),
+        ('it-services', 'Gestión de Tecnología y Soporte de IT'),
     ]
     BUDGET_CHOICES = [
-        ('under-1000', 'Under $1,000'),
+        ('under-1000', 'Menos de $1,000'),
         ('1000-3000', '$1,000 - $3,000'),
         ('3000-7500', '$3,000 - $7,500'),
         ('7500-plus', '$7,500+'),
-        ('not-sure', 'Not sure yet'),
+        ('not-sure', 'Todavía no estoy seguro'),
     ]
     SOURCE_CHOICES = [
         ('contact_form', 'Contact form'),

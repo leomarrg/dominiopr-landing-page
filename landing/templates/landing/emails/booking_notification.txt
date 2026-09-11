@@ -1,13 +1,13 @@
-NEW BOOKING — {{ business|default:"DOMINIO" }}
-Received {{ booking.created_at|date:"M j, Y \a\t g:i A" }}
+NUEVA CITA — {{ business|default:"DOMINIO" }}
+Recibida el {{ booking.created_at|date:"d/m/Y, g:i A" }}
 
-Name:   {{ booking.name }}
-Email:  {{ booking.email }}
-When:   {{ local_start|date:"l, M j, Y \a\t g:i A" }}
-{% if booking.service %}For:    {{ booking.service }}
-{% endif %}{% if booking.notes %}Notes:  {{ booking.notes }}
-{% endif %}Status: {{ booking.get_status_display }}
+Nombre:  {{ booking.name }}
+Correo:  {{ booking.email }}
+Cuándo:  {{ local_start|date:"d/m/Y, g:i A" }}
+{% if booking.service %}Para:    {{ booking.service }}
+{% endif %}{% if booking.notes %}Notas:   {{ booking.notes }}
+{% endif %}Estado:  {{ booking.get_status_display }}
 
 --
-Reply to confirm with {{ booking.name }}.
-{% if business and business != "DOMINIO" %}{{ business }} · Powered by DOMINIO{% else %}DOMINIO · dominiopr.com{% endif %}
+Responde directamente a este correo para confirmar con {{ booking.name }}.
+{% if business and business != "DOMINIO" %}{{ business }} · Desarrollado por DOMINIO{% else %}DOMINIO · dominiopr.com{% endif %}

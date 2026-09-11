@@ -37,7 +37,7 @@ class ContactFormTests(TestCase):
         self.assertTrue(any(mime == 'text/html' for _, mime in notify.alternatives))
 
         confirm = by_recipient['ana@example.com']
-        self.assertIn('Thank you', confirm.body)
+        self.assertIn('Gracias', confirm.body)
         self.assertTrue(any(mime == 'text/html' for _, mime in confirm.alternatives))
 
     def test_honeypot_blocks_spam(self):

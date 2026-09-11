@@ -1,20 +1,20 @@
-{% autoescape off %}NEW LEAD — {{ business|default:"DOMINIO" }}
-Received {{ submission.created_at|date:"M j, Y \a\t g:i A" }}
+{% autoescape off %}NUEVO LEAD — {{ business|default:"DOMINIO" }}
+Recibido el {{ submission.created_at|date:"d/m/Y, g:i A" }}
 
-Name:    {{ submission.name }}
-Email:   {{ submission.email|default:"-" }}
-Phone:   {{ submission.phone|default:"-" }}
-Company: {{ submission.company|default:"-" }}
-Service: {{ submission.get_service_display }}
-Budget:  {{ submission.get_budget_display|default:"-" }}
-Page:    {{ submission.page_url|default:"-" }}
+Nombre:      {{ submission.name }}
+Correo:      {{ submission.email|default:"-" }}
+Teléfono:    {{ submission.phone|default:"-" }}
+Empresa:     {{ submission.company|default:"-" }}
+Servicio:    {{ submission.get_service_display }}
+Presupuesto: {{ submission.get_budget_display|default:"-" }}
+Página:      {{ submission.page_url|default:"-" }}
 
-Message:
+Mensaje:
 {{ submission.message }}
 
-Manage this lead (status, reply, history) in your dashboard:
+Maneja este lead (estado, respuesta, historial) en tu dashboard:
 {{ dashboard_url }}
 
 --
-Reply directly to this email to respond to {{ submission.name }}.
-{% if business and business != "DOMINIO" %}{{ business }} · Powered by DOMINIO{% else %}DOMINIO · dominiopr.com{% endif %}{% endautoescape %}
+Responde directamente a este correo para contestarle a {{ submission.name }}.
+{% if business and business != "DOMINIO" %}{{ business }} · Desarrollado por DOMINIO{% else %}DOMINIO · dominiopr.com{% endif %}{% endautoescape %}

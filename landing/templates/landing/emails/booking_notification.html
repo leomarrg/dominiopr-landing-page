@@ -4,7 +4,7 @@
 <h1 style="margin:0 0 18px; color:#ffffff; font-size:22px; font-weight:700;">{{ booking.name }}</h1>
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:15px; color:rgba(255,255,255,0.82);">
-  <tr><td style="padding:4px 0; width:90px; color:rgba(255,255,255,0.45);">Cuándo</td><td style="padding:4px 0; color:#ffffff;">{{ local_start|date:"l, M j, Y \a\t g:i A" }}</td></tr>
+  <tr><td style="padding:4px 0; width:90px; color:rgba(255,255,255,0.45);">Cuándo</td><td style="padding:4px 0; color:#ffffff;">{{ local_start|date:"d/m/Y, g:i A" }}</td></tr>
   <tr><td style="padding:4px 0; color:rgba(255,255,255,0.45);">Correo</td><td style="padding:4px 0;"><a href="mailto:{{ booking.email }}" style="color:#3bc0c7; text-decoration:none;">{{ booking.email }}</a></td></tr>
   {% if booking.service %}<tr><td style="padding:4px 0; color:rgba(255,255,255,0.45);">Para</td><td style="padding:4px 0;">{{ booking.service }}</td></tr>{% endif %}
   {% if booking.notes %}<tr><td style="padding:4px 0; color:rgba(255,255,255,0.45);">Notas</td><td style="padding:4px 0; white-space:pre-line;">{{ booking.notes }}</td></tr>{% endif %}

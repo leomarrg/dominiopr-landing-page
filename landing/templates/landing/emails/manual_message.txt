@@ -1,6 +1,6 @@
-Hi {{ lead.name }},
+Hola {{ lead.name }},
 
 {{ body }}
 
-— The {{ business|default:"DOMINIO" }} team
-{% if business and business != "DOMINIO" %}Powered by DOMINIO · dominiopr.com{% else %}dominiopr.com{% endif %}
+— El equipo de {{ business|default:"DOMINIO" }}
+{% if business and business != "DOMINIO" %}Desarrollado por DOMINIO · dominiopr.com{% else %}dominiopr.com{% endif %}
