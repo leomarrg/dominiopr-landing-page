@@ -879,15 +879,6 @@ def chat_api(request):
                           and (o.hostname or '').lower() not in allowed)):
             return JsonResponse({'error': 'Este dominio no está permitido.'}, status=403)
 
-    # Phase 5: a solved hCaptcha (the signed "human pass", bound to this slug
-    # and the widget's visitor id) BEFORE any counter below moves, so a bot
-    # never consumes a tenant's daily quota. Read from the JSON body, not a
-    # header: the CORS preflight only allows Content-Type.
-    if human.enabled() and not human.check_pass(
-            payload.get('human'), client_obj.slug if client_obj else 'dominio',
-            payload.get('visitor')):
-        return human.challenge_response()
-
     raw = payload.get('messages')
     if not isinstance(raw, list) or not raw:
         return JsonResponse({'error': 'No se enviaron mensajes.'}, status=400)
@@ -914,6 +905,17 @@ def chat_api(request):
         history.pop(0)
     if not history or history[-1]['role'] != 'user':
         return JsonResponse({'error': 'No hay pregunta que contestar.'}, status=400)
+
+    # Phase 5: a solved hCaptcha (the signed "human pass", bound to this slug
+    # and the widget's visitor id) BEFORE any counter below moves, so a bot
+    # never consumes a tenant's daily quota. After the body checks above, so a
+    # malformed request (400) does not spend the pass's message budget. Read
+    # from the JSON body, not a header: the CORS preflight only allows
+    # Content-Type.
+    if human.enabled() and not human.check_pass(
+            payload.get('human'), client_obj.slug if client_obj else 'dominio',
+            payload.get('visitor')):
+        return human.challenge_response()
 
     # M-04: per-tenant daily quota BEFORE the global cap — one noisy or attacked
     # tenant degrades only its own widget, never everyone else's.

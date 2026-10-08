@@ -461,7 +461,9 @@ def _knowledge_context(request, client, **extra):
     archived = list(client.knowledge_sources.filter(status='archived'))
     # Phase 6: past versions per row, and which live source has a pending draft.
     history = publishing.history_for(sources, archived)
-    pending_for = {s.replaces_id for s in sources if s.status in ('draft', 'error') and s.replaces_id}
+    # (a queued/processing copy counts: the live row must not offer a 2nd edit)
+    pending_for = {s.replaces_id for s in sources
+                   if s.status in ('draft', 'error', 'pending', 'processing') and s.replaces_id}
     for s in sources:
         s.history = history.get(s.pk, [])
         s.has_open_draft = s.pk in pending_for
@@ -588,13 +590,27 @@ def _after_draft_saved(request, client, source):
 
 
 def _process_as_draft(source):
-    """Fetch/extract into fragments without ever going live (Phase 6)."""
+    """Extract text/FAQ into fragments without ever going live (Phase 6).
+    Never for kind 'url': a tenant-controlled URL is never fetched inside a
+    web request; it is queued (ingest.enqueue_url) for process_knowledge."""
     return knowledge.process_source(source, success_status='draft')
+
+
+def _revision_in_progress(live):
+    """A queued/processing draft copy of `live` exists: a second edit now
+    would fork the lineage into two drafts."""
+    return live is not None and live.revisions.filter(
+        status__in=('pending', 'processing')).exists()
+
+
+QUEUE_FULL_MESSAGE = 'Tienes demasiadas fuentes en cola. Espera a que se procesen.'
+URL_QUEUED_MESSAGE = ('La página quedó en cola. Se lee en segundo plano: recarga en unos '
+                      'minutos y aparecerá como borrador para probarla.')
 
 
 @login_required
 @require_POST
-# Saving a URL source fetches it inside the request: cap how often.
+# Each save is a write (and a URL save queues a fetch): cap how often.
 @_rate_limited('ksave', limit=10, window=300, html='knowledge')
 def knowledge_save(request):
     """Create or update a source; it lands as DRAFT (or error) — activation is a
@@ -614,6 +630,9 @@ def knowledge_save(request):
         messages.error(request, 'Esa fuente se está procesando; espera a que termine.')
         return _knowledge_redirect(client)
     live = source if source.pk and source.status == 'active' else None
+    if _revision_in_progress(live):
+        messages.error(request, 'Esa fuente se está procesando; espera a que termine.')
+        return _knowledge_redirect(client)
     if live is not None:
         source = publishing.open_draft_for(live)
     if source.kind not in KnowledgeSource.INGEST_KINDS:
@@ -624,11 +643,21 @@ def knowledge_save(request):
     # (an edited scan/upload keeps its kind and origin: only its text changes)
     source.title = (request.POST.get('title') or '').strip()[:160] or 'Sin título'
     source.content = (request.POST.get('content') or '').strip()[:60000]
-    source.status = 'draft'
+    if source.kind == 'url' and ingest.queue_full(client):
+        messages.error(request, QUEUE_FULL_MESSAGE)
+        return _knowledge_redirect(client)
+    source.status = 'pending' if source.kind == 'url' else 'draft'
     source.save()
-    # Process now: extract/fetch → fragments; failures land visibly in 'error'.
-    _process_as_draft(source)
-    if source.status == 'error':
+    if source.kind == 'url':
+        # Never fetched here: the process_knowledge cron reads the page and
+        # leaves a draft (notifying DOMINIO for plans that can't publish).
+        ingest.enqueue_url(source)
+        messages.success(request, URL_QUEUED_MESSAGE + (
+            f' La versión activa de "{live.title}" sigue publicada.' if live is not None else ''))
+        if not publishing.can_publish(request.user, client):
+            messages.info(request, publishing.REVIEW_MESSAGE)
+    elif _process_as_draft(source).status == 'error':
+        # Text/FAQ: extract → fragments now; failures land visibly in 'error'.
         messages.error(request, f'La fuente quedó en error: {source.error}')
     else:
         if live is not None:
@@ -658,6 +687,8 @@ def _publish_denied(request, client, source, action):
 
 @login_required
 @require_POST
+# Activate/restore/reprocess are writes (and a reprocess queues a fetch).
+@_rate_limited('kaction', limit=20, window=300, html='knowledge')
 def knowledge_action(request, pk):
     client = _knowledge_client(request)
     if client is None:
@@ -699,19 +730,33 @@ def knowledge_action(request, pk):
             messages.error(request, 'Esa fuente se está procesando. Espera a que termine o cancélalo.')
     elif action == 'reprocess' and source.kind in KnowledgeSource.INGEST_KINDS:
         return _retry_ingest(request, client, source)
+    elif action == 'reprocess' and source.status == 'active' and _revision_in_progress(source):
+        messages.error(request, 'Esa fuente se está procesando; espera a que termine.')
+        result = 'no permitida: en proceso'
+    elif action == 'reprocess' and source.kind == 'url' and not source.in_progress \
+            and ingest.queue_full(client):
+        messages.error(request, QUEUE_FULL_MESSAGE)
+        result = 'rechazada: cola llena'
     elif action == 'reprocess' and not source.in_progress:
         # Re-fetching a LIVE source writes into its draft copy, like an edit.
         target = source
         if source.status == 'active':
             target = publishing.open_draft_for(source)
             if target.pk is None:
-                target.status = 'draft'
+                target.status = 'pending' if target.kind == 'url' else 'draft'
                 target.save()
-        _process_as_draft(target)
-        messages.success(request, f'"{target.title}" reprocesada ({target.get_status_display()}).'
-                         + (' La versión activa sigue publicada.' if target is not source else ''))
-        if target.status == 'draft':
-            _after_draft_saved(request, client, target)
+        live_note = ' La versión activa sigue publicada.' if target is not source else ''
+        if target.kind == 'url':
+            # Queued, never fetched inside the request (see knowledge_save).
+            ingest.enqueue_url(target)
+            messages.success(request, URL_QUEUED_MESSAGE + live_note)
+            result = 'en cola'
+        else:
+            _process_as_draft(target)
+            messages.success(request, f'"{target.title}" reprocesada '
+                                      f'({target.get_status_display()}).' + live_note)
+            if target.status == 'draft':
+                _after_draft_saved(request, client, target)
     elif action == 'delete' and source.status in ('pending', 'draft', 'error', 'archived'):
         publishing.delete_source(source)
         messages.success(request, 'Fuente eliminada.')

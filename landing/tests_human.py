@@ -27,6 +27,8 @@ ON = dict(HCAPTCHA_SITEKEY=SITEKEY, HCAPTCHA_SECRET=SECRET)
 URLOPEN = 'landing.human.urllib.request.urlopen'
 TOKEN = 'acmetoken' * 4
 VISITOR = 'visitor1234abcd'
+# What hCaptcha's test sitekey hands the browser after the checkbox.
+HC_TOKEN = '10000000-aaaa-bbbb-cccc-000000000001'
 
 
 class _Resp(io.BytesIO):
@@ -76,10 +78,10 @@ class HumanModuleTests(TestCase):
     def test_verify_posts_form_encoded_with_timeout(self):
         fake, calls = siteverify(True)
         with patch(URLOPEN, side_effect=fake):
-            self.assertTrue(human.verify('tok', '203.0.113.5'))
+            self.assertTrue(human.verify(HC_TOKEN, '203.0.113.5'))
         self.assertEqual(calls[0]['url'], human.VERIFY_URL)
         self.assertEqual(calls[0]['timeout'], 5)
-        self.assertIn('response=tok', calls[0]['body'])
+        self.assertIn(f'response={HC_TOKEN}', calls[0]['body'])
         self.assertIn('remoteip=203.0.113.5', calls[0]['body'])
         self.assertIn(f'sitekey={SITEKEY}', calls[0]['body'])
 
@@ -87,18 +89,81 @@ class HumanModuleTests(TestCase):
     def test_verify_false_on_success_false(self):
         fake, _ = siteverify(False, ['invalid-input-response'])
         with patch(URLOPEN, side_effect=fake):
-            self.assertFalse(human.verify('tok'))
+            self.assertFalse(human.verify(HC_TOKEN))
 
     @override_settings(**ON)
     def test_verify_fails_open_on_network_error(self):
         with patch(URLOPEN, side_effect=urllib.error.URLError('down')), \
                 self.assertLogs('landing.human', 'WARNING'):
-            self.assertTrue(human.verify('tok'))
+            self.assertTrue(human.verify(HC_TOKEN))
 
     @override_settings(**ON)
-    def test_verify_fails_open_on_garbage_body(self):
-        with patch(URLOPEN, return_value=_Resp(b'<html>')):
-            self.assertTrue(human.verify('tok'))
+    def test_verify_rejects_garbage_body(self):
+        # hCaptcha (or whatever answered) did respond: not an outage, no pass.
+        for body in (b'<html>', b'\xff\xfe', b'[]', b'{"success": "yes"}'):
+            with patch(URLOPEN, return_value=_Resp(body)):
+                self.assertFalse(human.verify(HC_TOKEN), body)
+
+    @override_settings(**ON)
+    def test_verify_http_4xx_rejects_and_5xx_fails_open(self):
+        def http_error(code):
+            return urllib.error.HTTPError(human.VERIFY_URL, code, 'x', {}, None)
+        with patch(URLOPEN, side_effect=http_error(400)):
+            self.assertFalse(human.verify(HC_TOKEN))
+        with patch(URLOPEN, side_effect=http_error(403)):
+            self.assertFalse(human.verify(HC_TOKEN))
+        with patch(URLOPEN, side_effect=http_error(503)), \
+                self.assertLogs('landing.human', 'WARNING'):
+            self.assertTrue(human.verify(HC_TOKEN))
+
+    @override_settings(**ON)
+    def test_verify_fails_open_on_timeout_and_os_errors(self):
+        for exc in (TimeoutError('slow'), ConnectionResetError('reset'),
+                    urllib.error.URLError(TimeoutError('slow'))):
+            with patch(URLOPEN, side_effect=exc):
+                self.assertTrue(human.verify(HC_TOKEN), repr(exc))
+
+    @override_settings(**ON)
+    def test_malformed_token_rejected_without_network(self):
+        with patch(URLOPEN) as m:
+            for bad in ('tok', 'x' * 19, 'a b' * 10, '"><script>' * 3,
+                        'P1_' + 'a' * 8200, 'abc\n' * 10):
+                self.assertFalse(human.verify(bad), bad[:20])
+        m.assert_not_called()
+        fake, _ = siteverify(True)
+        with patch(URLOPEN, side_effect=fake):
+            # The test-key token and a real-looking base64url token pass the format check.
+            self.assertTrue(human.verify(HC_TOKEN))
+            self.assertTrue(human.verify('P1_eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJwZCI6MH0.abc-_'))
+
+    def _hostname_body(self, hostname):
+        return _Resp(json.dumps({'success': True, 'hostname': hostname}).encode())
+
+    @override_settings(HCAPTCHA_SITEKEY='real-sitekey', HCAPTCHA_SECRET='0xrealsecret',
+                       SITE_URL='https://dominiopr.com', ALLOWED_HOSTS=['dominiopr.com',
+                                                                        '.dominiopr.com'],
+                       DEBUG=False)
+    def test_verify_rejects_token_solved_on_a_foreign_host(self):
+        for host, ok in (('dominiopr.com', True), ('www.dominiopr.com', True),
+                         ('evil.example', False), ('localhost', False), ('', False)):
+            with patch(URLOPEN, return_value=self._hostname_body(host)):
+                self.assertEqual(human.verify(HC_TOKEN), ok, host)
+        # No hostname in the answer: nothing to compare, accepted.
+        with patch(URLOPEN, return_value=_Resp(b'{"success": true}')):
+            self.assertTrue(human.verify(HC_TOKEN))
+
+    @override_settings(HCAPTCHA_SITEKEY='real-sitekey', HCAPTCHA_SECRET='0xrealsecret',
+                       SITE_URL='https://dominiopr.com', ALLOWED_HOSTS=['dominiopr.com'],
+                       DEBUG=True)
+    def test_localhost_hostname_accepted_in_debug(self):
+        with patch(URLOPEN, return_value=self._hostname_body('127.0.0.1')):
+            self.assertTrue(human.verify(HC_TOKEN))
+
+    @override_settings(**ON, SITE_URL='https://dominiopr.com', ALLOWED_HOSTS=['dominiopr.com'],
+                       DEBUG=False)
+    def test_test_secret_accepts_placeholder_hostname(self):
+        with patch(URLOPEN, return_value=self._hostname_body('dummy-key-pass')):
+            self.assertTrue(human.verify(HC_TOKEN))
 
     @override_settings(**ON)
     def test_empty_token_is_rejected_without_network(self):
@@ -131,6 +196,32 @@ class HumanModuleTests(TestCase):
         with patch('django.core.signing.time.time', return_value=time.time() + 5):
             p2 = human.issue_pass('acme', VISITOR)
         self.assertTrue(human.check_pass(p2, 'acme', VISITOR))
+
+    @override_settings(HUMAN_PASS_MAX_MESSAGES=3)
+    def test_pass_budget_counts_with_add_then_incr(self):
+        """L1: the counter is incremented (never read-then-set), so requests
+        racing on one pass each get their own number."""
+        p = human.issue_pass('acme', VISITOR)
+        key = human._counter_key(p)
+        with patch.object(human.cache, 'incr', wraps=cache.incr) as incr:
+            results = [human.check_pass(p, 'acme', VISITOR) for _ in range(5)]
+        self.assertEqual(results, [True, True, True, False, False])
+        self.assertEqual(incr.call_count, 5)
+        self.assertEqual(cache.get(key), 5)
+
+    def test_pass_budget_survives_key_vanishing_between_add_and_incr(self):
+        p = human.issue_pass('acme', VISITOR)
+        real_incr = cache.incr
+        calls = []
+
+        def flaky_incr(key, delta=1, version=None):
+            calls.append(key)
+            if len(calls) == 1:
+                raise ValueError('culled')
+            return real_incr(key, delta, version)
+        with patch.object(human.cache, 'incr', side_effect=flaky_incr):
+            self.assertTrue(human.check_pass(p, 'acme', VISITOR))
+        self.assertEqual(len(calls), 2)
 
     def test_normalize_origin(self):
         self.assertEqual(human.normalize_origin('https://Acme.com'), 'https://acme.com')
@@ -187,6 +278,21 @@ class ChatHumanPassTests(TestCase):
         self.assertEqual(resp['Access-Control-Allow-Origin'], 'https://acme.com')
         ans.assert_not_called()
         self.assertEqual(self._counters(), [None] * 5)
+
+    @override_settings(**ON)
+    def test_malformed_body_does_not_spend_the_pass(self):
+        """L2: a 400 (no messages / no user turn) is answered before the pass
+        is checked, so it never consumes the visitor's message budget."""
+        p = human.issue_pass('acme', VISITOR)
+        key = human._counter_key(p)
+        for messages in ([], [{'role': 'assistant', 'content': 'hola'}], 'x'):
+            resp = self._chat(visitor=VISITOR, human=p, messages=messages)
+            self.assertEqual(resp.status_code, 400, messages)
+        self.assertIsNone(cache.get(key))
+        self.assertEqual(self._counters(), [None] * 5)
+        with patch.object(agent, 'answer', side_effect=fake_answer):
+            self.assertEqual(self._chat(visitor=VISITOR, human=p).status_code, 200)
+        self.assertEqual(cache.get(key), 1)
 
     @override_settings(**ON)
     def test_token_and_origin_checks_still_come_first(self):
@@ -316,7 +422,7 @@ class ChallengePageTests(TestCase):
         with patch(URLOPEN, side_effect=fake):
             resp = self.client.post(reverse('human_verify'), {
                 'key': 'acme', 'visitor': VISITOR, 'origin': 'https://acme.com',
-                'h-captcha-response': 'tok'}, REMOTE_ADDR='203.0.113.5')
+                'h-captcha-response': HC_TOKEN}, REMOTE_ADDR='203.0.113.5')
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(len(calls), 1)
         html = resp.content.decode()
@@ -338,7 +444,7 @@ class ChallengePageTests(TestCase):
         with patch(URLOPEN, side_effect=fake):
             resp = self.client.post(reverse('human_verify'), {
                 'key': 'acme', 'visitor': VISITOR, 'origin': 'https://acme.com',
-                'h-captcha-response': 'tok'})
+                'h-captcha-response': HC_TOKEN})
         html = resp.content.decode()
         self.assertIn('Confirma que no eres un robot.', html)
         self.assertNotIn('dmn-pass', html)
@@ -347,7 +453,7 @@ class ChallengePageTests(TestCase):
         with patch(URLOPEN) as m:
             resp = self.client.post(reverse('human_verify'), {
                 'key': 'acme', 'visitor': VISITOR, 'origin': 'https://evil.com',
-                'h-captcha-response': 'tok'})
+                'h-captcha-response': HC_TOKEN})
         self.assertEqual(resp.status_code, 403)
         m.assert_not_called()
 
@@ -408,7 +514,7 @@ class FormHumanCheckTests(TestCase):
         fake, _ = siteverify(True)
         cache.clear()
         with patch(URLOPEN, side_effect=fake):
-            self.client.post(reverse('index'), {**CONTACT, 'h-captcha-response': 'tok'})
+            self.client.post(reverse('index'), {**CONTACT, 'h-captcha-response': HC_TOKEN})
         self.assertEqual(ContactSubmission.objects.count(), 1)
 
     @override_settings(**ON)
@@ -429,7 +535,7 @@ class FormHumanCheckTests(TestCase):
         fake, _ = siteverify(True)
         with patch(URLOPEN, side_effect=fake):
             resp = self.client.post(reverse('login'), {
-                'username': 'boss', 'password': 'S3gura-pass-123', 'h-captcha-response': 'tok'})
+                'username': 'boss', 'password': 'S3gura-pass-123', 'h-captcha-response': HC_TOKEN})
         self.assertEqual(resp.status_code, 302)
 
     @override_settings(**ON)
@@ -450,7 +556,7 @@ class FormHumanCheckTests(TestCase):
         with patch(URLOPEN, side_effect=fake):
             resp = self.client.post('/admin/login/', {
                 'username': 'boss', 'password': 'S3gura-pass-123',
-                'h-captcha-response': 'tok', 'next': '/admin/'})
+                'h-captcha-response': HC_TOKEN, 'next': '/admin/'})
         self.assertEqual(resp.status_code, 302)
 
 

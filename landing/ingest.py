@@ -913,10 +913,33 @@ def _finish(pk, **fields):
         updated_at=timezone.now(), **fields)
 
 
+def _run_url(source):
+    """A single-page 'url' source: fetch -> fragments, no model call. Same
+    claim/lock/stale handling as site/file; the result is a DRAFT."""
+    pk = source.pk
+    try:
+        _set_progress(pk, 'Leyendo la página…')
+        text = knowledge.source_text(source)
+    except ValueError as exc:
+        _finish(pk, status='error', progress='', error=str(exc)[:300])
+        return 'error'
+    except Exception:
+        logger.exception('knowledge url fetch failed for source %s', pk)
+        _finish(pk, status='error', progress='', error='Error inesperado procesando la fuente.')
+        return 'error'
+    with transaction.atomic():
+        updated = _finish(pk, status='draft', progress='', error='')
+        if updated:
+            knowledge.store_fragments(source, text)
+    return 'draft' if updated else 'gone'
+
+
 def run_source(source):
     """Process one CLAIMED source. Returns the resulting status ('draft',
     'error', 'pending' when it will be retried, or 'gone' if the row left
     'processing' meanwhile, e.g. deleted or archived by the tenant)."""
+    if source.kind == 'url':
+        return _run_url(source)
     pk = source.pk
     pages_scanned = 0
     try:
@@ -979,17 +1002,40 @@ def run_source(source):
     return 'draft' if updated else 'gone'
 
 
-def pending_ids(limit):
-    return list(KnowledgeSource.objects.filter(status='pending', kind__in=KnowledgeSource.INGEST_KINDS)
+# Kinds the cron processes. 'url' is a single page fetched without the model:
+# it is queued too, so no tenant-controlled URL is ever fetched inside a web
+# request (a slow server would pin a gunicorn worker for the whole deadline).
+BACKGROUND_KINDS = KnowledgeSource.INGEST_KINDS + ('url',)
+NO_MODEL_KINDS = ('url',)
+QUEUED_MSG = 'En cola…'
+
+
+def pending_ids(limit, kinds=BACKGROUND_KINDS):
+    return list(KnowledgeSource.objects.filter(status='pending', kind__in=kinds)
                 .order_by('created_at', 'pk').values_list('pk', flat=True)[:max(0, limit)])
 
 
-def process_pending(limit=3):
+def queue_full(client):
+    return client.knowledge_sources.filter(
+        status__in=('pending', 'processing')).count() >= MAX_QUEUED_PER_CLIENT
+
+
+def enqueue_url(source):
+    """Queue a saved url source (new or a draft copy) for the cron. Old
+    fragments stay until the fetch succeeds; a pending row is never compiled."""
+    KnowledgeSource.objects.filter(pk=source.pk).update(
+        status='pending', progress=QUEUED_MSG, error='', attempts=0, updated_at=timezone.now())
+    source.status, source.progress, source.error, source.attempts = 'pending', QUEUED_MSG, '', 0
+    return source
+
+
+def process_pending(limit=3, kinds=BACKGROUND_KINDS):
     """One cron pass (caller holds the run lock): reset stale rows, then claim
-    and run up to `limit` pending sources, oldest first. Returns [(source, status)]."""
+    and run up to `limit` pending sources of `kinds`, oldest first.
+    Returns [(source, status)]."""
     reset_stale()
     done = []
-    for pk in pending_ids(limit):
+    for pk in pending_ids(limit, kinds):
         if not claim(pk):
             continue
         source = KnowledgeSource.objects.select_related('client').get(pk=pk)

@@ -97,7 +97,7 @@
                         {% elif s.status == 'draft' %}
                         <span class="dash-sub">DOMINIO lo publica</span>
                         {% endif %}
-                        {% if s.kind == 'url' %}
+                        {% if s.kind == 'url' and not s.in_progress %}
                         <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="reprocess"><button class="save-btn save-btn--sm">Reprocesar</button></form>
                         {% elif s.status == 'error' and s.kind == 'site' or s.status == 'error' and s.kind == 'file' and s.content %}
                         <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="reprocess"><button class="save-btn save-btn--sm">Reintentar</button></form>

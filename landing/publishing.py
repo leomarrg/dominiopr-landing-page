@@ -35,6 +35,7 @@ MAX_TOTAL_CHARS = 40_000
 REVIEW_MESSAGE = ('Tu plan Starter: DOMINIO revisa y publica tus cambios '
                   '(normalmente en 1 día laborable).')
 NOTIFY_TTL = 24 * 3600
+CLIENT_DAILY_REVIEW_EMAILS = 5
 
 
 class PublishError(Exception):
@@ -213,15 +214,37 @@ def history_for(sources, archived):
 # Review requests (Starter / no plan)
 # ------------------------------------------------------------------
 
+def _incr(key, ttl):
+    """Atomic-enough daily counter: add-then-incr, re-adding if the key was
+    culled/expired between the two calls. Returns the new value."""
+    cache.add(key, 0, ttl)
+    try:
+        return cache.incr(key)
+    except ValueError:
+        cache.add(key, 1, ttl)
+        return cache.get(key, 1)
+
+
 def request_review(source, request=None):
     """Email DOMINIO that `source` waits for review/publication. At most one
-    email per source per day. Best-effort: never raises. Returns True if sent."""
+    email per source per day, and at most CLIENT_DAILY_REVIEW_EMAILS per
+    client per day (a Starter tenant creating draft after draft must not turn
+    this into a mail cannon). Best-effort: never raises. Returns True if sent."""
     try:
         to = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
         if not to:
             return False
-        key = f'kpub:{source.pk}:{timezone.localdate().isoformat()}'
+        day = timezone.localdate().isoformat()
+        client_key = f'kpub:client:{source.client_id}:{day}'
+        # Cheap pre-check first: a capped client writes no per-source keys.
+        if (cache.get(client_key) or 0) >= CLIENT_DAILY_REVIEW_EMAILS:
+            return False
+        key = f'kpub:{source.pk}:{day}'
         if not cache.add(key, 1, NOTIFY_TTL):
+            return False
+        # Counted only for an email we are about to send, so re-clicking the
+        # same draft does not use up the budget of the next one.
+        if _incr(client_key, NOTIFY_TTL) > CLIENT_DAILY_REVIEW_EMAILS:
             return False
         client = source.client
         from .views import _audit, _send_plain_email  # lazy: views imports this app's modules

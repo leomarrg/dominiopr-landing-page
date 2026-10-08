@@ -3,7 +3,7 @@
     python manage.py process_knowledge [--limit 3]
 
 Picks pending KnowledgeSource rows (kind 'site' = website scan, 'file' =
-uploaded document), oldest first, claims each one atomically (two overlapping
+uploaded document, 'url' = one page, fetched without the model), oldest first, claims each one atomically (two overlapping
 runs never process the same row; a run lock also keeps a second run from
 starting at all), crawls/reads it, distills it with the model and leaves the
 result as a DRAFT for the tenant to test and activate. Never activates.
@@ -48,14 +48,19 @@ class Command(BaseCommand):
         if not ingest.pending_ids(1) and not ingest.has_stale():
             self.stdout.write('Conocimiento: no hay fuentes en cola.')
             return
+        kinds = ingest.BACKGROUND_KINDS
         if not getattr(settings, 'ANTHROPIC_API_KEY', ''):
-            raise CommandError('Falta ANTHROPIC_API_KEY: las fuentes siguen en cola.')
+            # Single-page URLs need no model: they still get processed.
+            if not ingest.pending_ids(1, ingest.NO_MODEL_KINDS):
+                raise CommandError('Falta ANTHROPIC_API_KEY: las fuentes siguen en cola.')
+            self.stderr.write('Falta ANTHROPIC_API_KEY: solo se procesan las páginas (URL).')
+            kinds = ingest.NO_MODEL_KINDS
         if not cache.add(LOCK_KEY, os.getpid(), LOCK_TTL):
             self.stdout.write('Conocimiento: otra corrida está en curso; nada que hacer.')
             return
         try:
             # process_pending() runs reset_stale() first, under the lock.
-            results = ingest.process_pending(limit=max(0, options['limit']))
+            results = ingest.process_pending(limit=max(0, options['limit']), kinds=kinds)
         finally:
             cache.delete(LOCK_KEY)
         for source, status in results:

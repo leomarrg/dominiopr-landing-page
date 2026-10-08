@@ -3,6 +3,7 @@ import json
 import secrets
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -568,6 +569,20 @@ class KnowledgeSource(models.Model):
 
     def __str__(self):
         return f'{self.client.slug} · {self.title} ({self.status})'
+
+    def clean(self):
+        super().clean()
+        # A lineage never crosses tenants: publishing archives every active
+        # version of the lineage, so a cross-client link (e.g. set in the
+        # admin) would let one tenant's publish retire another's knowledge.
+        if self.replaces_id is not None:
+            if self.replaces_id == self.pk:
+                raise ValidationError({'replaces': 'Una fuente no puede reemplazarse a sí misma.'})
+            other_client = (KnowledgeSource.objects.filter(pk=self.replaces_id)
+                            .values_list('client_id', flat=True).first())
+            if other_client is not None and other_client != self.client_id:
+                raise ValidationError(
+                    {'replaces': 'Solo puede reemplazar una fuente del mismo cliente.'})
 
     @property
     def in_progress(self):

@@ -122,14 +122,75 @@ class EditActiveSourceTests(VersioningBase):
         with patch.object(knowledge, 'fetch_url_text', return_value='Precio viejo $25.'):
             knowledge.process_source(active)
         self.assertIn('$25', self.live())
-        with patch.object(knowledge, 'fetch_url_text', return_value='Precio nuevo $30.'):
+        # H1: the request only queues the draft copy; the cron fetches.
+        with patch.object(knowledge, 'fetch_url_text',
+                          side_effect=AssertionError('fetched inside the request')):
             self.act(active, 'reprocess')
         active.refresh_from_db()
         self.assertEqual(active.status, 'active')
         draft = KnowledgeSource.objects.get(replaces=active)
+        self.assertEqual((draft.status, draft.progress), ('pending', 'En cola…'))
+        with patch.object(knowledge, 'fetch_url_text', return_value='Precio nuevo $30.'):
+            ingest.process_pending()
+        draft.refresh_from_db()
         self.assertEqual(draft.status, 'draft')
         self.assertIn('$30', draft.compiled_text())
         self.assertNotIn('$30', self.live())
+
+    def test_url_save_is_queued_and_the_cron_makes_the_draft(self):
+        with patch.object(knowledge, 'fetch_url_text',
+                          side_effect=AssertionError('fetched inside the request')):
+            resp = self.save(kind='url', title='Precios', content='',
+                             origin='https://acme.com/precios')
+        self.assertEqual(resp.status_code, 302)
+        src = KnowledgeSource.objects.get()
+        self.assertEqual((src.kind, src.status, src.progress), ('url', 'pending', 'En cola…'))
+        page = self.http.get(reverse('knowledge') + '?client=acme')
+        self.assertContains(page, 'En cola… Se procesa en segundo plano')
+        self.assertNotContains(page, 'value="reprocess"')  # nothing to re-queue yet
+        with patch.object(knowledge, 'fetch_url_text', return_value='Corte $25.') as fetch:
+            ingest.process_pending()
+        fetch.assert_called_once_with('https://acme.com/precios')
+        src.refresh_from_db()
+        self.assertEqual((src.status, src.progress, src.attempts), ('draft', '', 1))
+        self.assertIn('$25', src.compiled_text())
+        self.assertNotIn('$25', self.live())  # draft, never active
+
+    def test_queued_url_fetch_error_lands_in_error(self):
+        self.save(kind='url', title='Precios', content='', origin='https://acme.com/precios')
+        with patch.object(knowledge, 'fetch_url_text',
+                          side_effect=ValueError('La página tardó demasiado.')):
+            ingest.process_pending()
+        src = KnowledgeSource.objects.get()
+        self.assertEqual((src.status, src.error), ('error', 'La página tardó demasiado.'))
+
+    def test_edit_while_the_url_draft_is_queued_is_refused(self):
+        active = self.src(kind='url', origin='https://acme.com/precios', content='')
+        self.act(active, 'reprocess')
+        self.assertEqual(KnowledgeSource.objects.filter(replaces=active).count(), 1)
+        self.save(pk=active.pk, kind='url', origin='https://acme.com/otra')
+        self.act(active, 'reprocess')
+        self.assertEqual(KnowledgeSource.objects.filter(replaces=active).count(), 1)
+        self.assertEqual(KnowledgeSource.objects.get(replaces=active).origin,
+                         'https://acme.com/precios')
+
+    def test_url_queue_is_capped_per_client(self):
+        for i in range(ingest.MAX_QUEUED_PER_CLIENT):
+            self.src(kind='file', status='pending', title=f'{i}.txt', content='abc')
+        self.save(kind='url', title='Precios', content='', origin='https://acme.com/precios')
+        self.assertFalse(KnowledgeSource.objects.filter(kind='url').exists())
+
+    def test_cron_without_api_key_still_processes_urls_only(self):
+        from io import StringIO
+        from django.core.management import call_command
+        self.save(kind='url', title='Precios', content='', origin='https://acme.com/precios')
+        f = self.src(kind='file', status='pending', title='a.txt', content='abc')
+        with override_settings(ANTHROPIC_API_KEY=''), \
+                patch.object(knowledge, 'fetch_url_text', return_value='Corte $25.'):
+            call_command('process_knowledge', stdout=StringIO(), stderr=StringIO())
+        self.assertEqual(KnowledgeSource.objects.get(kind='url').status, 'draft')
+        f.refresh_from_db()
+        self.assertEqual((f.status, f.attempts), ('pending', 0))  # untouched
 
 
 class RestoreAndHistoryTests(VersioningBase):
@@ -402,3 +463,70 @@ class IngestNotificationTests(VersioningBase):
         src = self.src(kind='file', status='draft', origin='archivo: a.pdf', title='a.pdf')
         self.run_cron(src)
         self.assertEqual(len(mail.outbox), 0)
+
+    def test_starter_url_save_notifies_when_the_cron_makes_the_draft(self):
+        self.plan('starter')
+        self.login()
+        resp = self.save(kind='url', title='Precios', content='',
+                         origin='https://acme.com/precios')
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(len(mail.outbox), 0)  # nothing to review yet
+        with patch.object(knowledge, 'fetch_url_text', return_value='Corte $25.'):
+            ingest.process_pending()
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('Precios', mail.outbox[0].body)
+
+
+class ReviewEmailCapTests(VersioningBase):
+    """M3: a Starter tenant creating draft after draft gets at most
+    CLIENT_DAILY_REVIEW_EMAILS review emails a day."""
+
+    def test_six_drafts_same_day_send_five_emails(self):
+        drafts = [self.src(status='draft', title=f'Borrador {i}') for i in range(6)]
+        sent = [publishing.request_review(d) for d in drafts]
+        self.assertEqual(sent, [True] * 5 + [False])
+        self.assertEqual(len(mail.outbox), 5)
+        # Re-asking for an already-notified draft does not use up the budget...
+        cache.clear()
+        publishing.request_review(drafts[0])
+        publishing.request_review(drafts[0])
+        publishing.request_review(drafts[1])
+        self.assertEqual(len(mail.outbox), 7)
+
+    def test_cap_is_per_client(self):
+        for i in range(5):
+            publishing.request_review(self.src(status='draft', title=f'A{i}'))
+        other = self.src(status='draft', title='Otro', client=self.other)
+        self.assertTrue(publishing.request_review(other))
+        self.assertEqual(len(mail.outbox), 6)
+
+
+class KnowledgeActionThrottleTests(VersioningBase):
+    """M1: knowledge_action is rate-limited like knowledge_save."""
+
+    def test_21st_action_is_throttled(self):
+        self.plan('pro')
+        self.login()
+        draft = self.src(status='draft')
+        for _ in range(20):
+            self.assertEqual(self.act(draft, 'noop').status_code, 302)
+        resp = self.http.post(reverse('knowledge_action', args=[draft.pk]),
+                              {'client': 'acme', 'action': 'noop'}, follow=True)
+        self.assertContains(resp, 'Demasiados envíos seguidos')
+        self.assertEqual(AuditEvent.objects.filter(action='knowledge.noop').count(), 20)
+
+
+class LineageTenantTests(VersioningBase):
+    """L4: a version can only replace a source of the same client."""
+
+    def test_clean_rejects_cross_client_replaces(self):
+        from django.core.exceptions import ValidationError
+        theirs = self.src(client=self.other, title='De otro')
+        mine = KnowledgeSource(client=self.acme, kind='text', title='Mía', content='x',
+                               replaces=theirs)
+        with self.assertRaises(ValidationError) as ctx:
+            mine.full_clean()
+        self.assertIn('replaces', ctx.exception.message_dict)
+        ok = KnowledgeSource(client=self.acme, kind='text', title='Mía', content='x',
+                             replaces=self.src())
+        ok.full_clean()  # same client: fine

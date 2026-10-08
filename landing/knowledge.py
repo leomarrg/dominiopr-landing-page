@@ -117,18 +117,31 @@ def _guarded_create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT,
     except ValueError:
         sock.close()
         raise
-    tracked = getattr(_ACTIVE, 'socks', None)
-    if tracked is not None:
-        tracked.append(sock)
+    _track(sock)
     return sock
 
 
+def _track(sock):
+    tracked = getattr(_ACTIVE, 'socks', None)
+    if tracked is not None:
+        tracked.append(sock)
+
+
 def _cut(socks, flag):
-    """Watchdog: shut the fetch's sockets down so a blocked recv returns now."""
+    """Watchdog: shut the fetch's sockets down so a blocked recv returns now.
+
+    socket.socket.shutdown on purpose: SSLSocket.shutdown would also drop its
+    SSL object from under the thread that is mid-handshake/read. close() as
+    well, because on Windows a shutdown alone does not always wake a blocked
+    recv; the fetching thread then fails with OSError, which is the point."""
     flag.append(True)
     for sock in list(socks):
         try:
-            sock.shutdown(socket.SHUT_RDWR)
+            socket.socket.shutdown(sock, socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            sock.close()
         except OSError:
             pass
 
@@ -143,6 +156,24 @@ class _GuardedHTTPSConnection(http.client.HTTPSConnection):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._create_connection = _guarded_create_connection
+
+    def connect(self):
+        """Same as the stdlib's, except the TLS socket is tracked BEFORE the
+        handshake. wrap_socket() detaches the raw socket (its fileno becomes
+        -1), so the watchdog must hold the SSLSocket itself, and a handshake
+        done inside wrap_socket would run before we could track it.
+        Certificate and hostname checks are unchanged: they are enforced by
+        the context (check_hostname + server_hostname) during do_handshake."""
+        http.client.HTTPConnection.connect(self)  # raw socket, peer IP checked
+        raw = self.sock
+        server_hostname = self._tunnel_host or self.host
+        self.sock = self._context.wrap_socket(
+            raw, server_hostname=server_hostname, do_handshake_on_connect=False)
+        tracked = getattr(_ACTIVE, 'socks', None)
+        if tracked is not None and raw in tracked:
+            tracked.remove(raw)  # detached by wrap_socket: a dead handle now
+        _track(self.sock)
+        self.sock.do_handshake()
 
 
 class _GuardedHTTPHandler(urllib.request.HTTPHandler):
@@ -242,17 +273,26 @@ def fetch_resource(url, allowed_types=PAGE_TYPES, max_bytes=MAX_FETCH_BYTES, dea
     watchdog = threading.Timer(allowed, _cut, args=(socks, timed_out))
     watchdog.daemon = True
     watchdog.start()
+    # Once the watchdog has fired, nothing read afterwards is trusted: a cut
+    # TLS socket reports a clean EOF (suppress_ragged_eofs), so http.client
+    # would hand back a "complete" response with the headers or body truncated
+    # at the cut, and a bogus content-type error would mask the real cause.
+    too_slow = ValueError('La página tardó demasiado.')
     try:
         with _opener().open(req, timeout=max(1.0, min(TIMEOUT, allowed))) as resp:
             ctype = resp.headers.get('Content-Type', '') or ''
+            if timed_out:
+                raise too_slow
             if not any(t in ctype for t in allowed_types):
                 raise ValueError(f'Tipo de contenido no soportado: {ctype[:60]}')
             raw = _read_bounded(resp, max_bytes, ends_at)
     except ValueError:
+        if timed_out:
+            raise too_slow
         raise
     except Exception as e:
         if timed_out:
-            raise ValueError('La página tardó demasiado.')
+            raise too_slow
         # A 404 is routine for the crawler (robots.txt, sitemap.xml).
         log = logger.info if isinstance(e, urllib.error.HTTPError) else logger.warning
         log('knowledge fetch failed for %s: %s', url, e)
@@ -260,6 +300,8 @@ def fetch_resource(url, allowed_types=PAGE_TYPES, max_bytes=MAX_FETCH_BYTES, dea
     finally:
         watchdog.cancel()
         _ACTIVE.socks = None
+    if timed_out:
+        raise too_slow
     if len(raw) > max_bytes:
         raise ValueError(f'La página es demasiado grande (máx. {max_bytes // 1024} KB).')
     return ctype, raw
@@ -303,23 +345,37 @@ def chunk_text(text, size=FRAGMENT_CHARS):
     return [text[i:i + size] for i in range(0, len(text), size)]
 
 
+def source_text(source):
+    """The knowledge text of a url/text/faq source (fetches for 'url').
+    ValueError with a tenant-safe message when there is none."""
+    if source.kind == 'url':
+        return fetch_url_text((source.origin or '').strip())
+    # 'text' / 'faq': the content field IS the knowledge
+    text = (source.content or '').strip()
+    if not text:
+        raise ValueError('El contenido está vacío.')
+    return text
+
+
+def store_fragments(source, text):
+    source.fragments.all().delete()
+    KnowledgeFragment.objects.bulk_create([
+        KnowledgeFragment(source=source, content=chunk, position=i)
+        for i, chunk in enumerate(chunk_text(text))
+    ])
+
+
 def process_source(source, success_status='active'):
     """Validate + extract a source into fragments. Sets status to
     `success_status` on success or 'error' (with the message) on failure.
     The dashboard passes 'draft' so a source never goes live, even for an
-    instant, before it is deliberately activated. Returns the source."""
+    instant, before it is deliberately activated. Returns the source.
+
+    For kind 'url' this does network I/O: web requests never call it for a
+    URL (they enqueue, and the process_knowledge cron fetches)."""
     try:
-        if source.kind == 'url':
-            text = fetch_url_text((source.origin or '').strip())
-        else:  # 'text' / 'faq': the content field IS the knowledge
-            text = (source.content or '').strip()
-            if not text:
-                raise ValueError('El contenido está vacío.')
-        source.fragments.all().delete()
-        KnowledgeFragment.objects.bulk_create([
-            KnowledgeFragment(source=source, content=chunk, position=i)
-            for i, chunk in enumerate(chunk_text(text))
-        ])
+        text = source_text(source)
+        store_fragments(source, text)
         source.status = success_status
         source.error = ''
     except ValueError as e:

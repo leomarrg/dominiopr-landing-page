@@ -1278,3 +1278,232 @@ class HeaderDripWatchdogTests(TestCase):
         finally:
             stop.set()
             srv.close()
+
+
+# Throwaway self-signed certificate for 127.0.0.1 (SAN IP), TEST USE ONLY:
+# the TLS watchdog test needs a real handshake. Valid until 2126.
+TEST_TLS_KEY = """-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCbWcfWz6kzCw7Q
+4Sq/17sHahtRLCuu6m5q6K9fCsSpoh0+spr7EAWTOL3MUGpedTmZJdmdBqwtlKHo
+FONV/GmmUyTIaRxdlJRTnjI4vHBLjIromT5cxMxV1RILeqFxSQdBy7iXSfz1FRh6
+i0WaBTy+wzwHthlzSrQzrtpsrYP5pnAQYYH7lmyZbsWMPbi3ZxsRCbcRuYrNniV8
+ugpNnkrLmrTKA/nYEmmpmyzAEdeKKX+aRs1ynH6nI/ZpUpvB/pd3Qk8eNErlMiXQ
+JO/PDBRRa/HrdCve6ziWgJbukfQChbj81qFMEXBLVsK39qf9UZ+fOxgvGRR/6z+A
+m9p84wqFAgMBAAECggEAESbdt0QYsoPFSD8gBOvY4LXwm6r0jLyh4chcenIaKf91
+2qMGFPOdJfbFD86OG+015YiGCP4AWwz2vkS2H9t9P6mc3UqroNJjeQL1mQmHHXRA
+LvOibMQmqlBazG0m73bIaBWJxRxcYyPH3tnLHrj2zroIAfLzRuUn1a/3ujmDIXg4
+ZLkbNCJU505KNw7y3TGHnN3u6gLk4A22YcqjNoES8S94p75TK387AQMFdJVS0/y1
+CwEiHhKEUtjwcqTKyY2P1EqJZlm3Bdm+eKnj6rlFztMBWbdZacPFTDhkIjb3WPuu
+XazG2gS38C+9W/KUFlpzy/c2nWdIPal4faKPL6ZtEQKBgQDY4jTv6GHWpPNSJ+ic
+0JqKEmyBOQH4+6RSGQ/tjkFtPPlyP3U5h3qKXCdKA1hreFQAWirMLqOtp+v9tyIu
+EI05PFGvonj9XPvGRWcHHAzTij4coccmuyq9YuL6Qnot+kQWo61cECTuPbJQMQ30
+Q0F8pSiKKVqXn6akUYl/Z93HlQKBgQC3XoVOUqhx2FAgmXnhWga6muBnjGRKFJxc
++0aEjA1A9ydtE/TDardKIePq0VvNH5YvByQ8PIvXV/W0Dl8veWgMthogLDzi3AJR
+aTTjgNAXLT0qBgyKi1i1uGPDIF2F1lWYATgun+50mDgWBQgZuHgzhRRmiMt52B1C
+I0eSzo67MQKBgQCNikLl9pAzVn79NNJX1MOmLBPn2V5yMTex5G1CqT4Fnm9koglM
+vB+6wB1b7gb8TBD2EeIwUpe7MwWOFMAXs/GWUsk0iCHRp6cgZBayyxmLzIJwiRvB
+KRDhe/GJRW0bKGLbK4JtvJN9b4I5V2o16NaKE/b7A7X9kdFdF2FWZmCUaQKBgEUR
+QCrhLXs8G+o7hNHh4/jzjyTRl5DjtIW9S7FvQyq+LUaDpsTYdFNi8oMm+moHxLzP
+9tENiSrCgdShOS8bjpqDGNIXd5OHhQP/GaG7iiXAr3IdtymUFQTVgBYmIbPgqHrJ
+ssy1Bs856p44pPVzKytUq/t2+RVa1qJrwXDFhrNxAoGBAMZ47M0kT8SrnEyA1JQ0
+jAko9Dab8wi8yDW8hCfPWD80Tups/W5sb3hre8+GPbaboqQFETfwP/Glpor+qRIl
+xUGLY4N+iKhPHap/TF6i0Rexot2KtojGtOzSwYXpjyrWX6i78/exmlV1KGLJyn1Q
++3YiY7mDElk7J0J5gdsZaZHZ
+-----END PRIVATE KEY-----
+"""
+TEST_TLS_CERT = """-----BEGIN CERTIFICATE-----
+MIIDHDCCAgSgAwIBAgIUWLe/Y/xsIzR5OT0HcaZLt1I2C10wDQYJKoZIhvcNAQEL
+BQAwFDESMBAGA1UEAwwJMTI3LjAuMC4xMCAXDTI2MTAwODIwMTMwMloYDzIxMjYw
+OTE0MjAxMzAyWjAUMRIwEAYDVQQDDAkxMjcuMC4wLjEwggEiMA0GCSqGSIb3DQEB
+AQUAA4IBDwAwggEKAoIBAQCbWcfWz6kzCw7Q4Sq/17sHahtRLCuu6m5q6K9fCsSp
+oh0+spr7EAWTOL3MUGpedTmZJdmdBqwtlKHoFONV/GmmUyTIaRxdlJRTnjI4vHBL
+jIromT5cxMxV1RILeqFxSQdBy7iXSfz1FRh6i0WaBTy+wzwHthlzSrQzrtpsrYP5
+pnAQYYH7lmyZbsWMPbi3ZxsRCbcRuYrNniV8ugpNnkrLmrTKA/nYEmmpmyzAEdeK
+KX+aRs1ynH6nI/ZpUpvB/pd3Qk8eNErlMiXQJO/PDBRRa/HrdCve6ziWgJbukfQC
+hbj81qFMEXBLVsK39qf9UZ+fOxgvGRR/6z+Am9p84wqFAgMBAAGjZDBiMB0GA1Ud
+DgQWBBTfy55UKNiW5Z3SGtc/Pi+DdmaHtTAfBgNVHSMEGDAWgBTfy55UKNiW5Z3S
+Gtc/Pi+DdmaHtTAPBgNVHRMBAf8EBTADAQH/MA8GA1UdEQQIMAaHBH8AAAEwDQYJ
+KoZIhvcNAQELBQADggEBAJVnSAJlZ2D0cyE8C1XcUjQK3ZwVCui/ndPkR3kIn3Ra
+bIwyywm3kJu3/COZ3z8FYLt5j16g5HmONE8I12odTXWv8+Sa1C1B7Rh03gYJMwPU
+Ya6bxhTfLep0jDRms22PmDABFXjmOpBrAPEVdTC8h0aXWgu2AyzagycXoOt/H1wF
+nQL3KunzAcVGaDSNnNFkdMBgKPX3YlnVPuBbUE25UlH4Uu9rrKTMUNNKlQJc5H1O
+pO3FKcMM02uC4PvbZK77Z+ECdxeHIF3haa4LIvFKiQ83jZTBoSnqj2PM4dkaNGQE
+eHFTeyq8JOcHeaZ/fOzyNBp5FU03jK2qd9i5wkD0lc8=
+-----END CERTIFICATE-----
+"""
+
+
+class TlsWatchdogTests(TestCase):
+    """H1: the watchdog must cut HTTPS too. wrap_socket() detaches the raw
+    socket it was given (fileno -1), so tracking only the raw socket made the
+    shutdown a silent no-op: after a genuine handshake, a TLS server dripping
+    its status/header bytes (each recv inside the socket timeout) held the
+    fetch for as long as it liked. (The handshake itself is already bounded
+    as a whole by the socket timeout inside Python's ssl module.)"""
+
+    def _tls_drip_server(self):
+        import shutil
+        import socket as _socket
+        import ssl
+        import tempfile
+        import threading as _threading
+        import time as _time
+
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        cert, key = os.path.join(tmp, 'cert.pem'), os.path.join(tmp, 'key.pem')
+        with open(cert, 'w') as f:
+            f.write(TEST_TLS_CERT)
+        with open(key, 'w') as f:
+            f.write(TEST_TLS_KEY)
+        srv_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        srv_ctx.load_cert_chain(cert, key)
+        cli_ctx = ssl.create_default_context(cafile=cert)  # verifies, check_hostname on
+
+        srv = _socket.socket()
+        srv.bind(('127.0.0.1', 0))
+        srv.listen(1)
+        stop = _threading.Event()
+        log = []
+
+        def drip():
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                return
+            try:
+                tls = srv_ctx.wrap_socket(conn, server_side=True)
+                log.append('handshake')
+                tls.recv(4096)  # the request
+                tls.sendall(b'HTTP/1.1 200 OK\r\n')
+                while not stop.is_set():
+                    tls.sendall(b'X')  # a header that never ends
+                    _time.sleep(0.2)
+            except OSError:
+                pass
+            finally:
+                conn.close()
+
+        _threading.Thread(target=drip, daemon=True).start()
+        self.addCleanup(srv.close)
+        self.addCleanup(stop.set)
+        return srv.getsockname()[1], cli_ctx, log
+
+    def test_tls_header_drip_is_cut_at_deadline(self):
+        import ssl
+        import time as _time
+        port, cli_ctx, log = self._tls_drip_server()
+        with patch.object(knowledge, 'validate_public_url', lambda url: None), \
+                patch.object(knowledge, '_assert_public_ip', lambda ip: None), \
+                patch.object(knowledge, 'FETCH_DEADLINE', 1.5), \
+                patch.object(knowledge, 'TIMEOUT', 1.0), \
+                patch('http.client.ssl._create_default_https_context',
+                      lambda *a, **k: cli_ctx), \
+                patch.object(knowledge, '_cut', wraps=knowledge._cut) as cut:
+            started = _time.monotonic()
+            with self.assertRaisesMessage(ValueError, 'La página tardó demasiado.'):
+                knowledge.fetch_resource(f'https://127.0.0.1:{port}/')
+            elapsed = _time.monotonic() - started
+        self.assertLess(elapsed, 4.0)
+        self.assertEqual(log, ['handshake'])  # we got past the handshake
+        cut.assert_called_once()
+        tracked = cut.call_args.args[0]
+        self.assertEqual(len(tracked), 1)
+        self.assertIsInstance(tracked[0], ssl.SSLSocket)
+
+    def test_https_connection_keeps_stdlib_certificate_checks(self):
+        import ssl
+        conn = knowledge._GuardedHTTPSConnection('example.com', 443, timeout=1)
+        self.assertTrue(conn._context.check_hostname)
+        self.assertEqual(conn._context.verify_mode, ssl.CERT_REQUIRED)
+        raw, wrapped = MagicMock(), MagicMock()
+        conn._context = MagicMock()
+        conn._context.wrap_socket.return_value = wrapped
+        with patch.object(knowledge.http.client.HTTPConnection, 'connect',
+                          lambda self: setattr(self, 'sock', raw)):
+            knowledge._ACTIVE.socks = socks = []
+            try:
+                conn.connect()
+            finally:
+                knowledge._ACTIVE.socks = None
+        conn._context.wrap_socket.assert_called_once_with(
+            raw, server_hostname='example.com', do_handshake_on_connect=False)
+        wrapped.do_handshake.assert_called_once_with()
+        self.assertEqual(socks, [wrapped])  # tracked before the handshake ran
+        self.assertIs(conn.sock, wrapped)
+
+    def test_cut_shuts_down_and_closes_every_socket(self):
+        a, b = MagicMock(), MagicMock()
+        b.close.side_effect = OSError('already closed')
+        flag = []
+        with patch.object(knowledge.socket.socket, 'shutdown') as shutdown:
+            knowledge._cut([a, b], flag)
+        self.assertEqual(flag, [True])
+        self.assertEqual([c.args[0] for c in shutdown.call_args_list], [a, b])
+        a.close.assert_called_once_with()
+        b.close.assert_called_once_with()
+
+
+@override_settings(ANTHROPIC_API_KEY='test-key')
+class QueuedUrlTests(TestCase):
+    """H1 (structural): 'url' sources are fetched by process_knowledge, under
+    the same claim / lock / stale handling as scans and uploads."""
+
+    def setUp(self):
+        cache.clear()
+        self.acme = Client.objects.create(slug='acme', name='Acme', system_prompt='x',
+                                          notify_email='o@o.com', allowed_origins='acme.com')
+
+    def url(self, **kwargs):
+        defaults = dict(client=self.acme, kind='url', status='pending', title='Precios',
+                        origin='https://acme.com/precios', progress='En cola…')
+        defaults.update(kwargs)
+        return KnowledgeSource.objects.create(**defaults)
+
+    def test_cron_fetches_url_into_a_draft_without_the_model(self):
+        src = self.url()
+        KnowledgeFragment.objects.create(source=src, content='viejo', position=0)
+        seen = []
+
+        def fetch(url):
+            seen.append(KnowledgeSource.objects.get(pk=src.pk).status)
+            return 'Corte $25.'
+        with patch.object(knowledge, 'fetch_url_text', side_effect=fetch), \
+                patch.object(ingest.agent, '_provider_client',
+                             side_effect=AssertionError('model called')):
+            call_command('process_knowledge', stdout=io.StringIO())
+        src.refresh_from_db()
+        self.assertEqual(seen, ['processing'])
+        self.assertEqual((src.status, src.progress, src.error, src.attempts),
+                         ('draft', '', '', 1))
+        self.assertEqual(src.compiled_text(), 'Corte $25.')
+        self.assertNotIn('$25', self.acme.compiled_prompt())
+
+    def test_url_deleted_meanwhile_is_not_resurrected(self):
+        src = self.url()
+
+        def fetch_then_delete(url):
+            KnowledgeSource.objects.filter(pk=src.pk).delete()
+            return 'x'
+        with patch.object(knowledge, 'fetch_url_text', side_effect=fetch_then_delete):
+            results = ingest.process_pending()
+        self.assertEqual([status for _src, status in results], ['gone'])
+        self.assertFalse(KnowledgeSource.objects.filter(pk=src.pk).exists())
+        self.assertFalse(KnowledgeFragment.objects.exists())
+
+    def test_unexpected_error_is_not_leaked(self):
+        src = self.url()
+        with patch.object(knowledge, 'fetch_url_text', side_effect=RuntimeError('/srv/secret')):
+            ingest.process_pending()
+        src.refresh_from_db()
+        self.assertEqual(src.status, 'error')
+        self.assertNotIn('secret', src.error)
+
+    def test_lock_held_means_url_waits(self):
+        src = self.url()
+        cache.add('lock:process_knowledge', 1, 60)
+        with patch.object(knowledge, 'fetch_url_text') as fetch:
+            call_command('process_knowledge', stdout=io.StringIO())
+        fetch.assert_not_called()
+        src.refresh_from_db()
+        self.assertEqual(src.status, 'pending')
