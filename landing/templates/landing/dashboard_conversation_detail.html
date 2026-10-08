@@ -17,7 +17,7 @@
     <b>Lead capturado:</b> {{ conv.lead.name }}
     {% if conv.lead.email %}· <a href="mailto:{{ conv.lead.email }}">{{ conv.lead.email }}</a>{% endif %}
     {% if conv.lead.phone %}· {{ conv.lead.phone }}{% endif %}
-    — <a href="{% url 'dashboard' %}?q={{ conv.lead.email|default:conv.lead.name|urlencode }}">ver en Leads</a>
+    — <a href="{% url 'lead_detail' conv.lead.pk %}">ver el lead</a>
 </div>
 {% endif %}
 {% if survey %}

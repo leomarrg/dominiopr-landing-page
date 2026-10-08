@@ -1,0 +1,35 @@
+{% extends 'landing/dashboard_base.html' %}
+{% block title %}{% if action == 'delete' %}Borrar lead{% else %}Anonimizar lead{% endif %}{% endblock %}
+{% block content %}
+<h1 class="dash-h1">{% if action == 'delete' %}Borrar este lead{% else %}Anonimizar este lead{% endif %}</h1>
+<div class="ctl-card lead-danger">
+    <p><b>{{ lead.name }}</b>{% if lead.email %} · {{ lead.email }}{% endif %} · recibido {{ lead.created_at|date:"M d, Y" }}</p>
+    {% if action == 'delete' %}
+    <p>Se eliminarán para siempre:</p>
+    <ul>
+        <li>El lead y sus {{ counts.notes }} nota(s) interna(s).</li>
+        <li>{{ counts.conversations }} conversación(es) con {{ counts.messages }} mensaje(s).</li>
+        <li>{{ counts.bookings }} cita(s).</li>
+    </ul>
+    <p class="ctl-muted">El registro de uso (mensajes y tokens) se conserva sin datos personales.</p>
+    {% else %}
+    <p>Se borrarán los datos personales y el texto libre, y se conservará el registro para las estadísticas:</p>
+    <ul>
+        <li>Nombre, correo, teléfono, compañía, mensaje, página, IP y navegador del lead.</li>
+        <li>Sus {{ counts.notes }} nota(s) interna(s).</li>
+        <li>El texto de {{ counts.messages }} mensaje(s) en {{ counts.conversations }} conversación(es).</li>
+        <li>Nombre, correo y notas de {{ counts.bookings }} cita(s).</li>
+    </ul>
+    <p class="ctl-muted">Se conservan la fuente, el estado, el servicio, las fechas y los estados de las conversaciones y citas.</p>
+    {% endif %}
+    <p><b>Esta acción no se puede deshacer.</b></p>
+    <div class="dash-actions-row">
+        <form method="post" action="{% if action == 'delete' %}{% url 'lead_delete' lead.pk %}{% else %}{% url 'lead_anonymize' lead.pk %}{% endif %}">
+            {% csrf_token %}
+            <input type="hidden" name="confirm" value="1">
+            <button type="submit" class="save-btn lead-danger__btn">{% if action == 'delete' %}Sí, borrar definitivamente{% else %}Sí, anonimizar{% endif %}</button>
+        </form>
+        <a class="ctl-btn" href="{% url 'lead_detail' lead.pk %}">Cancelar</a>
+    </div>
+</div>
+{% endblock %}

@@ -5,6 +5,7 @@ of queries no matter how many clients exist: grouped aggregates from
 landing.analytics merged in Python, then sorted and paginated server-side.
 """
 import csv
+import tempfile
 from datetime import timedelta
 from decimal import Decimal
 
@@ -13,11 +14,12 @@ from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db.models import Count, Q, Sum
 from django.db.models.functions import TruncMonth
-from django.http import HttpResponse
+from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 
-from . import analytics
+from . import analytics, tenant_export
 from . import usage as usage_ledger
 from .models import AuditEvent, Client, UsageEvent
 from .platform_views import _csv_safe
@@ -268,3 +270,26 @@ def control_export(request):
         n += 1
     _audit(request, 'control.export', target=f'{n} filas', result=f'meses={months}')
     return resp
+
+
+@login_required
+@staff_required
+@require_POST
+def control_export_tenant(request, slug):
+    """Phase 7: download the full tenant export (same zip as the
+    export_tenant command). POST so a link or prefetch can't trigger it.
+    Built in a temporary file -- spooled to disk, never fully in memory --
+    and streamed back."""
+    client = get_object_or_404(Client, slug=slug)
+    tmp = tempfile.TemporaryFile()
+    try:
+        counts = tenant_export.write_export(client, tmp)
+    except Exception:
+        tmp.close()
+        _audit(request, 'tenant.export', client=client, target=client.slug, result='failed')
+        raise
+    tmp.seek(0)
+    _audit(request, 'tenant.export', client=client, target=client.slug,
+           result=' '.join(f'{k}={v}' for k, v in counts.items())[:200])
+    return FileResponse(tmp, as_attachment=True, filename=tenant_export.filename_for(client),
+                        content_type='application/zip')

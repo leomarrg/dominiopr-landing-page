@@ -2,7 +2,7 @@ from django.contrib import admin
 
 from .models import (
     AuditEvent, AvailabilityRule, Booking, Client, ContactSubmission,
-    Conversation, KnowledgeSource, Membership, Subscription, Survey, UsageEvent,
+    Conversation, KnowledgeSource, LeadNote, Membership, Subscription, Survey, UsageEvent,
 )
 
 
@@ -133,3 +133,18 @@ class UsageEventAdmin(admin.ModelAdmin):
 
 
 admin.site.register(AvailabilityRule)
+
+
+@admin.register(LeadNote)
+class LeadNoteAdmin(admin.ModelAdmin):
+    """Internal lead notes: read-only here; they are written from the lead
+    detail page (audited) and removed by delete/anonymize."""
+    list_display = ('lead', 'author', 'created_at')
+    list_select_related = ('lead', 'author')
+    readonly_fields = ('lead', 'author', 'text', 'created_at')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

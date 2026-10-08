@@ -5,7 +5,7 @@ from django.utils.text import slugify
 
 from . import human
 from .emailcheck import check_email
-from .models import Client, ContactSubmission
+from .models import Client, ContactSubmission, LeadNote
 from .phone import normalize_phone
 
 
@@ -151,3 +151,15 @@ class ContactForm(HumanCheckMixin, forms.ModelForm):
         if not cleaned.get('email') and not cleaned.get('phone'):
             raise forms.ValidationError('Déjanos un email o un número de teléfono para poder contactarte.')
         return cleaned
+
+
+class LeadNoteForm(forms.Form):
+    """Phase 7: an internal note on a lead. The length cap is enforced here,
+    server-side (the textarea maxlength is only a hint)."""
+    text = forms.CharField(
+        max_length=LeadNote.MAX_CHARS, strip=True,
+        widget=forms.Textarea(attrs={'rows': 3, 'maxlength': LeadNote.MAX_CHARS}),
+        error_messages={
+            'required': 'La nota no puede estar vacía.',
+            'max_length': f'La nota no puede pasar de {LeadNote.MAX_CHARS} caracteres.',
+        })

@@ -20,6 +20,11 @@
     <a href="{% url 'knowledge' %}?client={{ c.slug }}">Conocimiento</a> ·
     <a href="{% url 'dash_users' %}?client={{ c.slug }}">Usuarios</a>
 </p>
+<form method="post" action="{% url 'control_export_tenant' c.slug %}" class="ctl-sub">
+    {% csrf_token %}
+    <button type="submit" class="ctl-btn">Exportar datos del cliente</button>
+    <span class="ctl-muted">Zip con JSON y CSV: leads, notas, conversaciones, citas, conocimiento, horario, usuarios, encuestas y uso mensual (sin costos ni credenciales). Queda en la auditoría.</span>
+</form>
 
 <section class="dash-stats">
     <div class="dash-stat dash-stat--accent"><div class="dash-stat__num">{{ revenue|usd }}</div><div class="dash-stat__label">Ingreso mensual</div></div>

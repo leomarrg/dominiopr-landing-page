@@ -37,12 +37,13 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from . import agent, human, notify, payments
+from . import leads as lead_service
 from . import usage as usage_ledger
 from .emailcheck import check_email
-from .forms import ContactForm
+from .forms import ContactForm, LeadNoteForm
 from .models import (
     AuditEvent, Booking, ChatMessage, Client, ContactSubmission, Conversation,
-    Membership, ProcessedWebhookEvent, Subscription, Survey,
+    LeadNote, Membership, ProcessedWebhookEvent, Subscription, Survey,
 )
 from .phone import normalize_phone
 
@@ -2305,6 +2306,114 @@ def lead_email(request, pk):
             request,
             f'No se pudo enviar el email a {lead.email}. Revisa la configuración de correo y trata de nuevo.')
     return redirect(ref)
+
+
+# ============================================================
+# PHASE 7 — lead detail: timeline, notes, delete / anonymize
+# ============================================================
+
+def _scoped_lead(user, pk):
+    """get_lead_or_404 with the client joined (the detail page needs it)."""
+    return get_object_or_404(leads_for(user).select_related('client'), pk=pk)
+
+
+def _can_manage_lead(user, lead):
+    """Delete/anonymize: staff, or an org_admin of the lead's own client.
+    A lead with no client (DOMINIO's own site) is staff-only — the membership
+    lookup with client=None matches nothing."""
+    if user.is_staff:
+        return True
+    return bool(lead.client_id) and _is_org_admin(user, lead.client)
+
+
+@login_required
+def lead_detail(request, pk):
+    """One lead with everything around it, in a single timeline. Any member
+    of the lead's client may read it and add notes; only an org_admin may
+    delete or anonymize."""
+    lead = _scoped_lead(request.user, pk)
+    clinic = bool(lead.client and lead.client.clinic_mode)
+    # Reading a lead (and its transcript excerpts) is access to PII: audit it
+    # once per user+lead per hour, like conversation_detail.
+    try:
+        first_view = cache.add(f'auditview:lead:{request.user.pk}:{lead.pk}', 1, 3600)
+    except Exception:  # best-effort: a cache hiccup must not 500 the page
+        first_view = True
+    if first_view:
+        _audit(request, 'lead.view', client=lead.client, target=f'lead:{lead.pk}')
+    return render(request, 'landing/dashboard_lead_detail.html', {
+        'active_tab': 'leads',
+        'lead': lead,
+        'clinic': clinic,
+        'timeline': lead_service.build_timeline(lead, clinic=clinic),
+        'status_choices': ContactSubmission.STATUS_CHOICES,
+        'note_form': LeadNoteForm(),
+        'note_max': LeadNote.MAX_CHARS,
+        'can_manage': _can_manage_lead(request.user, lead),
+        'default_from': settings.DEFAULT_FROM_EMAIL,
+    })
+
+
+@login_required
+@require_POST
+def lead_note(request, pk):
+    """Add an internal note. Any member of the lead's client (agent included)."""
+    lead = _scoped_lead(request.user, pk)
+    form = LeadNoteForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, form.errors['text'][0])
+        return redirect('lead_detail', pk=lead.pk)
+    LeadNote.objects.create(lead=lead, author=request.user, text=form.cleaned_data['text'])
+    # pk only: the note text may carry personal details.
+    _audit(request, 'lead.note', client=lead.client, target=f'lead:{lead.pk}')
+    messages.success(request, 'Nota guardada.')
+    return redirect('lead_detail', pk=lead.pk)
+
+
+def _lead_privacy_action(request, pk, action):
+    """Shared flow for delete/anonymize: scope (404) -> role (403) -> a
+    confirmation page on the first POST -> act on the second POST with
+    confirm=1. Audited with the lead pk and row counts only."""
+    lead = _scoped_lead(request.user, pk)
+    if not _can_manage_lead(request.user, lead):
+        return HttpResponseForbidden(
+            'Solo un administrador de la organización puede borrar o anonimizar leads.')
+    if request.POST.get('confirm') != '1':
+        return render(request, 'landing/dashboard_lead_confirm.html', {
+            'active_tab': 'leads', 'lead': lead, 'action': action,
+            'counts': lead_service.related_counts(lead),
+        })
+    client, lead_pk = lead.client, lead.pk
+    if action == 'delete':
+        counts = lead_service.delete_lead(lead)
+    else:
+        counts = lead_service.anonymize_lead(lead)
+    _audit(request, f'lead.{action}', client=client, target=f'lead:{lead_pk}',
+           result=(f'conv={counts["conversations"]} msgs={counts["messages"]} '
+                   f'citas={counts["bookings"]} notas={counts["notes"]}'))
+    if action == 'delete':
+        messages.success(
+            request,
+            f'Lead eliminado, con {counts["conversations"]} conversación(es) y '
+            f'{counts["bookings"]} cita(s).')
+    else:
+        messages.success(
+            request,
+            'Lead anonimizado: se borraron sus datos personales, notas y el texto '
+            'de sus conversaciones. Las estadísticas se conservan.')
+    return redirect('dashboard')
+
+
+@login_required
+@require_POST
+def lead_delete(request, pk):
+    return _lead_privacy_action(request, pk, 'delete')
+
+
+@login_required
+@require_POST
+def lead_anonymize(request, pk):
+    return _lead_privacy_action(request, pk, 'anonymize')
 
 
 @login_required

@@ -241,6 +241,27 @@ class ContactSubmission(models.Model):
         return f'{self.name} <{self.email}> - {self.created_at:%Y-%m-%d %H:%M}'
 
 
+class LeadNote(models.Model):
+    """Phase 7: an internal note a tenant member leaves on a lead (mini-CRM
+    history). Never shown to the visitor. Goes with the lead (CASCADE) and is
+    removed when the lead is anonymized."""
+    MAX_CHARS = 5000
+
+    lead = models.ForeignKey(
+        ContactSubmission, on_delete=models.CASCADE, related_name='notes')
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='lead_notes')
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at', 'pk']
+
+    def __str__(self):
+        return f'Nota lead:{self.lead_id} · {self.created_at:%Y-%m-%d %H:%M}'
+
+
 class Booking(models.Model):
     """A reservation/appointment the agent can take. Double-booking is prevented
     at the database level by a partial unique constraint per (client, start)."""

@@ -1,0 +1,109 @@
+{% extends 'landing/dashboard_base.html' %}
+{% load landing_extras %}
+{% block title %}Lead — {{ lead.name }}{% endblock %}
+{% block content %}
+<div class="ctl-head">
+    <h1 class="dash-h1">{{ lead.name }}{% if lead.company %} <span class="ctl-muted">{{ lead.company }}</span>{% endif %}</h1>
+    <form method="post" action="{% url 'lead_status' lead.pk %}">
+        {% csrf_token %}
+        <span class="dash-dot dash-dot--{{ lead.status }}"></span>
+        <select name="status" class="dash-status-select" onchange="this.form.submit()" aria-label="Estado del lead">
+            {% for val, label in status_choices %}
+            <option value="{{ val }}" {% if lead.status == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <noscript><button type="submit" class="save-btn save-btn--sm">Guardar estado</button></noscript>
+    </form>
+</div>
+<p class="ctl-sub"><a href="{% url 'dashboard' %}">Leads</a>{% if lead.client %} · {{ lead.client.name }}{% endif %}{% if clinic %} · <span class="ctl-badge ctl-badge--warn">Modo clínica</span>{% endif %}</p>
+
+<div class="ctl-grid">
+    <div class="ctl-card">
+        <h2>Datos del lead</h2>
+        <dl class="ctl-dl">
+            <dt>Correo</dt>
+            <dd>{% if lead.email %}<a href="mailto:{{ lead.email }}">{{ lead.email }}</a>
+                {% if lead.email_verified_at %}<span class="dash-badge dash-badge--verified" title="Confirmó su correo el {{ lead.email_verified_at|date:'d/m/Y' }}">Correo confirmado</span>{% else %}<span class="dash-badge dash-badge--unverified">Sin confirmar</span>{% endif %}
+                {% else %}—{% endif %}</dd>
+            <dt>Teléfono</dt><dd>{% if lead.phone %}<a href="tel:{{ lead.phone }}">{{ lead.phone|format_phone }}</a>{% else %}—{% endif %}</dd>
+            <dt>Servicio</dt><dd>{{ lead.get_service_display|default:"—" }}</dd>
+            {% if lead.get_budget_display %}<dt>Presupuesto</dt><dd>{{ lead.get_budget_display }}</dd>{% endif %}
+            <dt>Fuente</dt><dd><span class="dash-badge dash-badge--{{ lead.source }}">{{ lead.get_source_display }}</span></dd>
+            <dt>Página</dt><dd>{% if lead.page_url %}<a href="{{ lead.page_url }}" target="_blank" rel="noopener noreferrer">{{ lead.page_url|truncatechars:60 }}</a>{% else %}—{% endif %}</dd>
+            <dt>Recibido</dt><dd>{{ lead.created_at|date:"M d, Y · g:i A" }}</dd>
+            <dt>Mensaje</dt><dd class="lead-pre">{{ lead.message|default:"—" }}</dd>
+        </dl>
+    </div>
+    <div class="ctl-card">
+        <h2>Acciones</h2>
+        {% if lead.email %}
+        <form class="dash-reply-form is-open" method="post" action="{% url 'lead_email' lead.pk %}">
+            {% csrf_token %}
+            <div class="dash-reply-meta">Responder por correo a <b>{{ lead.email }}</b></div>
+            <input type="text" name="subject" class="dash-reply-input" value="Re: tu mensaje a {{ lead.client.name|default:'DOMINIO' }}" maxlength="200" required aria-label="Asunto">
+            <textarea name="body" class="dash-reply-textarea" rows="5" placeholder="Escribe tu respuesta…" maxlength="10000" required aria-label="Mensaje"></textarea>
+            <div class="dash-reply-actions">
+                <button type="submit" class="save-btn">Enviar correo</button>
+                {% if default_from %}<span class="dash-reply-hint">Enviado desde {{ default_from }}</span>{% endif %}
+            </div>
+        </form>
+        {% elif lead.phone %}
+        <p><a href="tel:{{ lead.phone }}" class="dash-reply-toggle">Llamar {{ lead.phone|format_phone }}</a></p>
+        {% else %}
+        <p class="ctl-muted">Este lead no tiene correo ni teléfono.</p>
+        {% endif %}
+
+        {% if can_manage %}
+        <div class="lead-danger">
+            <h2>Privacidad</h2>
+            <p class="ctl-muted">Anonimizar borra los datos personales, las notas y el texto de las conversaciones, y conserva el registro para las estadísticas. Borrar elimina el lead, sus conversaciones y sus citas. Ambas acciones piden confirmación y no se pueden deshacer.</p>
+            <div class="dash-actions-row">
+                <form method="post" action="{% url 'lead_anonymize' lead.pk %}">{% csrf_token %}<button type="submit" class="ctl-btn">Anonimizar…</button></form>
+                <form method="post" action="{% url 'lead_delete' lead.pk %}">{% csrf_token %}<button type="submit" class="ctl-btn lead-danger__btn">Borrar…</button></form>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="ctl-card">
+    <h2>Añadir nota interna</h2>
+    <form method="post" action="{% url 'lead_note' lead.pk %}">
+        {% csrf_token %}
+        <textarea name="text" class="dash-reply-textarea" rows="3" maxlength="{{ note_max }}" required placeholder="Solo la ve tu equipo. Ej.: llamó el martes, quiere cotización para mayo." aria-label="Nota interna"></textarea>
+        <button type="submit" class="save-btn save-btn--sm">Guardar nota</button>
+    </form>
+</div>
+
+<div class="ctl-card">
+    <h2>Historial</h2>
+    <ol class="lead-tl">
+        {% for it in timeline %}
+        <li class="lead-tl__item lead-tl__item--{{ it.kind }}">
+            <div class="lead-tl__when">{{ it.at|date:"M d, Y · g:i A" }}</div>
+            {% if it.kind == 'created' %}
+            <div><b>Lead recibido</b> <span class="ctl-muted">vía {{ lead.get_source_display }}</span></div>
+            {% elif it.kind == 'note' %}
+            <div><b>Nota</b> <span class="ctl-muted">de {{ it.author }}</span></div>
+            <div class="lead-pre">{{ it.note.text }}</div>
+            {% elif it.kind == 'conversation' %}
+            {% if it.clinic %}
+            <div><b>Conversación (modo clínica)</b> · <span class="dash-pill dash-pill--{{ it.conv.state }}">{{ it.conv.get_state_display }}</span> · <a href="{% url 'conversation_detail' it.conv.pk %}">Abrir conversación</a></div>
+            {% else %}
+            <div><b>Conversación</b> · <span class="dash-pill dash-pill--{{ it.conv.state }}">{{ it.conv.get_state_display }}</span> · <a href="{% url 'conversation_detail' it.conv.pk %}">Ver transcript completo</a></div>
+            {% if it.excerpt %}
+            <div class="lead-tl__excerpt">
+                {% for m in it.excerpt %}<div class="lead-tl__line"><span class="ctl-muted">{% if m.role == 'user' %}Visitante{% else %}Agente{% endif %}:</span> {{ m.text }}</div>{% endfor %}
+            </div>
+            {% endif %}
+            {% endif %}
+            {% elif it.kind == 'booking' %}
+            <div><b>Cita</b> para {{ it.booking.start|date:"M d, Y · g:i A" }} · <span class="dash-pill dash-pill--{{ it.booking.status }}">{{ it.booking.get_status_display }}</span>{% if it.booking.service and not it.clinic %} · {{ it.booking.service }}{% endif %}</div>
+            {% elif it.kind == 'audit' %}
+            <div>{{ it.label }}{% if it.event.action == 'lead.status' %}: {{ it.event.result }}{% elif it.event.action == 'lead.email' and it.event.result == 'failed' %} (falló){% endif %} <span class="ctl-muted">por {{ it.author }}</span></div>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ol>
+</div>
+{% endblock %}

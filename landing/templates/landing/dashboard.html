@@ -55,7 +55,7 @@
                     {% for lead in leads %}
                     <tr class="dash-row" data-target="detail-{{ lead.pk }}" aria-expanded="false" aria-controls="detail-{{ lead.pk }}" tabindex="0" role="button">
                         <td>
-                            <div class="dash-name">{{ lead.name }}</div>
+                            <div class="dash-name"><a href="{% url 'lead_detail' lead.pk %}" onclick="event.stopPropagation();">{{ lead.name }}</a></div>
                             {% if lead.company %}<div class="dash-sub">{{ lead.company }}</div>{% endif %}
                             {% if lead.message %}<div class="dash-sub dash-preview">{{ lead.message|truncatechars:64 }}</div>{% endif %}
                         </td>
@@ -93,6 +93,7 @@
                                 {% if lead.page_url %}<dt>Página</dt><dd><a href="{{ lead.page_url }}" target="_blank" rel="noopener">{{ lead.page_url|truncatechars:60 }}</a></dd>{% endif %}
                                 <dt>Recibido</dt><dd>{{ lead.created_at|date:"M d, Y · g:i A" }}</dd>
                             </dl>
+                            <p><a href="{% url 'lead_detail' lead.pk %}">Ver historial, notas y acciones del lead</a></p>
 
                             <div class="dash-reply">
                                 {% if not lead.email and lead.phone %}

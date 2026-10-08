@@ -87,6 +87,11 @@ urlpatterns = [
     path('dashboard/', views.dashboard, name='dashboard'),
     path('dashboard/lead/<int:pk>/status/', views.lead_status, name='lead_status'),
     path('dashboard/lead/<int:pk>/email/', views.lead_email, name='lead_email'),
+    # Phase 7: lead detail (timeline + notes) and the two privacy actions.
+    path('dashboard/lead/<int:pk>/', views.lead_detail, name='lead_detail'),
+    path('dashboard/lead/<int:pk>/note/', views.lead_note, name='lead_note'),
+    path('dashboard/lead/<int:pk>/delete/', views.lead_delete, name='lead_delete'),
+    path('dashboard/lead/<int:pk>/anonymize/', views.lead_anonymize, name='lead_anonymize'),
     path('dashboard/export.csv', platform_views.export_leads_csv, name='export_leads'),
 
     # Centralized client platform (Phase 2)
@@ -127,6 +132,8 @@ urlpatterns = [
     path('dashboard/control/', control_views.control_overview, name='control'),
     path('dashboard/control/export.csv', control_views.control_export, name='control_export'),
     path('dashboard/control/<slug:slug>/', control_views.control_client, name='control_client'),
+    path('dashboard/control/<slug:slug>/export/', control_views.control_export_tenant,
+         name='control_export_tenant'),
 
     # Client self-service (scoped to the member's own organization)
     path('dashboard/instalar/', views.install, name='install'),
