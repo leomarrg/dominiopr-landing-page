@@ -40,6 +40,9 @@
             {% endif %}
             {% endif %}
             {% if request.user.is_staff %}
+            <a href="{% url 'control' %}"
+               class="dash-nav__link {% if active == 'control' %}is-active{% endif %}"
+               {% if active == 'control' %}aria-current="page"{% endif %}>Control</a>
             <a href="{% url 'clients_list' %}"
                class="dash-nav__link {% if active == 'agents' %}is-active{% endif %}"
                {% if active == 'agents' %}aria-current="page"{% endif %}>Agentes</a>

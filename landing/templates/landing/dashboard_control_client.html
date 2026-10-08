@@ -1,0 +1,153 @@
+{% extends 'landing/dashboard_base.html' %}
+{% load landing_extras %}
+{% block title %}Control — {{ c.name }}{% endblock %}
+{% block content %}
+<div class="ctl-head">
+    <h1 class="dash-h1">{{ c.name }} <span class="ctl-muted">{{ c.slug }}</span>
+        {% if not c.is_active %}<span class="ctl-badge ctl-badge--off">Pausado</span>{% endif %}
+        {% if c.setup_status == 'pending' %}<span class="ctl-badge ctl-badge--warn">Pendiente de instalación</span>{% else %}<span class="ctl-badge ctl-badge--on">En vivo</span>{% endif %}
+    </h1>
+    <nav class="ctl-periods" aria-label="Periodo">
+        {% for key, label in periods %}
+        <a href="?period={{ key }}" class="{% if key == period %}is-active{% endif %}"{% if key == period %} aria-current="true"{% endif %}>{{ label }}</a>
+        {% endfor %}
+    </nav>
+</div>
+<p class="ctl-sub">
+    <a href="{% url 'control' %}">Centro de control</a> ·
+    <a href="{% url 'client_edit' c.pk %}">Editar agente</a> ·
+    <a href="{% url 'conversations' %}">Conversaciones</a> ·
+    <a href="{% url 'knowledge' %}?client={{ c.slug }}">Conocimiento</a> ·
+    <a href="{% url 'dash_users' %}?client={{ c.slug }}">Usuarios</a>
+</p>
+
+<section class="dash-stats">
+    <div class="dash-stat dash-stat--accent"><div class="dash-stat__num">{{ revenue|usd }}</div><div class="dash-stat__label">Ingreso mensual</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{{ month_cost|usd:4 }}</div><div class="dash-stat__label">Costo IA del mes en curso</div></div>
+    <div class="dash-stat"><div class="dash-stat__num{% if margin is not None and margin < 0 %} ctl-stat__num--neg{% endif %}">{{ margin|usd }}</div><div class="dash-stat__label">Margen del mes (ingreso − costo IA del mes)</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{{ vol_cost|usd:4 }}</div><div class="dash-stat__label">Costo IA · {{ period_label }}</div></div>
+</section>
+<section class="dash-stats">
+    <div class="dash-stat"><div class="dash-stat__num">{{ vol.messages|thousands }}</div><div class="dash-stat__label">Mensajes · {{ period_label }}</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{{ vol.conversations|thousands }}</div><div class="dash-stat__label">Conversaciones ({{ vol.escalated }} escaladas)</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{{ vol.leads|thousands }}</div><div class="dash-stat__label">Leads ({{ vol.chat_leads }} del chat) · {{ vol.bookings }} citas</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{% if vol.csat_avg %}{{ vol.csat_avg }}/5{% else %}—{% endif %}</div><div class="dash-stat__label">CSAT ({{ vol.csat_n }} votos)</div></div>
+</section>
+
+<div class="ctl-grid">
+    <div class="ctl-card">
+        <h2>Configuración y permisos</h2>
+        <dl class="ctl-dl">
+            <dt>Estado</dt><dd>{% if c.is_active %}Activo{% else %}Pausado{% endif %} · {{ c.get_setup_status_display }}{% if c.live_at %} desde {{ c.live_at|date:"j M Y" }}{% endif %}</dd>
+            <dt>Widget</dt><dd><span class="ctl-dot ctl-dot--{{ heartbeat }}" aria-hidden="true"></span>{% if heartbeat == 'never' %}Nunca visto{% else %}Visto {{ c.widget_last_seen_at|date:"d M Y H:i" }}{% if heartbeat == 'stale' %} (hace más de 24 h){% endif %}{% endif %}</dd>
+            <dt>Citas</dt><dd>{% if c.enable_bookings %}Sí{% else %}No{% endif %}</dd>
+            <dt>Modo clínica</dt><dd>{% if c.clinic_mode %}Sí — sin texto libre en reportes{% else %}No{% endif %}</dd>
+            <dt>Escalación a humano</dt><dd>Siempre activa</dd>
+            <dt>Orígenes permitidos</dt><dd>{% if origins %}{{ origins|join:", " }}{% else %}<span class="ctl-badge ctl-badge--warn">Sin restricción</span>{% endif %}</dd>
+            <dt>Tope diario</dt><dd>{% if cap and cap.cap %}{{ cap.used }}/{{ cap.cap }} hoy ({{ cap.pct }}%){% else %}Sin tope{% endif %}</dd>
+            <dt>Idioma</dt><dd>{{ c.get_primary_language_display }}</dd>
+            <dt>Retención</dt><dd>{{ c.retention_months }} meses</dd>
+            <dt>Conocimiento</dt><dd>{{ knowledge.active }} fuente{{ knowledge.active|pluralize:"s" }} activa{{ knowledge.active|pluralize }} · {{ knowledge.chars|thousands }} caracteres{% if knowledge.draft %} · {{ knowledge.draft }} en borrador{% endif %}</dd>
+            <dt>Sitio</dt><dd>{% if c.website_url %}{{ c.website_url }}{% else %}—{% endif %}{% if c.platform %} · {{ c.get_platform_display }}{% endif %}</dd>
+            <dt>Creado</dt><dd>{{ c.created_at|date:"j M Y" }}</dd>
+        </dl>
+    </div>
+    <div class="ctl-card">
+        <h2>Suscripción</h2>
+        {% if sub %}
+        <dl class="ctl-dl">
+            <dt>Plan</dt><dd>{{ sub.get_plan_display }} · {{ sub.get_period_display }}</dd>
+            <dt>Método</dt><dd>{{ sub.get_method_display }}</dd>
+            <dt>Estado</dt><dd><span class="ctl-badge {% if sub.status == 'active' %}ctl-badge--on{% elif sub.status == 'past_due' %}ctl-badge--warn{% elif sub.status == 'canceled' %}ctl-badge--off{% endif %}">{{ sub.get_status_display }}</span></dd>
+            <dt>Renovación</dt><dd>{% if sub.current_period_end %}{{ sub.current_period_end|date:"j M Y" }}{% else %}—{% endif %}</dd>
+            <dt>Precio mensual</dt><dd>{{ revenue|usd }}{% if sub.monthly_price_cents is not None %} (precio manual){% endif %}</dd>
+            {% if sub.order_number %}<dt>Orden</dt><dd>{{ sub.order_number }}</dd>{% endif %}
+        </dl>
+        {% else %}
+        <p class="ctl-muted">Sin suscripción (cliente creado a mano o el agente de DOMINIO).</p>
+        {% endif %}
+        <h2 style="margin-top:18px;">Usuarios</h2>
+        {% if members %}
+        <ul class="ctl-list">
+            {% for m in members %}<li>{{ m.user.username }} <span class="ctl-badge">{{ m.get_role_display }}</span>{% if m.must_change_password %}<span class="ctl-badge ctl-badge--warn">Sin activar</span>{% endif %}</li>{% endfor %}
+        </ul>
+        {% else %}<p class="ctl-muted">Sin usuarios.</p>{% endif %}
+    </div>
+</div>
+
+<div class="ctl-card">
+    <h2>Mensajes por día — últimos 30 días ({{ daily_total|thousands }})</h2>
+    <svg class="ctl-chart" viewBox="0 0 600 120" role="img" aria-label="Mensajes del chat por día, últimos 30 días">
+        <line x1="0" y1="119.5" x2="600" y2="119.5"></line>
+        {% for b in daily_bars %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}"><title>{{ b.day|date:"j M" }}: {{ b.value }} mensajes</title></rect>{% endfor %}
+    </svg>
+    {% if daily_bars %}{% with last=daily_bars|last %}<p class="ctl-muted">{{ daily_bars.0.day|date:"j M" }} – {{ last.day|date:"j M" }}</p>{% endwith %}{% endif %}
+</div>
+
+<div class="ctl-card">
+    <h2>Uso por mes (12 meses, por tipo)</h2>
+    <div class="ctl-scroll" style="border:none;margin:0;">
+    <table class="ctl-table">
+        <thead><tr>
+            <th scope="col">Mes</th>
+            {% for key, label in kinds %}<th scope="col" class="num">{{ label }}</th>{% endfor %}
+            <th scope="col" class="num">Tokens (ent/sal/caché)</th>
+            <th scope="col" class="num">Costo</th>
+            <th scope="col"><span class="ctl-muted">relativo</span></th>
+        </tr></thead>
+        <tbody>
+        {% for m in months %}
+        <tr>
+            <td class="nowrap">{{ m.month|date:"M Y" }}</td>
+            {% for k in m.kind_list %}<td class="num">{% if k %}{{ k.events|thousands }}<br><span class="ctl-muted">{{ k.cost|usd:4 }}</span>{% else %}<span class="ctl-muted">0</span>{% endif %}</td>{% endfor %}
+            <td class="num">{{ m.tokens|thousands }}<br><span class="ctl-muted">{{ m.input|thousands }} / {{ m.output|thousands }} / {{ m.cache_read|add:m.cache_write|thousands }}</span></td>
+            <td class="num">{{ m.cost4|usd:4 }}</td>
+            <td style="min-width:90px;"><span class="ctl-hbar__track" style="display:block;"><span class="ctl-hbar__fill" style="width:{{ m.pct }}%"></span></span></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    <p class="ctl-muted">Cada celda: llamadas IA y su costo. "Chat" = mensajes del widget.</p>
+</div>
+
+<div class="ctl-grid">
+    <div class="ctl-card">
+        <h2>Intención · {{ period_label }}</h2>
+        {% for i in intents %}
+        <div class="ctl-hbar"><span>{{ i.label }}</span><span class="ctl-hbar__track"><span class="ctl-hbar__fill" style="width:{{ i.pct }}%"></span></span><span class="num">{{ i.n }}</span></div>
+        {% empty %}<p class="ctl-muted">Sin conversaciones etiquetadas en este periodo (el etiquetado corre cada noche).</p>{% endfor %}
+    </div>
+    <div class="ctl-card">
+        <h2>Temas más frecuentes · {{ period_label }}</h2>
+        {% if c.clinic_mode %}<p class="ctl-muted">Modo clínica: no se guardan temas en texto libre.</p>{% else %}
+        {% for t in topics %}
+        <div class="ctl-hbar"><span>{{ t.topic }}</span><span class="ctl-hbar__track"><span class="ctl-hbar__fill" style="width:{{ t.pct }}%"></span></span><span class="num">{{ t.n }}</span></div>
+        {% empty %}<p class="ctl-muted">Sin temas todavía.</p>{% endfor %}
+        {% endif %}
+    </div>
+</div>
+
+{% if not c.clinic_mode %}
+<div class="ctl-card">
+    <h2>Últimas primeras preguntas</h2>
+    {% if questions %}
+    <ul class="ctl-list">
+        {% for q in questions %}<li><a href="{% url 'conversation_detail' q.pk %}">{{ q.first_question }}</a> <span class="ctl-muted">· {{ q.started_at|date:"d M H:i" }}{% if q.intent %} · {{ q.intent }}{% endif %}</span></li>{% endfor %}
+    </ul>
+    {% else %}<p class="ctl-muted">Sin preguntas registradas.</p>{% endif %}
+</div>
+{% endif %}
+
+<div class="ctl-card">
+    <h2>Auditoría reciente</h2>
+    {% if audits %}
+    <div class="ctl-scroll" style="border:none;margin:0;">
+    <table class="ctl-table">
+        <thead><tr><th scope="col">Fecha</th><th scope="col">Acción</th><th scope="col">Usuario</th><th scope="col">Objeto</th><th scope="col">Resultado</th></tr></thead>
+        <tbody>{% for a in audits %}<tr><td class="nowrap">{{ a.created_at|date:"d M Y H:i" }}</td><td>{{ a.action }}</td><td>{{ a.user.username|default:"—" }}</td><td>{{ a.target|truncatechars:60 }}</td><td>{{ a.result|truncatechars:60 }}</td></tr>{% endfor %}</tbody>
+    </table>
+    </div>
+    {% else %}<p class="ctl-muted">Sin eventos.</p>{% endif %}
+</div>
+{% endblock %}

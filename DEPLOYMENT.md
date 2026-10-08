@@ -316,6 +316,10 @@ python manage.py preflight   # Stripe, SMTP, IA y Django reales (--stripe|--emai
 ```cron
 # M-05: recordatorios de citas (~24h antes), cada hora
 0 * * * * cd /ruta/app && venv/bin/python manage.py send_booking_reminders
+# Fase 3a: etiquetar intención/tema de conversaciones inactivas (Haiku, máx 300 por noche).
+# Corre ANTES de purge_expired para no gastar en conversaciones que se van a borrar.
+# --dry-run lista las candidatas sin llamar al modelo. Sale con error si la API falla.
+45 2 * * * cd /ruta/app && venv/bin/python manage.py tag_conversations >> /home/ubuntu/dominio-cron.log 2>&1
 # M-10: retención por tenant (conversaciones, leads salvo 'signup', citas), diario; --dry-run solo cuenta
 30 3 * * * cd /ruta/app && venv/bin/python manage.py purge_expired
 # M-10: backup de SQLite (API .backup, integridad verificada) + copia externa cifrada opcional (ver abajo)

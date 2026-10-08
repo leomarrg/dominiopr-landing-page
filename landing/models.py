@@ -359,6 +359,11 @@ class Subscription(models.Model):
     # identifying a sale used to be a Stripe id, so changing processor — or just
     # reconciling with an accountant — would leave nothing to point at.
     order_number = models.CharField(max_length=24, blank=True, db_index=True)
+    # Recurring revenue override in cents per month. NULL = use the PLANS table
+    # (landing.analytics.plan_monthly_revenue). Needed for custom plans.
+    monthly_price_cents = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text='Override del precio mensual (planes custom o descuentos)')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -410,6 +415,27 @@ class Conversation(models.Model):
     config_version = models.CharField(max_length=16, blank=True)
     # Total API tokens consumed by this conversation (M-03 cost analytics).
     tokens_used = models.PositiveIntegerField(default=0)
+
+    # Topic tagging (nightly tag_conversations). Written with .update() so the
+    # auto_now last_message_at below is never bumped by the tagger.
+    INTENT_CHOICES = [
+        ('informacion', 'Información'),
+        ('precios', 'Precios'),
+        ('cita', 'Cita'),
+        ('soporte', 'Soporte'),
+        ('queja', 'Queja'),
+        ('empleo', 'Empleo'),
+        ('spam', 'Spam'),
+        ('otro', 'Otro'),
+    ]
+    intent = models.CharField(max_length=16, choices=INTENT_CHOICES, blank=True, db_index=True)
+    # Short model-written label; always blank for clinic_mode clients.
+    topic = models.CharField(max_length=60, blank=True)
+    tagged_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    # The visitor's first message, for the operator's "what do they ask" view.
+    # Blank for clinic_mode clients (no free health text outside the transcript).
+    first_question = models.CharField(max_length=300, blank=True)
+
     started_at = models.DateTimeField(auto_now_add=True)
     last_message_at = models.DateTimeField(auto_now=True)
 

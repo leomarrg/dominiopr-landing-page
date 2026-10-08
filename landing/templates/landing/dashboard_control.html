@@ -1,0 +1,114 @@
+{% extends 'landing/dashboard_base.html' %}
+{% load landing_extras %}
+{% block title %}Control{% endblock %}
+{% block content %}
+<div class="ctl-head">
+    <h1 class="dash-h1">Centro de control</h1>
+    <nav class="ctl-periods" aria-label="Periodo">
+        {% for key, label in periods %}
+        <a href="?period={{ key }}&sort={{ sort }}" class="{% if key == period %}is-active{% endif %}"{% if key == period %} aria-current="true"{% endif %}>{{ label }}</a>
+        {% endfor %}
+        <a href="{% url 'control_export' %}" class="ctl-btn">Exportar CSV (12 meses)</a>
+    </nav>
+</div>
+<p class="ctl-sub">{{ period_label }}: {{ start|date:"j M Y" }} – {{ end|date:"j M Y H:i" }} · {{ totals.clients }} clientes ({{ totals.active_clients }} activos)</p>
+
+<section class="dash-stats">
+    <div class="dash-stat dash-stat--accent"><div class="dash-stat__num">{{ totals.mrr|usd }}</div><div class="dash-stat__label">Ingreso mensual recurrente{% if totals.unpriced %} · {{ totals.unpriced }} sin precio{% endif %}</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{{ totals.cost|usd:4 }}</div><div class="dash-stat__label">Costo IA del periodo (incluye demo)</div></div>
+    <div class="dash-stat"><div class="dash-stat__num{% if totals.margin < 0 %} ctl-stat__num--neg{% endif %}">{{ totals.margin|usd }}</div><div class="dash-stat__label">Margen del mes: ingreso mensual − costo IA del mes en curso ({{ totals.month_cost|usd:4 }})</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{{ totals.conversations|thousands }}</div><div class="dash-stat__label">Conversaciones</div></div>
+</section>
+<section class="dash-stats">
+    <div class="dash-stat"><div class="dash-stat__num">{{ totals.messages|thousands }}</div><div class="dash-stat__label">Mensajes del chat</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{{ totals.leads|thousands }}</div><div class="dash-stat__label">Leads</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{{ totals.escalated|thousands }}</div><div class="dash-stat__label">Escalaciones</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{{ totals.bookings|thousands }}</div><div class="dash-stat__label">Citas</div></div>
+</section>
+{% if demo.events or demo.leads or demo.bookings %}
+<p class="ctl-sub">Demo público / sin cliente: {{ demo.events }} llamadas IA · {{ demo.cost|usd:4 }}{% if demo.leads %} · {{ demo.leads }} leads sin cliente{% endif %}{% if demo.bookings %} · {{ demo.bookings }} citas sin cliente{% endif %} (incluido en los totales, no en la tabla).</p>
+{% endif %}
+
+{% if page.object_list %}
+<div class="ctl-scroll">
+<table class="ctl-table">
+    <thead><tr>
+        <th scope="col"><a href="{{ sort_links.name }}" class="{% if sort_key == 'name' %}is-sorted{% endif %}">Cliente{% if sort_key == 'name' %} {% if sort_desc %}↓{% else %}↑{% endif %}{% endif %}</a></th>
+        <th scope="col">Plan</th>
+        <th scope="col" class="num"><a href="{{ sort_links.revenue }}" class="{% if sort_key == 'revenue' %}is-sorted{% endif %}">Ingreso/mes{% if sort_key == 'revenue' %} {% if sort_desc %}↓{% else %}↑{% endif %}{% endif %}</a></th>
+        <th scope="col" class="num"><a href="{{ sort_links.messages }}" class="{% if sort_key == 'messages' %}is-sorted{% endif %}">Mensajes{% if sort_key == 'messages' %} {% if sort_desc %}↓{% else %}↑{% endif %}{% endif %}</a></th>
+        <th scope="col">Tope hoy</th>
+        <th scope="col" class="num"><a href="{{ sort_links.conversations }}" class="{% if sort_key == 'conversations' %}is-sorted{% endif %}">Conv.{% if sort_key == 'conversations' %} {% if sort_desc %}↓{% else %}↑{% endif %}{% endif %}</a></th>
+        <th scope="col" class="num"><a href="{{ sort_links.leads }}" class="{% if sort_key == 'leads' %}is-sorted{% endif %}">Leads{% if sort_key == 'leads' %} {% if sort_desc %}↓{% else %}↑{% endif %}{% endif %}</a></th>
+        <th scope="col" class="num"><a href="{{ sort_links.escalated }}" class="{% if sort_key == 'escalated' %}is-sorted{% endif %}">Escal.{% if sort_key == 'escalated' %} {% if sort_desc %}↓{% else %}↑{% endif %}{% endif %}</a></th>
+        <th scope="col" class="num"><a href="{{ sort_links.bookings }}" class="{% if sort_key == 'bookings' %}is-sorted{% endif %}">Citas{% if sort_key == 'bookings' %} {% if sort_desc %}↓{% else %}↑{% endif %}{% endif %}</a></th>
+        <th scope="col" class="num"><a href="{{ sort_links.tokens }}" class="{% if sort_key == 'tokens' %}is-sorted{% endif %}">Tokens{% if sort_key == 'tokens' %} {% if sort_desc %}↓{% else %}↑{% endif %}{% endif %}</a></th>
+        <th scope="col" class="num"><a href="{{ sort_links.cost }}" class="{% if sort_key == 'cost' %}is-sorted{% endif %}">Costo IA{% if sort_key == 'cost' %} {% if sort_desc %}↓{% else %}↑{% endif %}{% endif %}</a></th>
+        <th scope="col" class="num"><a href="{{ sort_links.margin }}" class="{% if sort_key == 'margin' %}is-sorted{% endif %}" title="Ingreso mensual − costo IA del mes en curso">Margen (mes){% if sort_key == 'margin' %} {% if sort_desc %}↓{% else %}↑{% endif %}{% endif %}</a></th>
+        <th scope="col">Instalación</th>
+        <th scope="col">Permisos</th>
+        <th scope="col">Conocimiento</th>
+        <th scope="col">Usuarios</th>
+    </tr></thead>
+    <tbody>
+    {% for r in page.object_list %}
+    {% with c=r.client sub=r.sub %}
+    <tr>
+        <td>
+            <a href="{% url 'control_client' c.slug %}" class="dash-name">{{ c.name }}</a><br>
+            <span class="ctl-muted">{{ c.slug }}</span>
+            {% if not c.is_active %}<br><span class="ctl-badge ctl-badge--off">Pausado</span>{% endif %}
+        </td>
+        <td class="nowrap">
+            {% if sub %}
+            {{ sub.get_plan_display }} · {{ sub.get_period_display }}<br>
+            <span class="ctl-muted">{{ sub.get_method_display }}</span>
+            <span class="ctl-badge {% if sub.status == 'active' %}ctl-badge--on{% elif sub.status == 'past_due' %}ctl-badge--warn{% elif sub.status == 'canceled' %}ctl-badge--off{% endif %}">{{ sub.get_status_display }}</span>
+            {% if sub.current_period_end %}<br><span class="ctl-muted">Renueva {{ sub.current_period_end|date:"j M Y" }}</span>{% endif %}
+            {% else %}<span class="ctl-muted">Sin suscripción</span>{% endif %}
+        </td>
+        <td class="num">{{ r.revenue|usd }}</td>
+        <td class="num">{{ r.messages|thousands }}</td>
+        <td class="nowrap">
+            {% if r.cap and r.cap.cap %}
+            <span class="ctl-meter{% if r.cap.pct >= 80 %} ctl-meter--hot{% endif %}"><span style="width:{{ r.cap.pct }}%"></span></span>{{ r.cap.pct }}%
+            <br><span class="ctl-muted">{{ r.cap.used }}/{{ r.cap.cap }}</span>
+            {% else %}<span class="ctl-muted">Sin tope</span>{% endif %}
+        </td>
+        <td class="num">{{ r.conversations|thousands }}</td>
+        <td class="num">{{ r.leads|thousands }}</td>
+        <td class="num">{{ r.escalated|thousands }}</td>
+        <td class="num">{{ r.bookings|thousands }}</td>
+        <td class="num">{{ r.tokens|thousands }}<br><span class="ctl-muted">ent {{ r.input|thousands }} · sal {{ r.output|thousands }} · caché {{ r.cache|thousands }}</span></td>
+        <td class="num">{{ r.cost|usd:4 }}</td>
+        <td class="num {% if r.margin is not None and r.margin < 0 %}ctl-neg{% endif %}">{{ r.margin|usd }}</td>
+        <td class="nowrap">
+            {% if c.setup_status == 'pending' %}<span class="ctl-badge ctl-badge--warn">Pendiente</span>{% else %}<span class="ctl-badge ctl-badge--on">En vivo</span>{% endif %}<br>
+            <span class="ctl-dot ctl-dot--{{ r.heartbeat }}" aria-hidden="true"></span><span class="ctl-muted">{% if r.heartbeat == 'never' %}Widget nunca visto{% else %}Widget visto {{ c.widget_last_seen_at|date:"d M H:i" }}{% if r.heartbeat == 'stale' %} (hace más de 24 h){% endif %}{% endif %}</span>
+        </td>
+        <td>
+            <span class="ctl-badge {% if c.enable_bookings %}ctl-badge--on{% endif %}">Citas {% if c.enable_bookings %}sí{% else %}no{% endif %}</span>
+            {% if c.clinic_mode %}<span class="ctl-badge ctl-badge--warn">Clínica</span>{% endif %}
+            <span class="ctl-badge {% if not r.origins %}ctl-badge--warn{% endif %}">{% if r.origins %}{{ r.origins }} origen{{ r.origins|pluralize:"es" }}{% else %}Sin restricción de origen{% endif %}</span>
+            <span class="ctl-badge">Escalación</span>
+        </td>
+        <td class="nowrap">{{ r.knowledge.active }} activa{{ r.knowledge.active|pluralize }}{% if r.knowledge.draft %} · {{ r.knowledge.draft }} borrador{{ r.knowledge.draft|pluralize:"es" }}{% endif %}<br><span class="ctl-muted">{{ r.knowledge.chars|thousands }} caracteres</span></td>
+        <td class="nowrap">{{ r.roles.org_admin }} admin · {{ r.roles.agent }} agente{{ r.roles.agent|pluralize }}</td>
+    </tr>
+    {% endwith %}
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+{% if page.paginator.num_pages > 1 %}
+<nav class="ctl-pager" aria-label="Páginas">
+    {% if page.has_previous %}<a class="ctl-btn" href="?period={{ period }}&sort={{ sort }}&page={{ page.previous_page_number }}">Anterior</a>{% endif %}
+    <span>Página {{ page.number }} de {{ page.paginator.num_pages }}</span>
+    {% if page.has_next %}<a class="ctl-btn" href="?period={{ period }}&sort={{ sort }}&page={{ page.next_page_number }}">Siguiente</a>{% endif %}
+</nav>
+{% endif %}
+<p class="ctl-muted">Mensajes, tokens y costo salen del libro de uso (desde su despliegue). "Margen (mes)" = ingreso mensual − costo IA del mes en curso, sin importar el periodo elegido. Ingreso: solo suscripciones activas o con pago vencido; "—" = plan custom sin precio (ponlo en la suscripción).</p>
+{% else %}
+<div class="dash-empty">Todavía no hay clientes.</div>
+{% endif %}
+{% endblock %}

@@ -107,16 +107,18 @@ def month_bounds(date=None):
     return start, timezone.make_aware(datetime(nxt_year, nxt_month, 1), tz)
 
 
-def rollup_by_client(start, end):
+def rollup_by_client(start, end, client_ids=None):
     """Usage per client in [start, end), in one grouped query.
 
     Returns {client_id: {'events', 'messages', 'input', 'output', 'cache_read',
     'cache_write', 'tokens', 'cost'}}. 'messages' counts chat turns only; cost
     is a Decimal. The None key holds events with no client (the public demo,
-    deleted tenants)."""
+    deleted tenants). `client_ids` restricts to those clients (None = all)."""
+    qs = UsageEvent.objects.filter(created_at__gte=start, created_at__lt=end)
+    if client_ids is not None:
+        qs = qs.filter(client_id__in=list(client_ids))
     rows = (
-        UsageEvent.objects.filter(created_at__gte=start, created_at__lt=end)
-        .order_by()
+        qs.order_by()
         .values('client_id')
         .annotate(
             events=Count('id'),

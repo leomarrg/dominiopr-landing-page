@@ -560,10 +560,10 @@ def _chat_lead_handler(request, client_obj=None, page_url='', conversation=None)
         raw_service = data.get('service')
         service = raw_service if raw_service in valid_services else 'ai-automation'
         if clinic:
-            # The model-written summary may carry health details; keep only the
-            # short service label (CLINIC_RULES tells the model to put just that).
-            label = ' '.join(str(raw_service or '').split())[:80] or 'consulta'
-            message = f'[Modo clínica] Servicio: {label}'
+            # Nothing the model wrote is stored: even the "service" label can
+            # carry health details ("cita por dolor de pecho"), and CLINIC_RULES
+            # is a prompt, not a guarantee.
+            message = '[Modo clínica] Solicitud desde el chat — el equipo confirma los detalles con la persona.'
         else:
             message = ('[Captured by the AI chat assistant] '
                        + (data.get('summary') or '').strip())[:5000]
@@ -746,7 +746,8 @@ def _booking_handler(request, client_obj=None):
             with transaction.atomic():
                 booking = Booking.objects.create(
                     client=client_obj, name=name, email=email,
-                    service=(data.get('service') or '').strip()[:120],
+                    # Clinic mode: no model-written text, it can carry health details.
+                    service='' if clinic else (data.get('service') or '').strip()[:120],
                     # Clinic mode: the model's free-text notes are never stored.
                     notes='' if clinic else (data.get('notes') or '').strip()[:1000],
                     start=start, status='pending',
@@ -1002,10 +1003,13 @@ def chat_api(request):
                                 content=reply[:MAX_MESSAGE_CHARS],
                                 position=next_pos + 1),
                 ])
-                Conversation.objects.filter(pk=conversation.pk).update(
-                    tokens_used=F('tokens_used') + agent.total_tokens(usage),
-                    last_message_at=timezone.now(),
-                )
+                updates = {'tokens_used': F('tokens_used') + agent.total_tokens(usage),
+                           'last_message_at': timezone.now()}
+                # The opening question feeds the operator control center.
+                # Clinic tenants keep no free text outside the transcript.
+                if next_pos == 0 and not client_obj.clinic_mode:
+                    updates['first_question'] = history[-1]['content'][:300]
+                Conversation.objects.filter(pk=conversation.pk).update(**updates)
         except Exception:
             logger.exception('Failed to persist conversation %s', conversation.pk)
 

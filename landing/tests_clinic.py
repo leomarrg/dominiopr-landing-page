@@ -215,20 +215,23 @@ class ClinicHandlerTests(TestCase):
     def test_clinic_lead_stores_generic_message_and_mails_no_summary(self):
         handle = _chat_lead_handler(self._request(), self.clinic)
         handle({'name': 'Ana', 'email': 'ana@example.com', 'summary': HEALTH_TEXT,
-                'service': 'limpieza'})
+                'service': 'cita por dolor de muela'})
         lead = ContactSubmission.objects.get()
-        self.assertEqual(lead.message, '[Modo clínica] Servicio: limpieza')
+        self.assertTrue(lead.message.startswith('[Modo clínica]'))
+        self.assertNotIn('dolor', lead.message)
         sent = _all_mail_text()
         self.assertEqual(len(mail.outbox), 2)  # team + visitor confirmation
         self.assertNotIn('ibuprofeno', sent)
         self.assertNotIn('[Modo clínica]', mail.outbox[1].body)  # visitor copy
         self.assertIn(CLINIC_DASHBOARD_NOTE, mail.outbox[0].body)
 
-    def test_clinic_lead_without_service_says_consulta(self):
+    def test_clinic_lead_never_stores_model_text(self):
         handle = _chat_lead_handler(self._request(), self.clinic)
-        handle({'name': 'Ana', 'email': 'ana@example.com', 'summary': HEALTH_TEXT})
-        self.assertEqual(ContactSubmission.objects.get().message,
-                         '[Modo clínica] Servicio: consulta')
+        handle({'name': 'Ana', 'email': 'ana@example.com', 'summary': HEALTH_TEXT,
+                'service': 'diabetes tipo 2'})
+        message = ContactSubmission.objects.get().message
+        self.assertNotIn('diabetes', message)
+        self.assertNotIn('ibuprofeno', message)
 
     def test_regular_lead_keeps_summary_in_record_and_mail(self):
         handle = _chat_lead_handler(self._request(), self.shop)
@@ -276,13 +279,15 @@ class ClinicHandlerTests(TestCase):
     def test_clinic_booking_drops_notes(self):
         handle = _booking_handler(self._request(), self.clinic)
         self.assertIn('Reservado', handle({'name': 'Ana', 'email': 'ana@example.com',
-                                           'start': self._slot(), 'service': 'Limpieza',
+                                           'start': self._slot(),
+                                           'service': 'cita por dolor de pecho',
                                            'notes': HEALTH_TEXT}))
         booking = Booking.objects.get()
         self.assertEqual(booking.notes, '')
-        self.assertEqual(booking.service, 'Limpieza')
+        self.assertEqual(booking.service, '')
         sent = _all_mail_text()
         self.assertNotIn('ibuprofeno', sent)
+        self.assertNotIn('dolor de pecho', sent)
         self.assertIn(CLINIC_DASHBOARD_NOTE, mail.outbox[0].body)
 
     def test_regular_booking_keeps_notes(self):

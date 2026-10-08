@@ -21,7 +21,7 @@ from django.urls import include, path, reverse_lazy
 from django.contrib.sitemaps.views import sitemap
 from django.views.generic import RedirectView
 
-from landing import platform_views, seo, views
+from landing import control_views, platform_views, seo, views
 
 # Throttle login attempts (brute-force protection): 10 / 5 min / IP.
 login_view = views._rate_limited('login', limit=10, window=300)(
@@ -103,6 +103,11 @@ urlpatterns = [
     path('dashboard/clients/<int:pk>/toggle/', views.client_toggle_active, name='client_toggle_active'),
     path('dashboard/clients/<int:pk>/resend/', views.client_resend_onboarding, name='client_resend_onboarding'),
     path('dashboard/clients/<int:pk>/live/', views.client_mark_live, name='client_mark_live'),
+
+    # Staff control center (Phase 3a): every tenant chatbot in one place
+    path('dashboard/control/', control_views.control_overview, name='control'),
+    path('dashboard/control/export.csv', control_views.control_export, name='control_export'),
+    path('dashboard/control/<slug:slug>/', control_views.control_client, name='control_client'),
 
     # Client self-service (scoped to the member's own organization)
     path('dashboard/instalar/', views.install, name='install'),
