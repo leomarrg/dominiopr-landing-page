@@ -17,8 +17,10 @@ import anthropic
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
+from django.db import transaction
 from django.db.models import Avg, Count, Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -33,8 +35,8 @@ from .models import (
     KnowledgeSource, Membership, Survey, UsageEvent,
 )
 from .views import (
-    _audit, _client_ip, _member_client_ids, _send_plain_email, leads_for,
-    staff_required,
+    _audit, _client_ip, _member_client_ids, _rate_limited, _send_plain_email,
+    _tenant_action_cap_hit, leads_for, staff_required,
 )
 
 logger = logging.getLogger(__name__)
@@ -128,6 +130,11 @@ def conversations(request):
 @login_required
 def conversation_detail(request, pk):
     conv = get_object_or_404(conversations_for(request.user), pk=pk)
+    # Reading a transcript is access to visitor PII: audit it, but once per
+    # user+conversation per hour so reloads don't flood the trail.
+    if cache.add(f'auditview:conv:{request.user.pk}:{conv.pk}', 1, 3600):
+        _audit(request, 'conversation.view', client=conv.client,
+               target=f'conv:{conv.pk}')
     return render(request, 'landing/dashboard_conversation_detail.html', {
         'active_tab': 'conversations',
         'conv': conv,
@@ -476,9 +483,12 @@ def knowledge_action(request, pk):
 
 @login_required
 @require_POST
+# 'knowledge' = fallback target when there's no Referer (this path is POST-only).
+@_rate_limited('ktest', limit=10, window=300, html='knowledge')
 def knowledge_test(request):
     """RF-21/M-19: ask a test question against the compiled knowledge (optionally
-    including ONE draft source) before anything goes live. Never persists."""
+    including ONE draft source) before anything goes live. Never persists.
+    Each test is a paid model call: per-IP throttle plus a per-tenant daily cap."""
     client = _knowledge_client(request)
     if client is None:
         messages.error(request, 'Solo un administrador puede gestionar el conocimiento.')
@@ -486,7 +496,10 @@ def knowledge_test(request):
     question = (request.POST.get('question') or '').strip()[:2000]
     draft_pk = request.POST.get('draft') or None
     test_answer = None
-    if question:
+    if question and _tenant_action_cap_hit('ktest', client):
+        messages.error(request, 'Llegaste al límite de pruebas de hoy para este agente. '
+                                'Intenta de nuevo mañana.')
+    elif question:
         prompt = client.compiled_prompt(include_draft_pk=draft_pk)
         try:
             test_answer, test_usage = agent.answer(
@@ -554,21 +567,30 @@ def user_invite(request):
         messages.error(request, 'Ese email pertenece a una cuenta de staff.')
         return redirect(reverse('dash_users') + f'?client={client.slug}')
 
-    # Reuse the provisioning path (new user gets a temp password by email).
+    # An invite never edits an existing member: re-inviting an org_admin as
+    # 'agent' would otherwise silently demote them (possibly the last admin).
+    if Membership.objects.filter(client=client, user__username=email).exists():
+        messages.error(request, 'Esa persona ya es miembro de este agente.')
+        return redirect(reverse('dash_users') + f'?client={client.slug}')
+
+    # Reuse the provisioning path: a new account gets a one-time link to create
+    # its password; an existing one (member of another agent) gets no link.
     original_notify = client.notify_email
     client.notify_email = email  # provision against the invited address
-    username, temp_password = _provision_client_login(client)
+    username, setup_url = _provision_client_login(client)
     client.notify_email = original_notify
     if username:
+        # Only the membership just created above (checked absent before).
         Membership.objects.filter(user__username=username, client=client).update(role=role)
         body = (f'Te invitaron al dashboard de {client.name} en DOMINIO Chat 24/7.\n\n'
                 f'Entra en: {request.build_absolute_uri(reverse("dashboard"))}\n'
                 f'Usuario: {username}\n')
-        if temp_password:
-            body += (f'Contraseña temporal: {temp_password}\n'
-                     'Al entrar, el sistema te pedirá crear tu propia contraseña.')
+        if setup_url:
+            body += ('Crea tu contraseña aquí (enlace de un solo uso, vence en 7 días):\n'
+                     f'{setup_url}')
         else:
-            body += 'Usa tu contraseña existente (tu cuenta ya administraba otro agente).'
+            body += ('Usa tu contraseña existente (tu cuenta ya administraba otro agente). '
+                     'Si no la recuerdas, usa "¿Olvidaste tu contraseña?" en la página de entrada.')
         _send_plain_email(f'Acceso al dashboard — {client.name}', [email], body)
         _audit(request, 'user.invite', client=client, target=email, result=role)
         messages.success(request, f'Invitación enviada a {email} ({role}).')
@@ -588,8 +610,16 @@ def user_remove(request, pk):
     if membership.user_id == request.user.pk:
         messages.error(request, 'No puedes quitarte a ti mismo.')
         return redirect(reverse('dash_users') + f'?client={client.slug}')
-    _audit(request, 'user.remove', client=client, target=membership.user.username)
-    membership.delete()
+    with transaction.atomic():
+        # Lock the client's admin rows so two concurrent removals can't both
+        # pass the check and leave the organization with no org_admin.
+        admin_ids = list(client.members.select_for_update()
+                         .filter(role='org_admin').values_list('pk', flat=True))
+        if membership.role == 'org_admin' and admin_ids == [membership.pk]:
+            messages.error(request, 'No puedes quitar al último administrador de este agente.')
+            return redirect(reverse('dash_users') + f'?client={client.slug}')
+        _audit(request, 'user.remove', client=client, target=membership.user.username)
+        membership.delete()
     messages.success(request, 'Acceso eliminado (la cuenta sigue existiendo).')
     return redirect(reverse('dash_users') + f'?client={client.slug}')
 

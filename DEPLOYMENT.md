@@ -316,9 +316,9 @@ python manage.py preflight   # Stripe, SMTP, IA y Django reales (--stripe|--emai
 ```cron
 # M-05: recordatorios de citas (~24h antes), cada hora
 0 * * * * cd /ruta/app && venv/bin/python manage.py send_booking_reminders
-# M-10: retención de conversaciones por tenant, diario
+# M-10: retención por tenant (conversaciones, leads salvo 'signup', citas), diario; --dry-run solo cuenta
 30 3 * * * cd /ruta/app && venv/bin/python manage.py purge_expired
-# M-10: backup de SQLite (API .backup, integridad verificada); la copia fuera del servidor sigue comentada en backup_db.sh
+# M-10: backup de SQLite (API .backup, integridad verificada) + copia externa cifrada opcional (ver abajo)
 15 4 * * * /var/www/dominio/deploy/backup_db.sh >> /home/ubuntu/dominio-cron.log 2>&1
 # M-20: publicar en redes los posts aprobados que ya vencieron, cada 5 min
 */5 * * * * cd /ruta/app && venv/bin/python manage.py publish_due
@@ -370,3 +370,12 @@ Variables nuevas o que cambian de valor en `/var/www/dominio/.env` (detalle en `
 | `STRIPE_PRICE_SCALE_SETUP`      | `price_...` (nueva, cargo unico $2,500)  |
 
 Tras editar `.env` hay que reiniciar: `sudo systemctl restart gunicorn-dominio` (systemd solo lee el archivo al arrancar). Nota para la seccion de cron de arriba: la ruta real es `/var/www/dominio`. La base es SQLite y `deploy/backup_db.sh` hace una copia consistente con la API `.backup` de sqlite3 (gzip, retiene 14 dias).
+
+**Copia externa cifrada del backup (opcional).** El script no lee `.env`; las dos variables van en el crontab del usuario de la app (líneas `VAR=valor` arriba de las entradas) o en la misma línea del cron:
+
+| Variable                  | Valor                                                                 |
+|---------------------------|-----------------------------------------------------------------------|
+| `BACKUP_S3_URI`           | destino sin `/` final, p. ej. `s3://mi-bucket/dominio-db`             |
+| `BACKUP_PASSPHRASE_FILE`  | ruta a un archivo con la frase de cifrado (`chmod 600`, dueño = usuario del cron) |
+
+Con ambas definidas, cada backup se cifra con `gpg --symmetric --cipher-algo AES256`, se sube con `aws s3 cp` y el `.gpg` local se borra; la copia local `.gz` se conserva siempre. Si cifrar o subir falla, el script escribe el error en stderr y sale con código 1 (la copia local ya quedó verificada). Si solo está `BACKUP_S3_URI`, también sale con 1 (nunca sube sin cifrar). Sin `BACKUP_S3_URI` imprime `Copia externa: omitida (BACKUP_S3_URI no configurado)`. Requiere `gpg` y `aws` (CLI v2 con credenciales de un usuario IAM limitado a `s3:PutObject` en ese prefijo). Guarda la frase también fuera del servidor: sin ella los backups externos no se pueden abrir. El procedimiento de restauración desde S3 está comentado dentro de `deploy/backup_db.sh`.

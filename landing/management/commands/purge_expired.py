@@ -1,43 +1,71 @@
 """M-10: apply each tenant's data-retention policy. Run daily from cron:
 
-    python manage.py purge_expired
+    python manage.py purge_expired [--dry-run]
 
-Deletes conversations (and their messages, via CASCADE) older than the
-client's `retention_months`, plus stale webhook-idempotency rows. Leads are
-kept while the service is active (they're the client's CRM).
+Per client, with cutoff = now - retention_months (30-day months, 12 by
+default), deletes:
+  - conversations whose last message is older than the cutoff (messages and
+    surveys go with them via CASCADE);
+  - leads (ContactSubmission) created before the cutoff, EXCEPT source='signup'
+    (that row is DOMINIO's own billing relationship with the client), plus any
+    conversation linked to one of those leads — Conversation.lead is SET_NULL,
+    so a recent transcript would otherwise outlive the lead it belongs to;
+  - bookings whose `start` is before the cutoff.
+Also drops webhook-idempotency rows older than 90 days. --dry-run only counts.
 """
 from django.core.management.base import BaseCommand
+from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
-from landing.models import Client, Conversation, ProcessedWebhookEvent
+from landing.models import (
+    Booking, Client, ContactSubmission, Conversation, ProcessedWebhookEvent,
+)
 
 
 class Command(BaseCommand):
-    help = 'Delete conversations past each client retention window (M-10).'
+    help = ('Delete conversations, leads (except signup) and bookings past each '
+            'client retention window (M-10).')
 
     def add_arguments(self, parser):
         parser.add_argument('--dry-run', action='store_true',
                             help='Report what would be deleted without deleting.')
 
     def handle(self, *args, **options):
+        dry_run = options['dry_run']
         now = timezone.now()
-        total = 0
+        totals = {'conv': 0, 'leads': 0, 'bookings': 0}
         for client in Client.objects.all():
             months = client.retention_months or 12
             cutoff = now - timezone.timedelta(days=months * 30)
-            qs = Conversation.objects.filter(client=client, last_message_at__lt=cutoff)
-            n = qs.count()
-            if n:
-                if not options['dry_run']:
-                    qs.delete()
-                total += n
-                self.stdout.write(f'{client.slug}: {n} conversaciones '
-                                  f'({">" if options["dry_run"] else ""}retención {months}m)')
+            leads = (ContactSubmission.objects
+                     .filter(client=client, created_at__lt=cutoff)
+                     .exclude(source='signup'))
+            convs = Conversation.objects.filter(
+                Q(client=client, last_message_at__lt=cutoff) | Q(lead__in=leads))
+            bookings = Booking.objects.filter(client=client, start__lt=cutoff)
+            n_conv, n_leads, n_book = convs.count(), leads.count(), bookings.count()
+            if not (n_conv or n_leads or n_book):
+                continue
+            if not dry_run:
+                # Conversations first: deleting the leads first would SET_NULL
+                # the link and the linked transcripts would no longer match.
+                with transaction.atomic():
+                    convs.delete()
+                    bookings.delete()
+                    leads.delete()
+            totals['conv'] += n_conv
+            totals['leads'] += n_leads
+            totals['bookings'] += n_book
+            self.stdout.write(
+                f'{client.slug}: {n_conv} conversaciones, {n_leads} leads, {n_book} citas '
+                f'({">" if dry_run else ""}retención {months}m)')
         stale = ProcessedWebhookEvent.objects.filter(
             created_at__lt=now - timezone.timedelta(days=90))
         n_wh = stale.count()
-        if n_wh and not options['dry_run']:
+        if n_wh and not dry_run:
             stale.delete()
         self.stdout.write(self.style.SUCCESS(
-            f'{"[dry-run] " if options["dry_run"] else ""}'
-            f'{total} conversaciones purgadas, {n_wh} eventos webhook viejos.'))
+            f'{"[dry-run] " if dry_run else ""}'
+            f'{totals["conv"]} conversaciones, {totals["leads"]} leads y '
+            f'{totals["bookings"]} citas purgadas, {n_wh} eventos webhook viejos.'))

@@ -83,7 +83,44 @@ fi
 
 find "$BACKUP_DIR" -name 'db-*.sqlite3.gz' -mtime +"$KEEP_DAYS" -delete
 
-# Off-server copy. Lightsail automatic snapshots also cover this, but a backup
-# that only exists on the box it protects is not a backup.
-# aws s3 cp "$OUT.gz" "s3://YOUR-BUCKET/db-backups/"
+# ---- Off-server copy (optional, encrypted) ----
+# Lightsail automatic snapshots also cover this, but a backup that only exists
+# on the box it protects is not a backup. The copy leaves the server encrypted
+# (AES256, symmetric) so the bucket never holds readable tenant PII.
+#   BACKUP_S3_URI           e.g. s3://mi-bucket/dominio-db  (no trailing slash)
+#   BACKUP_PASSPHRASE_FILE  file with the passphrase, chmod 600, owned by the
+#                           cron user. Keep a copy OFF the server too (password
+#                           manager): without it the off-site backups are useless.
+#
+# Restore from S3 (on any box with aws cli + gpg + python3):
+#   aws s3 cp "s3://mi-bucket/dominio-db/db-YYYYMMDD.sqlite3.gz.gpg" .
+#   gpg --batch --passphrase-file /ruta/passphrase -o db-YYYYMMDD.sqlite3.gz -d db-YYYYMMDD.sqlite3.gz.gpg
+#   gunzip db-YYYYMMDD.sqlite3.gz
+#   python3 -c "import sqlite3; print(sqlite3.connect('db-YYYYMMDD.sqlite3').execute('PRAGMA integrity_check').fetchone()[0])"
+#   # Must print "ok"; then follow the restore drill at the top of this file.
+if [ -n "${BACKUP_S3_URI:-}" ] && [ -n "${BACKUP_PASSPHRASE_FILE:-}" ]; then
+    ENC="$OUT.gz.gpg"
+    # The local $OUT.gz is already verified and kept no matter what happens here.
+    if ! gpg --batch --yes --symmetric --cipher-algo AES256 \
+            --passphrase-file "$BACKUP_PASSPHRASE_FILE" -o "$ENC" "$OUT.gz"; then
+        rm -f "$ENC"
+        echo "Backup local OK ($OUT.gz) pero la copia externa FALLÓ: no se pudo cifrar" >&2
+        exit 1
+    fi
+    chmod 600 "$ENC"
+    if ! aws s3 cp "$ENC" "$BACKUP_S3_URI/"; then
+        rm -f "$ENC"
+        echo "Backup local OK ($OUT.gz) pero la copia externa FALLÓ: aws s3 cp a $BACKUP_S3_URI" >&2
+        exit 1
+    fi
+    rm -f "$ENC"
+    echo "Copia externa: OK ($BACKUP_S3_URI/$(basename "$ENC"))"
+elif [ -n "${BACKUP_S3_URI:-}" ]; then
+    # Misconfiguration must be loud: never upload unencrypted, never skip silently.
+    echo "Backup local OK ($OUT.gz) pero la copia externa FALLÓ: falta BACKUP_PASSPHRASE_FILE" >&2
+    exit 1
+else
+    echo "Copia externa: omitida (BACKUP_S3_URI no configurado)"
+fi
+
 echo "Backup OK: $OUT.gz"

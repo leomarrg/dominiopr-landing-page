@@ -51,7 +51,10 @@ MAX_MESSAGE_CHARS = 2000
 MAX_CHAT_BODY_BYTES = 64 * 1024
 
 
-def _rate_limited(prefix, limit, window, methods=None):
+RATE_LIMIT_HTML_MESSAGE = 'Demasiados envíos seguidos. Intenta de nuevo en unos minutos.'
+
+
+def _rate_limited(prefix, limit, window, methods=None, html=False):
     """Per-IP fixed-window rate limit using the shared cache (no Redis).
 
     Returns a JSON 429 once `limit` requests from one IP occur within `window`
@@ -60,8 +63,26 @@ def _rate_limited(prefix, limit, window, methods=None):
     By default only state-changing requests count (GET/HEAD/OPTIONS page loads
     are free). Pass `methods=('GET', 'POST')` to also throttle reads on views
     whose GET does expensive work (e.g. a Stripe call per request).
+
+    `html=True` is for plain HTML forms: instead of a JSON body the browser
+    would show raw, the user is redirected back (safe local Referer, else the
+    same path) with a Django messages error. `html='<url name>'` sets the
+    fallback target for POST-only views whose own path would 405 on GET.
     """
     counted = tuple(m.upper() for m in methods) if methods else None
+
+    def _html_throttled(request):
+        messages.error(request, RATE_LIMIT_HTML_MESSAGE)
+        ref = request.META.get('HTTP_REFERER', '')
+        if ref and url_has_allowed_host_and_scheme(
+                ref, allowed_hosts={request.get_host()},
+                require_https=request.is_secure()):
+            target = ref
+        elif isinstance(html, str):
+            target = reverse(html)
+        else:
+            target = request.path
+        return redirect(target)
 
     def decorator(view):
         @wraps(view)
@@ -75,6 +96,8 @@ def _rate_limited(prefix, limit, window, methods=None):
             key = f'rl:{prefix}:{ip}'
             count = cache.get(key, 0)
             if count >= limit:
+                if html:
+                    return _html_throttled(request)
                 resp = JsonResponse(
                     {'error': 'Demasiadas solicitudes. Baja un poco la velocidad.'}, status=429)
                 resp['Retry-After'] = str(window)
@@ -449,6 +472,7 @@ def get_lead_or_404(user, pk):
     return get_object_or_404(leads_for(user), pk=pk)
 
 
+@_rate_limited('contact', limit=5, window=300, html=True)
 def index(request):
     if request.method == 'POST':
         form = ContactForm(request.POST)
@@ -1989,6 +2013,8 @@ def lead_status(request, pk):
     if new_status in dict(ContactSubmission.STATUS_CHOICES):
         lead.status = new_status
         lead.save(update_fields=['status'])
+        _audit(request, 'lead.status', client=lead.client,
+               target=f'lead:{lead.pk}', result=new_status)
     # Return to the referring URL, but only if it's local (no open redirect).
     ref = request.META.get('HTTP_REFERER', '')
     if not url_has_allowed_host_and_scheme(ref, allowed_hosts={request.get_host()}):
@@ -2042,6 +2068,9 @@ def lead_email(request, pk):
         context={'body': body, 'lead': lead, 'business': business},
         reply_to=[reply_to] if reply_to else None,
     )
+    # Never the address: the audit trail is visible to every org_admin.
+    _audit(request, 'lead.email', client=lead.client,
+           target=f'lead:{lead.pk}', result='sent' if sent else 'failed')
     if sent:
         cache.set(cap_key, cache.get(cap_key, 0) + 1, 86400)
         if lead.status == 'new':
