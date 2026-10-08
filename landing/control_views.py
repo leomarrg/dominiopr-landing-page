@@ -9,6 +9,7 @@ import tempfile
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
 from django.core.paginator import Paginator
@@ -139,6 +140,10 @@ def control_overview(request):
         'bookings': sum(v['bookings'] for v in vol.values()),
         'clients': len(rows),
         'active_clients': sum(1 for r in rows if r['client'].is_active),
+        # Platform-wide spend ceiling (chat requests/day across every tenant);
+        # revisit as clients are added. Same cache key chat_api increments.
+        'global_cap': getattr(settings, 'DOMINIO_AGENT_DAILY_CAP', 2000),
+        'global_today': cache.get('chat:global:' + now.strftime('%Y%m%d')) or 0,
     }
 
     rows = _sort_rows(rows, sort_key, desc)

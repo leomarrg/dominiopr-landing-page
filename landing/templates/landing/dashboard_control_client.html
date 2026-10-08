@@ -65,7 +65,7 @@
             <dt>Método</dt><dd>{{ sub.get_method_display }}</dd>
             <dt>Estado</dt><dd><span class="ctl-badge {% if sub.status == 'active' %}ctl-badge--on{% elif sub.status == 'past_due' %}ctl-badge--warn{% elif sub.status == 'canceled' %}ctl-badge--off{% endif %}">{{ sub.get_status_display }}</span></dd>
             <dt>Renovación</dt><dd>{% if sub.current_period_end %}{{ sub.current_period_end|date:"j M Y" }}{% else %}—{% endif %}</dd>
-            <dt>Precio mensual</dt><dd>{{ revenue|usd }}{% if sub.monthly_price_cents is not None %} (precio manual){% endif %}</dd>
+            <dt>Precio mensual</dt><dd>{{ revenue|usd }}{% if sub.monthly_price_cents is not None %} (precio manual){% endif %} · <a href="{% url 'admin:landing_subscription_change' sub.pk %}">editar precio</a></dd>
             {% if sub.order_number %}<dt>Orden</dt><dd>{{ sub.order_number }}</dd>{% endif %}
         </dl>
         {% else %}

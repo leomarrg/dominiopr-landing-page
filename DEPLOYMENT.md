@@ -353,6 +353,38 @@ La lectura de PDF/Word corre en un proceso aparte (`landing/extract_worker.py`) 
 y, en Linux, 350 MB de memoria y 30 s de CPU; si se pasa, el inquilino ve un mensaje y el worker
 de gunicorn sigue sano.
 
+**Verificación humana (hCaptcha, Fase 5):** apagada mientras `HCAPTCHA_SITEKEY` y
+`HCAPTCHA_SECRET` estén vacíos (el sitio se comporta igual que antes; `preflight --ai` avisa en
+producción). Para activarla: (1) desplegar el código y esperar 5 min (es el cache de `widget.js`
+en los sitios de los clientes; un widget viejo frente a un servidor que ya exige pase no podría
+enviar); (2) crear el sitio en dashboard.hcaptcha.com con los hostnames `dominiopr.com` y
+`www.dominiopr.com` y activar ahí la restricción de dominio; (3) poner las dos llaves en `.env` y
+reiniciar gunicorn; (4) probar en móvil que el reto cabe dentro del widget. Llaves de prueba
+públicas para desarrollo (nunca en producción): sitekey `10000000-ffff-ffff-ffff-000000000001`,
+secret `0x0000000000000000000000000000000000000000`. `HUMAN_PASS_TTL` (2 h) y
+`HUMAN_PASS_MAX_MESSAGES` (30) controlan el pase firmado del chat. Si siteverify no responde
+(red/5xx) el chequeo deja pasar y lo registra; un token inválido o un error 4xx siempre rechaza.
+`collectstatic` (lo hace el deploy) recoge el `human-check.js` nuevo.
+
+**Correos reales (Fase 4):** `DOMINIO_EMAIL_DNS_CHECK=True` (por defecto) consulta MX/A del
+dominio por DNS-over-HTTPS a cloudflare-dns.com (3 s, cache 24 h) además de la lista de dominios
+desechables; si la red falla deja pasar y lo registra. Ponlo en `False` si el servidor no tiene
+salida HTTPS. Los leads reciben un enlace "Confirma tu correo" (7 días) que solo confirma con
+POST; las citas no llevan enlace.
+
+**Exportar los datos de un cliente (Fase 7):** `venv/bin/python manage.py export_tenant --client SLUG --out /ruta/dir`
+genera un zip (JSON + CSV) con config sin secretos, leads y notas, conversaciones, citas,
+conocimiento, horarios, miembros, encuestas y uso mensual sin costos; queda en la auditoría como
+`tenant.export`. El mismo zip se descarga desde el centro de control (staff) en la ficha del cliente.
+
+**Umbrales de infraestructura (cuándo crecer):** el código no usa nada exclusivo de SQLite
+(`TruncMonth`, `Count(filter=)`, `Length` funcionan igual en Postgres) y todas las vistas de
+control/dashboard hacen un número fijo de consultas. Pasar a Postgres cuando haya decenas de
+clientes activos a la vez (escrituras concurrentes del chat) o se necesite más de un servidor;
+subir el plan de Lightsail cuando falte RAM (gunicorn 2 workers x 4 hilos + nginx + crons
+caben en 1 GB con swap). El tope global `DOMINIO_AGENT_DAILY_CAP` (2000 mensajes/día entre todos
+los clientes) se ve en el centro de control; súbelo al sumar clientes.
+
 **Redes sociales (M-20):** app `social/` (Instagram/Facebook via Graph API, TikTok via
 Content Posting API; sin dependencias nuevas). Al desplegarla por primera vez:
 `migrate` (crea `social_post`), instalar el cron `publish_due` de arriba y poner en `.env`

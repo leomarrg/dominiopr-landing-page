@@ -1,4 +1,7 @@
-"""Nightly topic tagging for the control center. Run from cron:
+"""
+TODO (escala): opción --batch con la Message Batches API (50% de descuento) cuando
+pase de ~5,000 conversaciones por noche; hoy el etiquetado es síncrono.
+Nightly topic tagging for the control center. Run from cron:
 
     python manage.py tag_conversations [--limit 300] [--dry-run]
 

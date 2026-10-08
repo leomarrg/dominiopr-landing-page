@@ -184,6 +184,17 @@ class OverviewTests(_StaffMixin, TestCase):
     def _row(self, resp, slug):
         return next(r for r in resp.context['page'].object_list if r['client'].slug == slug)
 
+    def test_global_cap_is_shown(self):
+        from django.core.cache import cache as _cache
+        from django.utils import timezone as _tz
+        _cache.set('chat:global:' + _tz.now().strftime('%Y%m%d'), 1234, 3600)
+        make_client('any-co')  # the footer renders only when the table has rows
+        with override_settings(DOMINIO_AGENT_DAILY_CAP=5000):
+            resp = self.http.get(reverse('control'))
+        self.assertContains(resp, 'Tope global de hoy')
+        self.assertContains(resp, '1,234')
+        self.assertContains(resp, '5,000')
+
     def test_totals_and_margin(self):
         starter = make_client('starter-co')
         make_sub(starter, plan='starter')

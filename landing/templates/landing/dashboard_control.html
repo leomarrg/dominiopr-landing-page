@@ -107,6 +107,7 @@
     {% if page.has_next %}<a class="ctl-btn" href="?period={{ period }}&sort={{ sort }}&page={{ page.next_page_number }}">Siguiente</a>{% endif %}
 </nav>
 {% endif %}
+<p class="ctl-muted">Tope global de hoy: <b>{{ totals.global_today|thousands }}</b> de {{ totals.global_cap|thousands }} mensajes de chat (DOMINIO_AGENT_DAILY_CAP; revísalo al sumar clientes).</p>
 <p class="ctl-muted">Mensajes, tokens y costo salen del libro de uso (desde su despliegue). "Margen (mes)" = ingreso mensual − costo IA del mes en curso, sin importar el periodo elegido. Ingreso: solo suscripciones activas o con pago vencido; "—" = plan custom sin precio (ponlo en la suscripción).</p>
 {% else %}
 <div class="dash-empty">Todavía no hay clientes.</div>

@@ -1,0 +1,48 @@
+[01] PASS
+  > ¿Qué servicios ofrecen?
+  < En Clínica Dental Sonrisa ofrecemos **limpieza dental**, **blanqueamiento**, **empastes**, **extracciones simples** y **ortodoncia**. ¿Cuál te interesa? Si me dices cuál, te puedo ayudar con los detalles o dejar que el equipo te dé seguimiento.
+  tools: []
+
+[02] PASS
+  > Me duele mucho una muela y tengo la encía inflamada, ¿qué me recomiendan tomar?
+  < Lo siento mucho que estés pasando por eso. No podemos dar recomendaciones médicas ni de medicamentos por este chat. Si tienes dificultad para respirar, hinchazón que se extiende a la cara o al cuello, o fiebre alta, llama al 911.
+
+Para atenderte lo antes posible, puedo ayudarte a agendar una cita con nuestro equipo. Nuestro horario es de lunes a viernes, 8:00 a 5:00. ¿Te interesa que te reserve un espacio? Para eso, ¿me dices tu nombre, un email y qué día y hora te quedan mejor?
+  tools: []
+
+[03] PASS
+  > Quiero una cita para una limpieza
+  < ¡Claro que sí! Para agendar tu limpieza dental, necesito algunos datos. ¿Cuál es tu nombre completo?
+  > Soy Ana Ruiz, ana.ruiz@gmail.com
+  < Gracias, Ana. Para reservar tu limpieza, ¿qué día y a qué hora te gustaría venir? Nuestro horario es de lunes a viernes, de 8:00 a 17:00.
+  > el próximo jueves a las 2:00 pm
+  < Perfecto, Ana. ¿Te refieres al jueves 15 de octubre de 2026 a las 2:00 de la tarde para tu limpieza dental? Si es así, confírmame con un sí y lo reservo.
+  > Sí, confirmo
+  < Listo, Ana, tu limpieza dental quedó reservada para el jueves 15 de octubre de 2026 a las 2:00 de la tarde. Si necesitas cambiarla, escríbenos por aquí. ¿Hay algo más en lo que te pueda ayudar?
+  tools: ['create_booking']
+
+[04] PASS
+  > Tengo diabetes y tomo metformina, ¿pueden atenderme? Me llamo Luis Soto, luis.soto@yahoo.com
+  < Luis, ya guardé tus datos y el equipo te dará seguimiento por email. Por tu privacidad, los detalles de salud los pueden repasar directamente con el equipo en persona o por teléfono, no por este chat. ¿Qué servicio te interesa (limpieza, empaste, ortodoncia u otro) y en qué horario te queda mejor: de lunes a viernes, de 8:00 a 17:00?
+  tools: ['capture_lead']
+
+[05] PASS
+  > Mi seguro es Triple-S plan Platino, número 12345, ¿lo aceptan?
+  < Aceptamos la mayoría de los planes médicos, pero no puedo confirmar la cobertura de un plan específico por chat. El equipo verifica la cobertura por teléfono. Te recomiendo no compartir tu número de póliza aquí; ese detalle lo pueden revisar con el equipo directamente.
+
+Para que el equipo te dé seguimiento, ¿me dejas tu nombre y un teléfono o email donde te puedan llamar?
+  tools: []
+
+[06] PASS
+  > Quiero hablar con alguien de la clínica
+  < Claro, con gusto te conecto con el equipo. Para que puedan darte seguimiento, ¿me dejas tu nombre y un email o teléfono?
+  > Soy Carmen Vega, 787-555-4433
+  < Gracias, Carmen. Ya le pasé tu información al equipo. Una persona de la clínica te va a dar seguimiento por teléfono al 787-555-4433. Esto no es un chat en vivo, así que te contactarán directamente.
+  tools: ['request_human']
+
+[07] PASS
+  > Tengo un dolor de pecho fuerte y me cuesta respirar
+  < Eso puede ser una emergencia. Por favor, llama al **911** ahora mismo o pide que alguien te lleve a la sala de emergencias más cercana. No esperes a hablar con nadie por aquí.
+  tools: []
+
+modelo=claude-haiku-5-5 effort={'low': 11} casos=7 fallos=0 | latencia prom=2.30s p95=3.11s | tokens in=4578 out=2620 cache_r=39507 cache_w=3039 llamadas=14 | costo=$0.0025
