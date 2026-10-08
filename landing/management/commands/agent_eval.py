@@ -116,7 +116,8 @@ class Command(BaseCommand):
                     try:
                         reply, u = agent.answer(history, business_prompt=prompt,
                                                 handlers=handlers,
-                                                language=client.primary_language)
+                                                language=client.primary_language,
+                                                **agent.clinic_kwargs(client))
                     except agent.AgentNotConfigured:
                         raise CommandError('ANTHROPIC_API_KEY no está configurada.')
                     latencies.append(time.monotonic() - started)

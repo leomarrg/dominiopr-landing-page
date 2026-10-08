@@ -24,7 +24,7 @@
   <span style="display:block; color:rgba(255,255,255,0.45); font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:10px;">Tu solicitud</span>
   <p style="margin:0 0 6px; color:#ffffff; font-size:14px;"><strong style="color:rgba(255,255,255,0.6);">Servicio:</strong> {{ submission.get_service_display }}</p>
   {% if submission.budget %}<p style="margin:0 0 6px; color:#ffffff; font-size:14px;"><strong style="color:rgba(255,255,255,0.6);">Presupuesto:</strong> {{ submission.get_budget_display }}</p>{% endif %}
-  <p style="margin:10px 0 0; color:rgba(255,255,255,0.82); font-size:14px; line-height:1.6; white-space:pre-line;">{{ submission.message }}</p>
+  {% if not clinic_mode %}<p style="margin:10px 0 0; color:rgba(255,255,255,0.82); font-size:14px; line-height:1.6; white-space:pre-line;">{{ submission.message }}</p>{% endif %}
 </div>
 
 <p style="margin:26px 0 0;">

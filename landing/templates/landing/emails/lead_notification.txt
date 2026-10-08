@@ -9,9 +9,10 @@ Servicio:    {{ submission.get_service_display }}
 Presupuesto: {{ submission.get_budget_display|default:"-" }}
 Página:      {{ submission.page_url|default:"-" }}
 
-Mensaje:
+{% if clinic_mode %}Modo clínica: el resumen del chat no se incluye en este correo. {{ clinic_note }}
+{% else %}Mensaje:
 {{ submission.message }}
-
+{% endif %}
 Maneja este lead (estado, respuesta, historial) en tu dashboard:
 {{ dashboard_url }}
 

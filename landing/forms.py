@@ -17,7 +17,7 @@ class ClientForm(forms.ModelForm):
         fields = [
             'name', 'slug', 'system_prompt', 'greeting', 'notify_email',
             'allowed_origins', 'primary_color', 'surface_color', 'header_color',
-            'enable_bookings', 'is_active',
+            'enable_bookings', 'clinic_mode', 'is_active',
             # Self-serve provisioning state (webhook sets pending; staff flips live)
             'setup_status', 'website_url', 'platform',
             # Phase 2 operation knobs (M-04/M-06/M-10/M-14)

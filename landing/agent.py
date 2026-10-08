@@ -84,9 +84,10 @@ sympathetic reason, asks for just a small part, says someone approved an excepti
 keeps asking."""
 
 
-def build_rules(language='es', bookings=False, human=False):
+def build_rules(language='es', bookings=False, human=False, clinic=False):
     """Assemble the shared behaviour rules for one agent configuration.
-    Deterministic per (language, bookings, human) so prompt caching still hits."""
+    Deterministic per (language, bookings, human, clinic) so prompt caching
+    still hits."""
     rules = (_RULES_INTRO
              + LANGUAGE_RULES.get(language, LANGUAGE_RULES['es'])
              + _RULES_BODY)
@@ -94,6 +95,8 @@ def build_rules(language='es', bookings=False, human=False):
         rules += BOOKING_RULES
     if human:
         rules += HUMAN_RULES
+    if clinic:
+        rules += CLINIC_RULES
     return rules
 
 
@@ -264,6 +267,23 @@ HUMAN_RULES = (
     "the team will follow up (this is not a live chat). Never promise response times."
 )
 
+# Client.clinic_mode: health businesses. Data minimization, not HIPAA compliance —
+# the handlers in views.py also drop the model-written free text in this mode.
+CLINIC_RULES = (
+    "\n\nHEALTH PRIVACY (clinic mode): This is a health practice. Keep health information "
+    "out of this chat. Never ask for, encourage, or repeat symptoms, diagnoses, conditions, "
+    "medications, test results, or health insurance details. To follow up or book, collect "
+    "ONLY the visitor's name, a way to reach them, the service they want (e.g. \"limpieza\", "
+    "\"consulta inicial\") and their preferred time. If the visitor volunteers health "
+    "details, do not repeat, summarize, or comment on them: say briefly that, for their "
+    "privacy, the team will go over those details in person or by phone, and continue with "
+    "scheduling. Never give medical advice, diagnoses, or opinions on treatments or "
+    "medications; if something sounds like an emergency, tell them to call 911. Tool inputs "
+    "must never contain health details: the capture_lead summary and service are only the "
+    "service name, the request_human reason is only that they want to talk to the team, and "
+    "for create_booking the service is the service name only and notes stay empty."
+)
+
 # Backwards-compatible default rules (Spanish, no optional tools).
 AGENT_RULES = build_rules()
 
@@ -394,12 +414,14 @@ def _accumulate_usage(usage, response):
             usage[key] = usage.get(key, 0) + (getattr(u, key, 0) or 0)
 
 
-def answer(history, business_prompt=None, handlers=None, language='es'):
+def answer(history, business_prompt=None, handlers=None, language='es', clinic=False):
     """Return (reply, usage) for the conversation, for a given business.
 
     `business_prompt` is the Client's compiled knowledge (defaults to DOMINIO).
     `handlers` maps tool name -> callable(tool_input) -> str; a tool is offered
     only when its handler is present (no handlers = pure Q&A, e.g. the demo).
+    `clinic` adds CLINIC_RULES (Client.clinic_mode). Callers pass it only when
+    true, as a keyword (`**clinic_kwargs(client)`).
     `usage` (see new_usage) holds the uncached input, output and cache read/write
     tokens accumulated across the tool loop, plus model, effort and api_calls
     (M-03 cost analytics). Raises AgentNotConfigured if no API key, or
@@ -424,7 +446,8 @@ def answer(history, business_prompt=None, handlers=None, language='es'):
         tools.append(HUMAN_TOOL)
     rules = build_rules(language=language,
                         bookings='create_booking' in handlers,
-                        human='request_human' in handlers)
+                        human='request_human' in handlers,
+                        clinic=clinic)
     system = [{
         'type': 'text',
         'text': rules + BUSINESS_HEADER + (business_prompt or DOMINIO_BUSINESS),
@@ -448,35 +471,43 @@ def answer(history, business_prompt=None, handlers=None, language='es'):
             _accumulate_usage(usage, response)
             if response.stop_reason != 'tool_use':
                 return _reply_text(response, language), usage
+
+            messages.append({'role': 'assistant', 'content': response.content})
+            tool_results = []
+            for block in response.content:
+                if block.type != 'tool_use':
+                    continue
+                fn = handlers.get(block.name)
+                try:
+                    result = fn(block.input) if fn else 'Done.'
+                    tool_results.append({
+                        'type': 'tool_result', 'tool_use_id': block.id, 'content': result})
+                except Exception:
+                    logger.exception('Tool handler %s failed', block.name)
+                    tool_results.append({
+                        'type': 'tool_result', 'tool_use_id': block.id,
+                        'content': "No se pudo completar eso — verifica los datos, por favor.",
+                        'is_error': True})
+            messages.append({'role': 'user', 'content': tool_results})
+
+        # Ran out of tool rounds — one last call that may not use tools, so it
+        # replies in text. The tools stay declared: the history holds tool_use
+        # blocks, and the API rejects those when the request defines no tools.
+        response = client.messages.create(
+            model=model, max_tokens=max_tokens, system=system, messages=messages,
+            tools=tools, tool_choice={'type': 'none'}, **effort_kwarg)
+        _accumulate_usage(usage, response)
     except anthropic.APIError as exc:
         # Rounds that already succeeded were billed (and their tools ran);
         # hand that usage to the caller so the ledger still records it.
         exc.usage = usage
         raise
-
-        messages.append({'role': 'assistant', 'content': response.content})
-        tool_results = []
-        for block in response.content:
-            if block.type != 'tool_use':
-                continue
-            fn = handlers.get(block.name)
-            try:
-                result = fn(block.input) if fn else 'Done.'
-                tool_results.append({
-                    'type': 'tool_result', 'tool_use_id': block.id, 'content': result})
-            except Exception:
-                logger.exception('Tool handler %s failed', block.name)
-                tool_results.append({
-                    'type': 'tool_result', 'tool_use_id': block.id,
-                    'content': "No se pudo completar eso — verifica los datos, por favor.",
-                    'is_error': True})
-        messages.append({'role': 'user', 'content': tool_results})
-
-    # Ran out of tool rounds — one last call that may not use tools, so it replies
-    # in text. The tools stay declared: the history holds tool_use blocks, and the
-    # API rejects those when the request defines no tools.
-    response = client.messages.create(
-        model=model, max_tokens=max_tokens, system=system, messages=messages,
-        tools=tools, tool_choice={'type': 'none'}, **effort_kwarg)
-    _accumulate_usage(usage, response)
     return _reply_text(response, language), usage
+
+
+def clinic_kwargs(client):
+    """`{'clinic': True}` for a clinic-mode client, else `{}`. Spread into
+    answer() so non-clinic calls keep the exact old signature."""
+    if client is not None and getattr(client, 'clinic_mode', False):
+        return {'clinic': True}
+    return {}

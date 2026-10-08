@@ -62,8 +62,13 @@
 </table>
 
 <div style="margin-top:24px; padding:20px 22px; background:rgba(59,192,199,0.06); border-radius:10px; border-left:3px solid #3bc0c7;">
+  {% if clinic_mode %}
+  <span style="display:block; color:rgba(255,255,255,0.45); font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">Modo clínica</span>
+  <p style="margin:0; color:#ffffff; font-size:15px; line-height:1.7;">El resumen del chat no se incluye en este correo. {{ clinic_note }}</p>
+  {% else %}
   <span style="display:block; color:rgba(255,255,255,0.45); font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">Mensaje</span>
   <p style="margin:0; color:#ffffff; font-size:15px; line-height:1.7; white-space:pre-line;">{{ submission.message }}</p>
+  {% endif %}
 </div>
 
 {% if submission.email %}

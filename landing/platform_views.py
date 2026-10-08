@@ -132,7 +132,11 @@ def conversation_detail(request, pk):
     conv = get_object_or_404(conversations_for(request.user), pk=pk)
     # Reading a transcript is access to visitor PII: audit it, but once per
     # user+conversation per hour so reloads don't flood the trail.
-    if cache.add(f'auditview:conv:{request.user.pk}:{conv.pk}', 1, 3600):
+    try:
+        first_view = cache.add(f'auditview:conv:{request.user.pk}:{conv.pk}', 1, 3600)
+    except Exception:  # best-effort like _audit: a cache hiccup must not 500 the page
+        first_view = True
+    if first_view:
         _audit(request, 'conversation.view', client=conv.client,
                target=f'conv:{conv.pk}')
     return render(request, 'landing/dashboard_conversation_detail.html', {
@@ -505,7 +509,7 @@ def knowledge_test(request):
             test_answer, test_usage = agent.answer(
                 [{'role': 'user', 'content': question}],
                 business_prompt=prompt, handlers={},
-                language=client.primary_language)
+                language=client.primary_language, **agent.clinic_kwargs(client))
         except agent.AgentNotConfigured:
             test_answer = '(El agente no está configurado — falta ANTHROPIC_API_KEY.)'
         except anthropic.APIError:

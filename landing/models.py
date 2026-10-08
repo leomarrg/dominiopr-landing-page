@@ -57,6 +57,14 @@ class Client(models.Model):
     # When on, the agent can take reservations/appointments (the create_booking tool).
     enable_bookings = models.BooleanField(
         default=False, help_text='Let the agent take reservations / appointments.')
+    # Health businesses: minimizes the health data the agent asks for, stores and
+    # forwards. Data minimization only — it does not make the service HIPAA-ready.
+    clinic_mode = models.BooleanField(
+        'Modo clínica', default=False,
+        help_text=('Para clínicas y consultorios: el agente no pide ni repite síntomas, '
+                   'diagnósticos, medicamentos ni datos de seguro médico, y los avisos no '
+                   'incluyen el texto del chat. Reduce los datos de salud que se recogen; '
+                   'NO hace el servicio compatible con HIPAA.'))
     is_active = models.BooleanField(default=True)
     # Set once the install-instructions email has been sent, so activating an
     # already-onboarded client doesn't re-send it.
@@ -145,6 +153,9 @@ class Client(models.Model):
         knowledge + greeting that produced it."""
         basis = (self.compiled_prompt() + '\n--\n' + (self.greeting or '')
                  + '\n--\n' + self.primary_language)
+        # Appended only when on, so existing fingerprints don't change.
+        if self.clinic_mode:
+            basis += '\n--\nclinic'
         return hashlib.sha1(basis.encode('utf-8')).hexdigest()[:12]
 
 

@@ -148,6 +148,7 @@ class ContactThrottleTests(TestCase):
             self.assertEqual(resp.status_code, 200)
         resp = self.client.post(reverse('index'), {})
         self.assertEqual(resp.status_code, 302)
+        self.assertTrue(resp['Location'].endswith('#contact'))
         self.assertNotEqual(resp.headers.get('Content-Type', ''), 'application/json')
         page = self.client.get(resp['Location'])
         self.assertEqual(page.status_code, 200)
@@ -155,6 +156,13 @@ class ContactThrottleTests(TestCase):
         # GET is never counted.
         for _ in range(3):
             self.assertEqual(self.client.get(reverse('index')).status_code, 200)
+
+    def test_foreign_referer_is_not_followed(self):
+        for _ in range(5):
+            self.client.post(reverse('index'), {})
+        resp = self.client.post(reverse('index'), {}, HTTP_REFERER='https://evil.example/x')
+        self.assertEqual(resp.status_code, 302)
+        self.assertNotIn('evil.example', resp['Location'])
 
     def test_json_default_is_kept_for_apis(self):
         from .views import _rate_limited

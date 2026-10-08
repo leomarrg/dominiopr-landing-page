@@ -9,8 +9,8 @@ QUÉ SIGUE AHORA
 TU SOLICITUD
 Servicio:    {{ submission.get_service_display }}
 {% if submission.budget %}Presupuesto: {{ submission.get_budget_display }}
-{% endif %}Mensaje:     {{ submission.message }}
-
+{% endif %}{% if not clinic_mode %}Mensaje:     {{ submission.message }}
+{% endif %}
 Si quieres añadir algo mientras tanto, solo responde a este correo — nos llega directamente.
 
 — El equipo de {{ business|default:"DOMINIO" }}

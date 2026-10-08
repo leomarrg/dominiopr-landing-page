@@ -73,7 +73,8 @@
         + '.dmn-fab:focus-visible,.dmn-x:focus-visible,.dmn-chip:focus-visible,.dmn-send:focus-visible,.dmn-input:focus-visible'
         + '{outline:3px solid ' + CFG.color + ';outline-offset:2px}'
         + '.dmn-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}'
-        + '.dmn-foot{margin:0;padding:4px 14px 12px;font-size:11px;color:' + CFG.muted + ';text-align:center}'
+        + '.dmn-foot{margin:0;padding:4px 14px 12px;font-size:11px;color:' + CFG.muted + ';text-align:center}'{% if clinic_mode %}
+        + '.dmn-notice{margin:0;padding:8px 14px;font-size:12px;line-height:1.4;color:' + CFG.muted + ';text-align:center}'{% endif %}
         + '.dmn-typing span[aria-hidden]{display:inline-block;width:6px;height:6px;border-radius:50%;background:' + CFG.color + ';opacity:.5;margin:0 2px;animation:dmnT 1s infinite}'
         + '.dmn-typing span[aria-hidden]:nth-of-type(3){animation-delay:.15s}.dmn-typing span[aria-hidden]:nth-of-type(4){animation-delay:.3s}'
         + '@keyframes dmnT{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-4px);opacity:1}}'
@@ -91,7 +92,9 @@
         + '<span>Chat</span></button>'
         + '<div class="dmn-panel" role="dialog" aria-modal="true" aria-label="Chat">'
         + '<div class="dmn-head"><div><b></b><small>Asistente de IA</small></div><button class="dmn-x" aria-label="Cerrar">&times;</button></div>'
-        + '<div class="dmn-log" role="log" aria-live="polite"></div>'
+        + '<div class="dmn-log" role="log" aria-live="polite"></div>'{% if clinic_mode %}
+        // Clinic mode: persistent privacy line (Client.clinic_mode).
+        + '<p class="dmn-notice">Por tu privacidad, no compartas información médica por este chat.</p>'{% endif %}
         + '<form class="dmn-form"><input class="dmn-input" type="text" maxlength="2000" aria-label="Escribe tu mensaje" placeholder="Escribe tu pregunta..." autocomplete="off"><button class="dmn-send" type="submit" aria-label="Enviar">&#10148;</button></form>'
         + '<p class="dmn-foot">Asistente de IA</p></div>';
     document.body.appendChild(root);

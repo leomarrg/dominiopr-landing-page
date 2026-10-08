@@ -54,7 +54,7 @@ MAX_CHAT_BODY_BYTES = 64 * 1024
 RATE_LIMIT_HTML_MESSAGE = 'Demasiados envíos seguidos. Intenta de nuevo en unos minutos.'
 
 
-def _rate_limited(prefix, limit, window, methods=None, html=False):
+def _rate_limited(prefix, limit, window, methods=None, html=False, anchor=''):
     """Per-IP fixed-window rate limit using the shared cache (no Redis).
 
     Returns a JSON 429 once `limit` requests from one IP occur within `window`
@@ -82,6 +82,10 @@ def _rate_limited(prefix, limit, window, methods=None, html=False):
             target = reverse(html)
         else:
             target = request.path
+        if anchor:
+            # Browsers drop the #fragment from the Referer: put it back so the
+            # page scrolls to the form where the message is shown.
+            target = target.split('#')[0] + '#' + anchor
         return redirect(target)
 
     def decorator(view):
@@ -263,6 +267,12 @@ def _send_html_email(subject, to, html_template, txt_template, context, reply_to
         return False
 
 
+# Client.clinic_mode: generic text that replaces model-written free text (which
+# may carry health details) in stored records and notifications.
+CLINIC_ESCALATION_REASON = 'Solicitó hablar con el equipo (modo clínica)'
+CLINIC_DASHBOARD_NOTE = 'Revisa el dashboard para los detalles.'
+
+
 def _send_lead_emails(submission, notify_to=None):
     """Notify the team and send the visitor a styled confirmation.
 
@@ -275,6 +285,9 @@ def _send_lead_emails(submission, notify_to=None):
     context = {
         'submission': submission,
         'business': business,
+        # Clinic mode: the templates leave the message out and point to the dashboard.
+        'clinic_mode': bool(submission.client and submission.client.clinic_mode),
+        'clinic_note': CLINIC_DASHBOARD_NOTE,
         # Direct link to the leads dashboard so the client can manage the lead
         # (status, reply) right from the notification email.
         'dashboard_url': settings.SITE_URL + reverse('dashboard'),
@@ -309,7 +322,9 @@ def _send_booking_emails(booking, notify_to=None, business='DOMINIO'):
     if notify_to is None:
         notify_to = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
     local = timezone.localtime(booking.start)
-    context = {'booking': booking, 'business': business, 'local_start': local}
+    context = {'booking': booking, 'business': business, 'local_start': local,
+               'clinic_mode': bool(booking.client and booking.client.clinic_mode),
+               'clinic_note': CLINIC_DASHBOARD_NOTE}
 
     if notify_to:
         _send_html_email(
@@ -472,7 +487,7 @@ def get_lead_or_404(user, pk):
     return get_object_or_404(leads_for(user), pk=pk)
 
 
-@_rate_limited('contact', limit=5, window=300, html=True)
+@_rate_limited('contact', limit=5, window=300, html=True, anchor='contact')
 def index(request):
     if request.method == 'POST':
         form = ContactForm(request.POST)
@@ -509,6 +524,7 @@ def _chat_lead_handler(request, client_obj=None, page_url='', conversation=None)
     valid_services = {c[0] for c in ContactSubmission.SERVICE_CHOICES}
     notify_to = client_obj.notify_email if client_obj else None
     business_name = client_obj.name if client_obj else 'DOMINIO'
+    clinic = bool(client_obj and client_obj.clinic_mode)
 
     def handle(data):
         name = (data.get('name') or '').strip()[:120]
@@ -541,9 +557,16 @@ def _chat_lead_handler(request, client_obj=None, page_url='', conversation=None)
         if _tenant_action_cap_hit('lead', client_obj):
             return 'Anotado — el equipo ya tiene tu solicitud y te dará seguimiento por email.'
 
-        service = data.get('service')
-        if service not in valid_services:
-            service = 'ai-automation'
+        raw_service = data.get('service')
+        service = raw_service if raw_service in valid_services else 'ai-automation'
+        if clinic:
+            # The model-written summary may carry health details; keep only the
+            # short service label (CLINIC_RULES tells the model to put just that).
+            label = ' '.join(str(raw_service or '').split())[:80] or 'consulta'
+            message = f'[Modo clínica] Servicio: {label}'
+        else:
+            message = ('[Captured by the AI chat assistant] '
+                       + (data.get('summary') or '').strip())[:5000]
 
         submission = ContactSubmission(
             client=client_obj,
@@ -552,8 +575,7 @@ def _chat_lead_handler(request, client_obj=None, page_url='', conversation=None)
             phone=phone,
             company=(data.get('company') or '').strip()[:160],
             service=service,
-            message=('[Captured by the AI chat assistant] '
-                     + (data.get('summary') or '').strip())[:5000],
+            message=message,
             source='chat',
             ip_address=ip if ip != 'unknown' else None,
             user_agent=request.META.get('HTTP_USER_AGENT', '')[:300],
@@ -589,9 +611,15 @@ def _human_handler(request, client_obj=None, conversation=None, page_url=''):
     notify_to = (client_obj.notify_email if client_obj else None) \
         or getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
     business_name = client_obj.name if client_obj else 'DOMINIO'
+    clinic = bool(client_obj and client_obj.clinic_mode)
 
     def handle(data):
-        reason = (data.get('reason') or '').strip()[:300] or 'El visitante pidió hablar con una persona.'
+        if clinic:
+            # Never store or forward the model's reason: it may describe symptoms.
+            reason = CLINIC_ESCALATION_REASON
+        else:
+            reason = ((data.get('reason') or '').strip()[:300]
+                      or 'El visitante pidió hablar con una persona.')
         name = (data.get('name') or '').strip()[:120]
         email = (data.get('email') or '').strip()[:254]
         phone = normalize_phone((data.get('phone') or '').strip()[:30]) or ''
@@ -625,16 +653,21 @@ def _human_handler(request, client_obj=None, conversation=None, page_url=''):
             Conversation.objects.filter(pk=conversation.pk).update(
                 state='escalated', escalation_reason=reason,
                 **({'lead': lead} if lead else {}))
-            turns = conversation.chat_messages.order_by('position')[:40]
-            transcript = '\n'.join(
-                f'{"Visitante" if m.role == "user" else "Agente"}: {m.content}' for m in turns)
+            if not clinic:
+                turns = conversation.chat_messages.order_by('position')[:40]
+                transcript = '\n'.join(
+                    f'{"Visitante" if m.role == "user" else "Agente"}: {m.content}'
+                    for m in turns)
 
         if notify_to:
             body = (f'Una conversación del chat de {business_name} necesita atención humana.\n\n'
                     f'Motivo: {reason}\n'
                     f'Contacto: {name or "—"} {email or phone or "(sin contacto)"}\n'
-                    f'Página: {page_url or "—"}\n\n'
-                    f'--- Conversación ---\n{transcript or "(disponible en el dashboard)"}')
+                    f'Página: {page_url or "—"}\n\n')
+            if clinic:
+                body += f'Modo clínica: el texto del chat no se incluye. {CLINIC_DASHBOARD_NOTE}'
+            else:
+                body += f'--- Conversación ---\n{transcript or "(disponible en el dashboard)"}'
             _send_plain_email(
                 subject=f'[Atención humana] Chat escalado — {business_name}',
                 to=[notify_to], body=body,
@@ -642,7 +675,7 @@ def _human_handler(request, client_obj=None, conversation=None, page_url=''):
         notify.notify_client(
             client_obj,
             f'DOMINIO Chat: un visitante de {business_name} pide atención humana. '
-            f'Motivo: {reason[:120]}')
+            + (CLINIC_DASHBOARD_NOTE if clinic else f'Motivo: {reason[:120]}'))
         logger.info('Conversation escalated for %s: %s',
                     client_obj.slug if client_obj else 'dominio', reason)
         return ('Escalado: el equipo fue notificado con el contexto y dará seguimiento. '
@@ -664,6 +697,7 @@ def _booking_handler(request, client_obj=None):
 
     notify_to = client_obj.notify_email if client_obj else None
     business_name = client_obj.name if client_obj else 'DOMINIO'
+    clinic = bool(client_obj and client_obj.clinic_mode)
 
     def handle(data):
         name = (data.get('name') or '').strip()[:120]
@@ -713,7 +747,8 @@ def _booking_handler(request, client_obj=None):
                 booking = Booking.objects.create(
                     client=client_obj, name=name, email=email,
                     service=(data.get('service') or '').strip()[:120],
-                    notes=(data.get('notes') or '').strip()[:1000],
+                    # Clinic mode: the model's free-text notes are never stored.
+                    notes='' if clinic else (data.get('notes') or '').strip()[:1000],
                     start=start, status='pending',
                 )
         except IntegrityError:
@@ -925,7 +960,7 @@ def chat_api(request):
     try:
         reply, usage = agent.answer(
             history, business_prompt=business_prompt, handlers=handlers,
-            language=language)
+            language=language, **agent.clinic_kwargs(client_obj))
     except agent.AgentNotConfigured:
         return JsonResponse(
             {'error': 'El asistente no está disponible ahora mismo.'}, status=503
@@ -2494,6 +2529,7 @@ def widget_js(request):
         'border_soft': t['border_soft'],
         'border_bubble': t['border_bubble'],
         'api_url': request.build_absolute_uri(reverse('chat_api')),
+        'clinic_mode': client_obj.clinic_mode,
     }
     resp = HttpResponse(render_to_string('landing/widget.js', ctx),
                         content_type='application/javascript')
