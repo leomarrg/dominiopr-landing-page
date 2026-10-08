@@ -14,7 +14,7 @@
     <div class="dash-stat"><div class="dash-stat__num">{{ stats.leads_form }}</div><div class="dash-stat__label">Del formulario</div></div>
     <div class="dash-stat"><div class="dash-stat__num">{% if stats.csat_avg %}{{ stats.csat_avg }}/5{% else %}—{% endif %}</div><div class="dash-stat__label">CSAT ({{ stats.csat_n }} votos)</div></div>
     {% if request.user.is_staff %}
-    <div class="dash-stat"><div class="dash-stat__num">${{ stats.est_cost }}</div><div class="dash-stat__label">Costo API est. ({{ stats.tokens }} tokens)</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">${{ stats.est_cost }}</div><div class="dash-stat__label">Costo IA real ({{ stats.tokens }} tokens){% if stats.ledger_since %} · registrado desde {{ stats.ledger_since|date:"j M Y" }}{% endif %}</div></div>
     {% endif %}
 </section>
 
@@ -34,14 +34,14 @@
 </div>
 {% endif %}
 
-{% if per_client %}
+{% if per_client and request.user.is_staff %}
 <div class="dash-card">
     <h2>Por cliente (operador)</h2>
     <table class="dash-table">
-        <thead><tr><th>Cliente</th><th>Conversaciones</th><th>Leads</th><th>Tokens</th><th>Costo est.</th></tr></thead>
+        <thead><tr><th>Cliente</th><th>Conversaciones</th><th>Leads</th><th>Mensajes</th><th>Tokens</th><th>Costo IA</th></tr></thead>
         <tbody>
             {% for row in per_client %}
-            <tr><td>{{ row.client__name }}</td><td>{{ row.n }}</td><td>{{ row.leads }}</td><td>{{ row.tokens|default:0 }}</td><td>${{ row.cost }}</td></tr>
+            <tr><td>{{ row.client__name }}</td><td>{{ row.n }}</td><td>{{ row.leads }}</td><td>{{ row.messages }}</td><td>{{ row.tokens }}</td><td>${{ row.cost }}</td></tr>
             {% endfor %}
         </tbody>
     </table>

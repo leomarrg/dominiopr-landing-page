@@ -103,6 +103,9 @@ class Command(BaseCommand):
 
         for i, line in enumerate(lines, 1):
             case = parse_case(line)
+            if not case['turns']:
+                self.stdout.write(self.style.WARNING(f'[{i:02d}] línea sin pregunta, se salta: {line[:60]}'))
+                continue
             for rep in range(reps):
                 runs += 1
                 called, history, replies = [], [], []
@@ -117,6 +120,7 @@ class Command(BaseCommand):
                     except agent.AgentNotConfigured:
                         raise CommandError('ANTHROPIC_API_KEY no está configurada.')
                     latencies.append(time.monotonic() - started)
+                    usage_ledger.record('eval', u, client=client)
                     for key in agent.USAGE_TOKEN_KEYS + ('api_calls',):
                         total[key] += u.get(key, 0) or 0
                     total['model'] = u.get('model') or total['model']

@@ -19,7 +19,7 @@ from django.core.exceptions import ValidationError
 from django.core.mail import EmailMultiAlternatives
 from django.core.validators import URLValidator, validate_email
 from django.db import IntegrityError, transaction
-from django.db.models import F, Max, Q
+from django.db.models import Count, F, Max, Q
 from django.http import Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -34,6 +34,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from . import agent, notify, payments
+from . import usage as usage_ledger
 from .forms import ContactForm
 from .models import (
     AuditEvent, Booking, ChatMessage, Client, ContactSubmission, Conversation,
@@ -905,13 +906,17 @@ def chat_api(request):
         return JsonResponse(
             {'error': 'El asistente no está disponible ahora mismo.'}, status=503
         )
-    except anthropic.RateLimitError:
+    except anthropic.RateLimitError as exc:
+        usage_ledger.record('chat', getattr(exc, 'usage', None), client=client_obj,
+                            conversation=conversation)
         return JsonResponse(
             {'error': 'Estamos recibiendo muchas preguntas ahora mismo — trata de nuevo en un momento.'},
             status=429,
         )
-    except anthropic.APIError:
+    except anthropic.APIError as exc:
         logger.exception('Anthropic API error in chat_api')
+        usage_ledger.record('chat', getattr(exc, 'usage', None), client=client_obj,
+                            conversation=conversation)
         return JsonResponse(
             {'error': 'Algo salió mal al conectar con el asistente. Trata de nuevo o usa el formulario de contacto.'},
             status=502,
@@ -945,6 +950,7 @@ def chat_api(request):
         except Exception:
             logger.exception('Failed to persist conversation %s', conversation.pk)
 
+    usage_ledger.record('chat', usage, client=client_obj, conversation=conversation)
     return JsonResponse({'reply': reply})
 
 
@@ -1007,7 +1013,7 @@ def demo_api(request):
                 cache.set(key, 1, 60 * 60 * 26)
 
     try:
-        reply, _usage = agent.answer(history, business_prompt=context, handlers={})
+        reply, usage = agent.answer(history, business_prompt=context, handlers={})
     except agent.AgentNotConfigured:
         return JsonResponse({'error': 'El demo no está disponible ahora mismo.'}, status=503)
     except anthropic.RateLimitError:
@@ -1016,6 +1022,7 @@ def demo_api(request):
         logger.exception('Anthropic API error in demo_api')
         return JsonResponse({'error': 'Algo salió mal. Trata de nuevo.'}, status=502)
 
+    usage_ledger.record('demo', usage)
     return JsonResponse({'reply': reply})
 
 
@@ -1390,12 +1397,14 @@ def _provision_paid_client(request, *, email, plan, period, meta, cust_id, sub_i
         created = True
 
         # Best-effort greeting from the seed knowledge (same as the factory form).
+        greeting_usage = agent.new_usage()
         try:
-            greeting = agent.generate_greeting(client.system_prompt)
+            greeting = agent.generate_greeting(client.system_prompt, usage=greeting_usage)
             if greeting:
                 Client.objects.filter(pk=client.pk).update(greeting=greeting)
         except Exception:
             logger.exception('Greeting generation failed for %s', client.slug)
+        usage_ledger.record('greeting', greeting_usage, client=client)
 
     dashboard_url = settings.SITE_URL + reverse('dashboard')
     login = ({'username': username, 'setup_url': setup_url, 'url': dashboard_url}
@@ -2467,11 +2476,14 @@ def widget_js(request):
 @staff_required
 def clients_list(request):
     """Factory home: every client agent + its install snippet. Staff only."""
-    clients = Client.objects.all()
+    clients = Client.objects.annotate(lead_count=Count('leads'))
+    month_usage = usage_ledger.rollup_by_client(*usage_ledger.month_bounds())
+    widget_src = request.build_absolute_uri('/widget.js')
     for c in clients:
-        c.lead_count = c.leads.count()
-        c.embed = (f'<script src="{request.build_absolute_uri("/widget.js")}'
-                   f'?key={c.slug}" async></script>')
+        used = month_usage.get(c.pk, {})
+        c.month_messages = used.get('messages', 0)
+        c.month_cost = used.get('cost', Decimal(0)).quantize(Decimal('0.0001'))
+        c.embed = f'<script src="{widget_src}?key={c.slug}" async></script>'
     return render(request, 'landing/dashboard_clients.html', {'clients': clients})
 
 
@@ -2592,12 +2604,14 @@ def client_form(request, pk=None):
             # blank. Best-effort: any failure just leaves it blank (the widget
             # falls back to DEFAULT_GREETING). Owner can edit/clear to regenerate.
             if not obj.greeting:
+                greeting_usage = agent.new_usage()
                 try:
-                    greeting = agent.generate_greeting(obj.system_prompt)
+                    greeting = agent.generate_greeting(obj.system_prompt, usage=greeting_usage)
                     if greeting:
                         Client.objects.filter(pk=obj.pk).update(greeting=greeting)
                 except Exception:
                     logger.exception('Greeting generation failed for %s', obj.slug)
+                usage_ledger.record('greeting', greeting_usage, client=obj)
             # Mark-as-Active = payment confirmed → auto-email install instructions,
             # once. (Toggle onboarding_sent off in admin to resend.)
             if obj.is_active and not obj.onboarding_sent:

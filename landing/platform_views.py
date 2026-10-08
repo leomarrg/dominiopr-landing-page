@@ -11,9 +11,9 @@ product understandable:
 """
 import csv
 import logging
+from decimal import Decimal
 
 import anthropic
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
@@ -27,9 +27,10 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from . import agent, knowledge
+from . import usage as usage_ledger
 from .models import (
     AvailabilityRule, Booking, Client, ContactSubmission, Conversation,
-    KnowledgeSource, Membership, Survey,
+    KnowledgeSource, Membership, Survey, UsageEvent,
 )
 from .views import (
     _audit, _client_ip, _member_client_ids, _send_plain_email, leads_for,
@@ -261,16 +262,20 @@ def availability_delete(request, pk):
 
 @login_required
 def reports(request):
-    since = timezone.now() - timezone.timedelta(days=30)
+    now = timezone.now()
+    since = now - timezone.timedelta(days=30)
     convs = conversations_for(request.user).filter(started_at__gte=since)
     leads = leads_for(request.user).filter(created_at__gte=since)
 
     n_convs = convs.count()
     n_chat_leads = leads.filter(source='chat').count()
     tokens = convs.aggregate(t=Sum('tokens_used'))['t'] or 0
-    # Cost estimate: blended $/MTok knob (default sized for Haiku 5.5 with caching).
-    in_rate = float(getattr(settings, 'DOMINIO_COST_PER_MTOK', 0.10))
-    est_cost = tokens / 1_000_000 * in_rate
+    # Money is operator-only: tenants never get a cost figure, not even in the
+    # context. Staff sees the real ledger spend (every kind, demo included).
+    ledger = usage_ledger.rollup_by_client(since, now) if request.user.is_staff else {}
+    if request.user.is_staff:
+        tokens = sum(row['tokens'] for row in ledger.values())
+    est_cost = sum((row['cost'] for row in ledger.values()), Decimal(0))
     csat = Survey.objects.filter(
         conversation__in=conversations_for(request.user),
         created_at__gte=since).aggregate(a=Avg('score'), n=Count('id'))
@@ -284,7 +289,11 @@ def reports(request):
         'leads_form': leads.filter(source='contact_form').count(),
         'leads_signup': leads.filter(source='signup').count(),
         'tokens': tokens,
-        'est_cost': round(est_cost, 2),
+        'est_cost': est_cost.quantize(Decimal('0.0001')) if request.user.is_staff else None,
+        # The ledger only exists from its deploy on; older traffic has no cost row.
+        'ledger_since': (UsageEvent.objects.order_by('created_at')
+                         .values_list('created_at', flat=True).first()
+                         if request.user.is_staff else None),
         'csat_avg': round(csat['a'], 1) if csat['a'] else None,
         'csat_n': csat['n'],
     }
@@ -296,13 +305,25 @@ def reports(request):
 
     per_client = None
     if request.user.is_staff:
-        per_client = (
-            convs.values('client__name', 'client__slug')
-            .annotate(n=Count('id'), tokens=Sum('tokens_used'),
-                      leads=Count('lead', distinct=True))
-            .order_by('-n')[:50])
-        for row in per_client:
-            row['cost'] = round((row['tokens'] or 0) / 1_000_000 * in_rate, 2)
+        conv_rows = {
+            r['client_id']: r for r in
+            convs.order_by().values('client_id')
+            .annotate(n=Count('id'), leads=Count('lead', distinct=True))}
+        ids = (set(conv_rows) | set(ledger)) - {None}
+        names = dict(Client.objects.filter(pk__in=ids).values_list('pk', 'name'))
+        names[None] = 'Demo público / sin cliente'
+        per_client = []
+        for cid in ids | ({None} & set(ledger)):
+            used = ledger.get(cid, {})
+            conv = conv_rows.get(cid, {})
+            per_client.append({
+                'client__name': names.get(cid, f'#{cid}'),
+                'n': conv.get('n', 0), 'leads': conv.get('leads', 0),
+                'messages': used.get('messages', 0), 'tokens': used.get('tokens', 0),
+                'cost': used.get('cost', Decimal(0)).quantize(Decimal('0.0001')),
+            })
+        per_client.sort(key=lambda r: (-r['cost'], -r['n'], r['client__name']))
+        per_client = per_client[:50]
 
     top_pages = (
         leads.exclude(page_url='').values('page_url')
@@ -468,7 +489,7 @@ def knowledge_test(request):
     if question:
         prompt = client.compiled_prompt(include_draft_pk=draft_pk)
         try:
-            test_answer, _u = agent.answer(
+            test_answer, test_usage = agent.answer(
                 [{'role': 'user', 'content': question}],
                 business_prompt=prompt, handlers={},
                 language=client.primary_language)
@@ -477,6 +498,8 @@ def knowledge_test(request):
         except anthropic.APIError:
             logger.exception('Knowledge test call failed')
             test_answer = '(Error consultando el modelo — trata de nuevo.)'
+        else:
+            usage_ledger.record('knowledge_test', test_usage, client=client)
     sources = client.knowledge_sources.exclude(status='archived')
     return render(request, 'landing/dashboard_knowledge.html', {
         'active_tab': 'knowledge',

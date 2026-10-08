@@ -82,6 +82,8 @@
             </div>
             <div class="agent-meta">
                 <span><b>{{ c.lead_count }}</b> leads</span>
+                <span>Mensajes (mes): <b>{{ c.month_messages }}</b></span>
+                <span>Costo IA (mes): <b>${{ c.month_cost }}</b></span>
                 <span>Notifica a: {{ c.notify_email }}</span>
                 {% if c.website_url %}<span>Sitio: <a href="{{ c.website_url }}" target="_blank" rel="noopener" style="color:var(--accent);">{{ c.website_url }}</a></span>{% endif %}
                 {% if c.platform %}<span>Plataforma: {{ c.get_platform_display }}</span>{% endif %}

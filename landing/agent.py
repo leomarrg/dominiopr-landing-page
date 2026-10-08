@@ -440,13 +440,19 @@ def answer(history, business_prompt=None, handlers=None, language='es'):
     effort_kwarg = _effort_kwargs(model, history)
     usage['effort'] = effort_kwarg.get('output_config', {}).get('effort', '')
 
-    for _ in range(MAX_TOOL_ROUNDS + 1):
-        response = client.messages.create(
-            model=model, max_tokens=max_tokens, system=system, messages=messages,
-            **tool_kwarg, **effort_kwarg)
-        _accumulate_usage(usage, response)
-        if response.stop_reason != 'tool_use':
-            return _reply_text(response, language), usage
+    try:
+        for _ in range(MAX_TOOL_ROUNDS + 1):
+            response = client.messages.create(
+                model=model, max_tokens=max_tokens, system=system, messages=messages,
+                **tool_kwarg, **effort_kwarg)
+            _accumulate_usage(usage, response)
+            if response.stop_reason != 'tool_use':
+                return _reply_text(response, language), usage
+    except anthropic.APIError as exc:
+        # Rounds that already succeeded were billed (and their tools ran);
+        # hand that usage to the caller so the ledger still records it.
+        exc.usage = usage
+        raise
 
         messages.append({'role': 'assistant', 'content': response.content})
         tool_results = []

@@ -3,6 +3,7 @@ import secrets
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class Client(models.Model):
@@ -529,3 +530,52 @@ class AvailabilityRule(models.Model):
     def __str__(self):
         days = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom']
         return f'{self.client.slug} · {days[self.weekday]} {self.open_time}-{self.close_time}'
+
+
+class UsageEvent(models.Model):
+    """One billed Anthropic call (or tool loop) and what it cost.
+
+    The ledger behind cost and usage dashboards. It holds no conversation text
+    or visitor data, so it is never purged: client_slug is copied at write time
+    so totals survive a deleted tenant, and cost_usd is frozen with the price
+    in force when the call happened.
+    """
+    KIND_CHOICES = [
+        ('chat', 'Chat'),
+        ('demo', 'Demo'),
+        ('knowledge_test', 'Prueba de conocimiento'),
+        ('greeting', 'Saludo'),
+        ('eval', 'Evaluación'),
+        ('tagging', 'Etiquetado'),
+    ]
+    client = models.ForeignKey(
+        Client, null=True, blank=True, on_delete=models.SET_NULL, related_name='usage_events')
+    client_slug = models.CharField(max_length=60, blank=True)
+    conversation = models.ForeignKey(
+        Conversation, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='usage_events')
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES)
+    model = models.CharField(max_length=60, blank=True)
+    input_tokens = models.PositiveIntegerField(default=0)
+    output_tokens = models.PositiveIntegerField(default=0)
+    cache_read_tokens = models.PositiveIntegerField(default=0)
+    cache_write_tokens = models.PositiveIntegerField(default=0)
+    api_calls = models.PositiveSmallIntegerField(default=0)
+    effort = models.CharField(max_length=10, blank=True)
+    cost_usd = models.DecimalField(max_digits=12, decimal_places=6, default=0)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['client', 'created_at'], name='usage_client_created_idx'),
+            models.Index(fields=['kind', 'created_at'], name='usage_kind_created_idx'),
+        ]
+
+    @property
+    def total_tokens(self):
+        return (self.input_tokens + self.output_tokens
+                + self.cache_read_tokens + self.cache_write_tokens)
+
+    def __str__(self):
+        return f'{self.kind} · {self.client_slug or "-"} · {self.created_at:%Y-%m-%d %H:%M}'

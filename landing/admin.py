@@ -2,7 +2,7 @@ from django.contrib import admin
 
 from .models import (
     AuditEvent, AvailabilityRule, Booking, Client, ContactSubmission,
-    Conversation, KnowledgeSource, Membership, Subscription, Survey,
+    Conversation, KnowledgeSource, Membership, Subscription, Survey, UsageEvent,
 )
 
 
@@ -110,6 +110,25 @@ class AuditEventAdmin(admin.ModelAdmin):
 class SurveyAdmin(admin.ModelAdmin):
     list_display = ('conversation', 'score', 'created_at')
     list_filter = ('score',)
+
+
+@admin.register(UsageEvent)
+class UsageEventAdmin(admin.ModelAdmin):
+    list_display = ('kind', 'client_slug', 'model', 'total_tokens', 'cost_usd', 'created_at')
+    list_filter = ('kind', 'model')
+    search_fields = ('client_slug',)
+    date_hierarchy = 'created_at'
+
+    # The cost ledger is written only by the code that made the API call, and is
+    # never purged: history must survive for the monthly cost reports.
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 admin.site.register(AvailabilityRule)
