@@ -375,14 +375,26 @@ DOMINIO_DEMO_IP_DAILY_CAP = int(os.environ.get('DOMINIO_DEMO_IP_DAILY_CAP', '20'
 # can create. The widget token is public by construction, so this is what
 # stops a scripted bot from filling one client's CRM and phone with junk.
 DOMINIO_TENANT_ACTION_DAILY_CAP = int(os.environ.get('DOMINIO_TENANT_ACTION_DAILY_CAP', '40'))
-# Haiku is the right tier for a fast, low-cost FAQ/sales chat. We read the
-# project's ANTHROPIC_MODEL_FAST convention, with DOMINIO_AGENT_MODEL as an
-# explicit override and a safe default.
-DOMINIO_AGENT_MODEL = (
-    os.environ.get('DOMINIO_AGENT_MODEL')
-    or os.environ.get('ANTHROPIC_MODEL_FAST')
-    or 'claude-haiku-4-5'
-)
+# Haiku is the right tier for a fast, low-cost FAQ/sales chat. Haiku 5.5 is
+# ~10x cheaper than 4.5 and follows the rules better. ANTHROPIC_MODEL_FAST is
+# deliberately NOT read anymore: the shared .env pins it to Haiku 4.5 for other
+# apps, which would silently keep this agent on the old, pricier model.
+DOMINIO_AGENT_MODEL = os.environ.get('DOMINIO_AGENT_MODEL') or 'claude-haiku-5-5'
+# Haiku 5.5 thinks before answering; effort sets how much. 'low' keeps chat fast
+# and cheap; raise to 'medium' if the agent starts skipping business rules.
+DOMINIO_AGENT_EFFORT = os.environ.get('DOMINIO_AGENT_EFFORT', 'low')
+# Reply cap per API call. Thinking counts against it on Haiku 5.5, so it needs
+# headroom above the ~200-token replies or answers get cut off.
+DOMINIO_AGENT_MAX_TOKENS = int(os.environ.get('DOMINIO_AGENT_MAX_TOKENS', '1500'))
+# Blended $/MTok fallback, used only for a model missing from the table below.
+DOMINIO_COST_PER_MTOK = float(os.environ.get('DOMINIO_COST_PER_MTOK', '0.10'))
+# Anthropic list prices, USD per million tokens, matched by model-id prefix
+# (longest prefix wins). Cache write = 5-minute TTL rate. Update when prices change.
+DOMINIO_MODEL_PRICES = {
+    'claude-haiku-5-5': {'input': 0.10, 'output': 0.50, 'cache_write': 0.125, 'cache_read': 0.01},
+    'claude-haiku-4-5': {'input': 1.00, 'output': 5.00, 'cache_write': 1.25, 'cache_read': 0.10},
+    'claude-sonnet-5-5': {'input': 2.00, 'output': 10.00, 'cache_write': 2.50, 'cache_read': 0.20},
+}
 # Cap how much history a single conversation can send back to the API, to
 # bound cost/abuse from a public widget.
 DOMINIO_AGENT_MAX_TURNS = int(os.environ.get('DOMINIO_AGENT_MAX_TURNS', '12'))

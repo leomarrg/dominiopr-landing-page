@@ -268,8 +268,8 @@ def reports(request):
     n_convs = convs.count()
     n_chat_leads = leads.filter(source='chat').count()
     tokens = convs.aggregate(t=Sum('tokens_used'))['t'] or 0
-    # Cost estimate: blended $/MTok knobs (defaults sized for Haiku-class models).
-    in_rate = float(getattr(settings, 'DOMINIO_COST_PER_MTOK', 3.0))
+    # Cost estimate: blended $/MTok knob (default sized for Haiku 5.5 with caching).
+    in_rate = float(getattr(settings, 'DOMINIO_COST_PER_MTOK', 0.10))
     est_cost = tokens / 1_000_000 * in_rate
     csat = Survey.objects.filter(
         conversation__in=conversations_for(request.user),

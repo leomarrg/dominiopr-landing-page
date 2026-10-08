@@ -295,5 +295,5 @@ class Command(BaseCommand):
         self._line(OK, 'anthropic package', 'installed')
 
         # Mirrors the default in landing/agent.py so a stale pin shows up here.
-        model = getattr(settings, 'DOMINIO_AGENT_MODEL', 'claude-haiku-4-5')
+        model = getattr(settings, 'DOMINIO_AGENT_MODEL', 'claude-haiku-5-5')
         self._line(OK, 'model', model)

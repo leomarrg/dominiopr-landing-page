@@ -939,8 +939,7 @@ def chat_api(request):
                                 position=next_pos + 1),
                 ])
                 Conversation.objects.filter(pk=conversation.pk).update(
-                    tokens_used=F('tokens_used')
-                    + usage['input_tokens'] + usage['output_tokens'],
+                    tokens_used=F('tokens_used') + agent.total_tokens(usage),
                     last_message_at=timezone.now(),
                 )
         except Exception:
