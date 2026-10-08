@@ -93,6 +93,10 @@ urlpatterns = [
     path('dashboard/knowledge/<int:pk>/action/', platform_views.knowledge_action,
          name='knowledge_action'),
     path('dashboard/knowledge/test/', platform_views.knowledge_test, name='knowledge_test'),
+    path('dashboard/knowledge/scan/', platform_views.knowledge_scan, name='knowledge_scan'),
+    # nginx gives this exact path a larger body limit (deploy/nginx/dominio.conf).
+    path('dashboard/knowledge/upload/', platform_views.knowledge_upload,
+         name='knowledge_upload'),
     path('dashboard/users/', platform_views.users_list, name='dash_users'),
     path('dashboard/users/invite/', platform_views.user_invite, name='user_invite'),
     path('dashboard/users/<int:pk>/remove/', platform_views.user_remove, name='user_remove'),

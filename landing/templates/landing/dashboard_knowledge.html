@@ -24,7 +24,14 @@
             <tr>
                 <td><b>{{ s.title }}</b>
                     {% if s.origin %}<div class="dash-sub">{{ s.origin|truncatechars:60 }}</div>{% endif %}
-                    {% if s.error %}<div class="dash-sub" style="color:#a12626">{{ s.error }}</div>{% endif %}</td>
+                    {% if s.error %}<div class="dash-sub" style="color:#a12626">{{ s.error }}</div>{% endif %}
+                    {% if s.in_progress %}<div class="dash-sub">{{ s.progress|default:"En cola…" }} Se procesa en segundo plano, recarga en unos minutos.</div>{% endif %}
+                    {% if s.kind == 'site' and s.pages_scanned and not s.in_progress %}<div class="dash-sub">{{ s.pages_scanned }} página{{ s.pages_scanned|pluralize }} leída{{ s.pages_scanned|pluralize }}</div>{% endif %}
+                    {% if s.kind == 'site' or s.kind == 'file' %}{% if s.status == 'draft' or s.status == 'active' %}
+                    <details style="margin-top:4px"><summary class="dash-sub" style="cursor:pointer">Ver lo que aprendió el agente</summary>
+                        <pre style="white-space:pre-wrap;font:inherit;font-size:13px;margin:6px 0 0;max-height:320px;overflow:auto">{{ s.compiled_text }}</pre>
+                    </details>
+                    {% endif %}{% endif %}</td>
                 <td>{{ s.get_kind_display }}</td>
                 <td><span class="dash-pill dash-pill--{{ s.status }}">{{ s.get_status_display }}</span></td>
                 <td class="dash-sub">{{ s.updated_at|date:"M d, g:i A" }}</td>
@@ -35,8 +42,11 @@
                         {% endif %}
                         {% if s.kind == 'url' %}
                         <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="reprocess"><button class="save-btn save-btn--sm">Reprocesar</button></form>
+                        {% elif s.status == 'error' and s.kind == 'site' or s.status == 'error' and s.kind == 'file' %}
+                        <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="reprocess"><button class="save-btn save-btn--sm">Reintentar</button></form>
                         {% endif %}
-                        {% if s.status == 'active' %}
+                        {% if s.status == 'processing' %}
+                        {% elif s.status == 'active' %}
                         <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="archive"><button class="save-btn save-btn--sm">Archivar</button></form>
                         {% else %}
                         <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="delete"><button class="save-btn save-btn--sm">Borrar</button></form>
@@ -49,6 +59,29 @@
             {% endfor %}
         </tbody>
     </table>
+</div>
+
+<div class="dash-card">
+    <h2>Aprender de tu sitio web y tus documentos</h2>
+    <p class="dash-muted">La IA lee tu sitio o tu documento y resume lo que un cliente pregunta: servicios y precios, horarios, ubicación y contacto, políticas y preguntas frecuentes. Solo usa lo que está escrito; no inventa datos. El resultado queda en <b>borrador</b>: revísalo, pruébalo y actívalo cuando esté correcto.</p>
+    {% if any_in_progress %}<p class="dash-sub">Hay fuentes procesándose en segundo plano. Recarga esta página en unos minutos para ver el resultado.</p>{% endif %}
+
+    <form method="post" action="{% url 'knowledge_scan' %}" class="dash-inline-form" style="margin-bottom:12px">
+        {% csrf_token %}
+        <input type="hidden" name="client" value="{{ client_obj.slug }}">
+        <label for="kn-scan-url">Tu sitio:</label>
+        <input type="url" id="kn-scan-url" name="url" value="{{ scan_url }}" placeholder="https://tunegocio.com" maxlength="500" required style="flex:1;min-width:240px">
+        <button type="submit" class="save-btn save-btn--sm" {% if scan_running %}disabled title="Ya hay un escaneo en curso"{% endif %}>Escanear mi sitio</button>
+    </form>
+
+    <form method="post" action="{% url 'knowledge_upload' %}" enctype="multipart/form-data" class="dash-inline-form">
+        {% csrf_token %}
+        <input type="hidden" name="client" value="{{ client_obj.slug }}">
+        <label for="kn-file">Documento:</label>
+        <input type="file" id="kn-file" name="file" accept=".pdf,.docx,.txt,.md,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/csv" required>
+        <button type="submit" class="save-btn save-btn--sm">Subir archivo</button>
+    </form>
+    <p class="dash-sub" style="margin-top:6px">PDF, Word (.docx), TXT, MD o CSV, máximo {{ upload_max_mb }} MB. Solo se guarda el texto (y luego su resumen); el archivo no se almacena.</p>
 </div>
 
 <div class="dash-card">

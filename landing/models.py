@@ -474,8 +474,15 @@ class KnowledgeSource(models.Model):
     KIND_CHOICES = [
         ('text', 'Texto'), ('faq', 'Preguntas frecuentes (P: / R:)'),
         ('url', 'Página web (URL)'),
+        ('site', 'Sitio web completo (escaneo con IA)'),
+        ('file', 'Archivo subido (PDF, Word, texto)'),
     ]
+    # Typed by hand in the "Añadir fuente" form. 'site'/'file' only come from
+    # the ingest pipeline (landing.ingest + process_knowledge).
+    MANUAL_KINDS = ('text', 'faq', 'url')
+    INGEST_KINDS = ('site', 'file')
     STATUS_CHOICES = [
+        ('pending', 'En cola'), ('processing', 'Procesando'),
         ('draft', 'Borrador'), ('active', 'Activa'),
         ('error', 'Error'), ('archived', 'Archivada'),
     ]
@@ -492,14 +499,34 @@ class KnowledgeSource(models.Model):
     review_by = models.DateField(
         null=True, blank=True, help_text='Fecha en que este contenido debe revisarse.')
     position = models.PositiveIntegerField(default=0)
+    # Background ingest (kind site/file): human-readable step shown to the
+    # tenant while pending/processing, pages read, and how many times a worker
+    # claimed the row (a crash mid-run is retried once, then lands in error).
+    progress = models.CharField(max_length=120, blank=True)
+    pages_scanned = models.PositiveSmallIntegerField(default=0)
+    attempts = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['position', 'pk']
+        constraints = [
+            # One website crawl queued/running per tenant: a crawl is the
+            # expensive job (30 pages + model calls), so this is enforced by
+            # the database, not just by the view's check.
+            models.UniqueConstraint(
+                fields=['client'],
+                condition=models.Q(kind='site', status__in=['pending', 'processing']),
+                name='uniq_running_site_scan_per_client',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.client.slug} · {self.title} ({self.status})'
+
+    @property
+    def in_progress(self):
+        return self.status in ('pending', 'processing')
 
     def compiled_text(self):
         """Fragments if the processor produced them, else the raw content."""
@@ -584,6 +611,7 @@ class UsageEvent(models.Model):
         ('greeting', 'Saludo'),
         ('eval', 'Evaluación'),
         ('tagging', 'Etiquetado'),
+        ('knowledge_ingest', 'Conocimiento (escaneo/archivo)'),
     ]
     client = models.ForeignKey(
         Client, null=True, blank=True, on_delete=models.SET_NULL, related_name='usage_events')

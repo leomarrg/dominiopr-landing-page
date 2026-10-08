@@ -326,9 +326,23 @@ python manage.py preflight   # Stripe, SMTP, IA y Django reales (--stripe|--emai
 15 4 * * * /var/www/dominio/deploy/backup_db.sh >> /home/ubuntu/dominio-cron.log 2>&1
 # M-20: publicar en redes los posts aprobados que ya vencieron, cada 5 min
 */5 * * * * cd /ruta/app && venv/bin/python manage.py publish_due
+# Fase 8: escaneos de sitio y archivos subidos -> conocimiento en BORRADOR (nunca activa solo).
+# Máx 3 fuentes por corrida; un candado evita dos corridas a la vez. Sale con error sin ANTHROPIC_API_KEY.
+*/5 * * * * cd /ruta/app && venv/bin/python manage.py process_knowledge >> /home/ubuntu/dominio-cron.log 2>&1
 # M-01: reconciliación de suscripciones contra Stripe, diario
 45 4 * * * cd /ruta/app && venv/bin/python manage.py reconcile_stripe
 ```
+
+**Conocimiento desde el sitio y archivos (Fase 8):** en el dashboard → Conocimiento, el
+administrador del cliente puede "Escanear mi sitio" (solo dominios de su `allowed_origins`; staff
+puede cualquier URL pública) o "Subir archivo" (PDF, .docx, TXT, MD, CSV, máx. 5 MB, se lee en
+memoria y no se guarda). El trabajo pesado lo hace el cron `process_knowledge` de arriba (hasta
+30 páginas / 120 s por sitio, Haiku con salida estructurada, costo en el libro de uso como
+`knowledge_ingest`). El resultado queda en borrador para probarlo y activarlo. Para escanear el
+sitio de DOMINIO desde el servidor: `venv/bin/python manage.py process_knowledge --scan-site dominio https://dominiopr.com`.
+Requiere `pip install -r requirements.txt` (añade `pypdf`), `migrate` (0032) y recargar nginx
+con el `dominio.conf` actualizado (location `/dashboard/knowledge/upload/` con
+`client_max_body_size 6m`; sin eso nginx responde 413 a cualquier archivo de más de 256 KB).
 
 **Redes sociales (M-20):** app `social/` (Instagram/Facebook via Graph API, TikTok via
 Content Posting API; sin dependencias nuevas). Al desplegarla por primera vez:

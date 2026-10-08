@@ -400,6 +400,14 @@ DOMINIO_MODEL_PRICES = {
 DOMINIO_AGENT_MAX_TURNS = int(os.environ.get('DOMINIO_AGENT_MAX_TURNS', '12'))
 # M-12: which model provider the agent engine uses (only 'anthropic' today).
 DOMINIO_AGENT_PROVIDER = os.environ.get('DOMINIO_AGENT_PROVIDER', 'anthropic')
+# Phase 8 knowledge ingest (website scan + uploaded files), run by the
+# process_knowledge cron, never inside a web request. Pages per scan, wall-clock
+# seconds per crawl, and the upload ceiling (the file is read in memory only;
+# the upload view uses its own bounded in-memory handler, so the global
+# DATA_UPLOAD_MAX_MEMORY_SIZE above stays at 1 MB for every other view).
+DOMINIO_INGEST_MAX_PAGES = int(os.environ.get('DOMINIO_INGEST_MAX_PAGES', '30'))
+DOMINIO_INGEST_TIME_BUDGET = int(os.environ.get('DOMINIO_INGEST_TIME_BUDGET', '120'))
+DOMINIO_INGEST_UPLOAD_MAX_MB = int(os.environ.get('DOMINIO_INGEST_UPLOAD_MAX_MB', '5'))
 
 
 # ============================================================

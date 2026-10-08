@@ -12,13 +12,15 @@ the prompt until a tenant's knowledge outgrows the context budget (documented
 decision in Phase 2).
 """
 import html
+import http.client
 import ipaddress
 import logging
 import re
 import socket
+import urllib.error
 import urllib.request
 from html.parser import HTMLParser
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from .models import KnowledgeFragment
 
@@ -38,10 +40,15 @@ class _TextExtractor(HTMLParser):
         super().__init__()
         self._skip_depth = 0
         self.parts = []
+        self.hrefs = []
 
     def handle_starttag(self, tag, attrs):
         if tag in self.SKIP:
             self._skip_depth += 1
+        elif tag == 'a' and len(self.hrefs) < 500:
+            href = dict(attrs).get('href')
+            if href:
+                self.hrefs.append(href.strip())
 
     def handle_endtag(self, tag):
         if tag in self.SKIP and self._skip_depth:
@@ -52,12 +59,73 @@ class _TextExtractor(HTMLParser):
             self.parts.append(data.strip())
 
 
+class RedirectRefused(ValueError):
+    """Raised instead of following a redirect. `location` lets the site crawler
+    queue the target as a NEW request that goes through every check again."""
+
+    def __init__(self, location=''):
+        super().__init__('La URL redirige a otra página; usa la dirección final.')
+        self.location = location
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     """A redirect would re-resolve the host AFTER our SSRF check, so a public
     URL could bounce us to 169.254.169.254. Refuse instead of re-validating."""
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        raise ValueError('La URL redirige a otra página; usa la dirección final.')
+        raise RedirectRefused(newurl)
+
+
+def _assert_public_ip(value):
+    ip = ipaddress.ip_address(str(value).split('%', 1)[0])
+    if ip.version == 6 and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    if (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
+            or ip.is_multicast or ip.is_unspecified or not ip.is_global):
+        raise ValueError('Esa dirección no es pública.')
+
+
+def _guarded_create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT,
+                               source_address=None, *args, **kwargs):
+    """Check the address we ACTUALLY connected to. _assert_public_host runs on
+    a first DNS lookup; the connection does a second one, so a domain with a
+    short TTL could answer public then private (DNS rebinding)."""
+    sock = socket.create_connection(address, timeout, source_address)
+    try:
+        _assert_public_ip(sock.getpeername()[0])
+    except ValueError:
+        sock.close()
+        raise
+    return sock
+
+
+class _GuardedHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = _guarded_create_connection
+
+
+class _GuardedHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = _guarded_create_connection
+
+
+class _GuardedHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_GuardedHTTPConnection, req)
+
+
+class _GuardedHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_GuardedHTTPSConnection, req, context=self._context)
+
+
+def _opener():
+    # ProxyHandler({}): an env proxy would make the peer check meaningless.
+    return urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), _GuardedHTTPHandler, _GuardedHTTPSHandler,
+        _NoRedirect)
 
 
 def _assert_public_host(host):
@@ -76,15 +144,16 @@ def _assert_public_host(host):
     except socket.gaierror:
         raise ValueError('No se pudo resolver el dominio.')
     for *_ , sockaddr in infos:
-        ip = ipaddress.ip_address(sockaddr[0])
-        if (ip.is_private or ip.is_loopback or ip.is_link_local
-                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
-            raise ValueError('Esa dirección no es pública.')
+        _assert_public_ip(sockaddr[0])
 
 
-def fetch_url_text(url):
-    """Fetch a public http(s) page and return its readable text. Raises
-    ValueError with a human-readable message on anything invalid."""
+USER_AGENT = 'DOMINIO-Chat-24-7 knowledge bot'
+PAGE_TYPES = ('text/html', 'text/plain', 'application/xhtml')
+HTML_TYPES = ('text/html', 'application/xhtml')
+
+
+def validate_public_url(url):
+    """Scheme/port/host checks shared by every fetch. Returns the parsed URL."""
     parsed = urlparse(url)
     if parsed.scheme not in ('http', 'https') or not parsed.netloc:
         raise ValueError('La URL debe empezar con http:// o https://')
@@ -95,32 +164,63 @@ def fetch_url_text(url):
     if port not in (None, 80, 443):
         raise ValueError('Solo se permiten los puertos 80 y 443.')
     _assert_public_host(parsed.hostname)
+    return parsed
 
-    req = urllib.request.Request(url, headers={'User-Agent': 'DOMINIO-Chat-24-7 knowledge bot'})
-    opener = urllib.request.build_opener(_NoRedirect)
+
+def fetch_resource(url, allowed_types=PAGE_TYPES, max_bytes=MAX_FETCH_BYTES):
+    """GET a public http(s) URL with every guard on: public host (before and
+    at connect time), ports 80/443, no redirects, timeout, size cap, content
+    type allowlist. Returns (content_type, raw_bytes); raises ValueError with
+    a message safe to show the tenant (RedirectRefused on a 3xx)."""
+    validate_public_url(url)
+    req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
     try:
-        with opener.open(req, timeout=TIMEOUT) as resp:
-            ctype = resp.headers.get('Content-Type', '')
-            if not any(t in ctype for t in ('text/html', 'text/plain', 'application/xhtml')):
+        with _opener().open(req, timeout=TIMEOUT) as resp:
+            ctype = resp.headers.get('Content-Type', '') or ''
+            if not any(t in ctype for t in allowed_types):
                 raise ValueError(f'Tipo de contenido no soportado: {ctype[:60]}')
-            raw = resp.read(MAX_FETCH_BYTES + 1)
+            raw = resp.read(max_bytes + 1)
     except ValueError:
         raise
     except Exception as e:
-        logger.warning('knowledge fetch failed for %s: %s', url, e)
+        # A 404 is routine for the crawler (robots.txt, sitemap.xml).
+        log = logger.info if isinstance(e, urllib.error.HTTPError) else logger.warning
+        log('knowledge fetch failed for %s: %s', url, e)
         raise ValueError('No se pudo acceder a la URL.')
-    if len(raw) > MAX_FETCH_BYTES:
-        raise ValueError('La página es demasiado grande (máx. 500 KB).')
-    text_html = raw.decode('utf-8', errors='replace')
-    if 'text/plain' in ctype:
-        text = text_html
-    else:
-        extractor = _TextExtractor()
-        extractor.feed(text_html)
-        text = '\n'.join(extractor.parts)
+    if len(raw) > max_bytes:
+        raise ValueError(f'La página es demasiado grande (máx. {max_bytes // 1024} KB).')
+    return ctype, raw
+
+
+def _clean(text):
     text = html.unescape(text)
     text = re.sub(r'[ \t]+', ' ', text)
-    text = re.sub(r'\n{3,}', '\n\n', text).strip()
+    return re.sub(r'\n{3,}', '\n\n', text).strip()
+
+
+def html_to_text_and_links(text_html, base_url=''):
+    """(readable text, absolute hrefs) from an HTML document."""
+    extractor = _TextExtractor()
+    extractor.feed(text_html)
+    links = [urljoin(base_url, h) for h in extractor.hrefs] if base_url else extractor.hrefs
+    return _clean('\n'.join(extractor.parts))[:MAX_TEXT_CHARS], links
+
+
+def fetch_page(url):
+    """One HTML page for the site crawler: (text, links). Non-HTML -> ValueError."""
+    _ctype, raw = fetch_resource(url, allowed_types=HTML_TYPES)
+    return html_to_text_and_links(raw.decode('utf-8', errors='replace'), base_url=url)
+
+
+def fetch_url_text(url):
+    """Fetch a public http(s) page and return its readable text. Raises
+    ValueError with a human-readable message on anything invalid."""
+    ctype, raw = fetch_resource(url)
+    text_html = raw.decode('utf-8', errors='replace')
+    if 'text/plain' in ctype:
+        text = _clean(text_html)
+    else:
+        text, _links = html_to_text_and_links(text_html)
     if not text:
         raise ValueError('La página no contiene texto legible.')
     return text[:MAX_TEXT_CHARS]

@@ -20,15 +20,16 @@ from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Avg, Count, Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.views.decorators.http import require_POST
 
-from . import agent, knowledge
+from . import agent, ingest, knowledge
 from . import usage as usage_ledger
 from .models import (
     AvailabilityRule, Booking, Client, ContactSubmission, Conversation,
@@ -406,21 +407,118 @@ def _knowledge_client(request):
     return client
 
 
+def _knowledge_context(request, client, **extra):
+    sources = list(client.knowledge_sources.exclude(status='archived'))
+    context = {
+        'active_tab': 'knowledge',
+        'client_obj': client, 'sources': sources,
+        'archived': client.knowledge_sources.filter(status='archived'),
+        'all_clients': clients_for(request.user),
+        'kind_choices': [c for c in KnowledgeSource.KIND_CHOICES
+                         if c[0] in KnowledgeSource.MANUAL_KINDS],
+        'scan_url': ingest.default_scan_url(client),
+        'scan_running': any(s.kind == 'site' and s.in_progress for s in sources),
+        'any_in_progress': any(s.in_progress for s in sources),
+        'upload_max_mb': ingest.upload_max_bytes() // (1024 * 1024),
+        'test_question': '', 'test_answer': None,
+    }
+    context.update(extra)
+    return context
+
+
+def _knowledge_redirect(client):
+    return redirect(reverse('knowledge') + f'?client={client.slug}')
+
+
 @login_required
 def knowledge_list(request):
     client = _knowledge_client(request)
     if client is None:
         messages.error(request, 'Solo un administrador puede gestionar el conocimiento.')
         return redirect('dashboard')
-    sources = client.knowledge_sources.exclude(status='archived')
-    archived = client.knowledge_sources.filter(status='archived')
-    return render(request, 'landing/dashboard_knowledge.html', {
-        'active_tab': 'knowledge',
-        'client_obj': client, 'sources': sources, 'archived': archived,
-        'all_clients': clients_for(request.user),
-        'kind_choices': KnowledgeSource.KIND_CHOICES,
-        'test_question': '', 'test_answer': None,
-    })
+    return render(request, 'landing/dashboard_knowledge.html',
+                  _knowledge_context(request, client))
+
+
+@login_required
+@require_POST
+@_rate_limited('kscan', limit=5, window=3600, html='knowledge')
+def knowledge_scan(request):
+    """Phase 8: queue a crawl of the tenant's own website. The crawl and the
+    model calls run in the process_knowledge cron; the result lands as a draft."""
+    client = _knowledge_client(request)
+    if client is None:
+        messages.error(request, 'Solo un administrador puede gestionar el conocimiento.')
+        return redirect('dashboard')
+    try:
+        url = ingest.validate_scan(client, request.POST.get('url'),
+                                   any_host=request.user.is_staff)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return _knowledge_redirect(client)
+    if _tenant_action_cap_hit('ingest', client):
+        messages.error(request, 'Llegaste al límite de escaneos y archivos de hoy para este '
+                                'agente. Intenta de nuevo mañana.')
+        return _knowledge_redirect(client)
+    try:
+        source = ingest.enqueue_site_scan(client, url)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return _knowledge_redirect(client)
+    _audit(request, 'knowledge.scan', client=client, target=url, result=f'source:{source.pk}')
+    messages.success(request, 'Escaneo en cola. Se procesa en segundo plano: recarga en unos '
+                              'minutos y el resultado aparecerá como borrador para revisarlo.')
+    return _knowledge_redirect(client)
+
+
+@csrf_exempt
+@login_required
+def knowledge_upload(request):
+    """Phase 8: upload a document; its text is extracted here (bounded, in
+    memory) and summarized later by the cron. The file is never stored.
+
+    The upload handlers must be replaced before anything reads request.POST,
+    and CsrfViewMiddleware reads it, so CSRF is enforced on the inner view
+    (the documented Django pattern) instead of by the middleware."""
+    handler = ingest.BoundedMemoryUploadHandler(request)
+    request.upload_handlers = [handler]
+    request.ingest_upload_handler = handler
+    return _knowledge_upload(request)
+
+
+@csrf_protect
+@require_POST
+@_rate_limited('kupload', limit=10, window=3600, html='knowledge')
+def _knowledge_upload(request):
+    client = _knowledge_client(request)
+    if client is None:
+        messages.error(request, 'Solo un administrador puede gestionar el conocimiento.')
+        return redirect('dashboard')
+    handler = getattr(request, 'ingest_upload_handler', None)
+    uploaded = request.FILES.get('file')
+    if uploaded is None:
+        if handler is not None and handler.too_large:
+            messages.error(request, f'El archivo es demasiado grande '
+                                    f'(máx. {ingest.upload_max_bytes() // (1024 * 1024)} MB).')
+        else:
+            messages.error(request, 'Escoge un archivo para subir.')
+        return _knowledge_redirect(client)
+    if _tenant_action_cap_hit('ingest', client):
+        messages.error(request, 'Llegaste al límite de escaneos y archivos de hoy para este '
+                                'agente. Intenta de nuevo mañana.')
+        return _knowledge_redirect(client)
+    try:
+        source = ingest.enqueue_file(client, uploaded)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return _knowledge_redirect(client)
+    finally:
+        uploaded.close()
+    _audit(request, 'knowledge.upload', client=client, target=source.title,
+           result=f'source:{source.pk}')
+    messages.success(request, f'"{source.title}" se leyó bien y quedó en cola. Se procesa en '
+                              'segundo plano: recarga en unos minutos.')
+    return _knowledge_redirect(client)
 
 
 @login_required
@@ -435,8 +533,12 @@ def knowledge_save(request):
     pk = request.POST.get('pk') or None
     source = (get_object_or_404(client.knowledge_sources, pk=pk) if pk
               else KnowledgeSource(client=client))
+    if source.pk and source.in_progress:
+        messages.error(request, 'Esa fuente se está procesando; espera a que termine.')
+        return _knowledge_redirect(client)
     kind = request.POST.get('kind', 'text')
-    source.kind = kind if kind in dict(KnowledgeSource.KIND_CHOICES) else 'text'
+    # site/file only come from the ingest pipeline, never from this form.
+    source.kind = kind if kind in KnowledgeSource.MANUAL_KINDS else 'text'
     source.title = (request.POST.get('title') or '').strip()[:160] or 'Sin título'
     source.origin = (request.POST.get('origin') or '').strip()[:500]
     source.content = (request.POST.get('content') or '').strip()[:60000]
@@ -471,18 +573,47 @@ def knowledge_action(request, pk):
     elif action == 'archive':
         KnowledgeSource.objects.filter(pk=source.pk).update(status='archived')
         messages.success(request, f'"{source.title}" archivada.')
-    elif action == 'reprocess':
+    elif action == 'reprocess' and source.kind in KnowledgeSource.INGEST_KINDS:
+        return _retry_ingest(request, client, source)
+    elif action == 'reprocess' and not source.in_progress:
         knowledge.process_source(source)
         if source.status != 'error':
             KnowledgeSource.objects.filter(pk=source.pk).update(status='draft')
         messages.success(request, f'"{source.title}" reprocesada ({source.status}).')
-    elif action == 'delete' and source.status in ('draft', 'error', 'archived'):
+    elif action == 'delete' and source.status in ('pending', 'draft', 'error', 'archived'):
         source.delete()
         messages.success(request, 'Fuente eliminada.')
     else:
         messages.error(request, 'Acción no permitida para el estado de esta fuente.')
     _audit(request, f'knowledge.{action}', client=client, target=source.title)
     return redirect(reverse('knowledge') + f'?client={client.slug}')
+
+
+def _retry_ingest(request, client, source):
+    """Re-queue a failed scan/upload. Only from 'error': a draft or active
+    source is never pulled out from under the agent (re-scan = a new scan)."""
+    if source.status != 'error' or (source.kind == 'file' and not source.content.strip()):
+        messages.error(request, 'Solo se puede reintentar una fuente con error. '
+                                'Para actualizarla, escanea o sube de nuevo.')
+        return _knowledge_redirect(client)
+    if source.kind == 'site' and ingest.scan_running(client):
+        messages.error(request, 'Ya hay un escaneo de tu sitio en curso. Espera a que termine.')
+        return _knowledge_redirect(client)
+    if _tenant_action_cap_hit('ingest', client):
+        messages.error(request, 'Llegaste al límite de escaneos y archivos de hoy para este '
+                                'agente. Intenta de nuevo mañana.')
+        return _knowledge_redirect(client)
+    try:
+        with transaction.atomic():
+            KnowledgeSource.objects.filter(pk=source.pk, status='error').update(
+                status='pending', error='', progress='En cola…', attempts=0,
+                updated_at=timezone.now())
+    except IntegrityError:  # a scan got queued between the check and here
+        messages.error(request, 'Ya hay un escaneo de tu sitio en curso. Espera a que termine.')
+        return _knowledge_redirect(client)
+    _audit(request, 'knowledge.retry', client=client, target=source.title)
+    messages.success(request, f'"{source.title}" volvió a la cola. Recarga en unos minutos.')
+    return _knowledge_redirect(client)
 
 
 @login_required
@@ -517,16 +648,9 @@ def knowledge_test(request):
             test_answer = '(Error consultando el modelo — trata de nuevo.)'
         else:
             usage_ledger.record('knowledge_test', test_usage, client=client)
-    sources = client.knowledge_sources.exclude(status='archived')
-    return render(request, 'landing/dashboard_knowledge.html', {
-        'active_tab': 'knowledge',
-        'client_obj': client, 'sources': sources,
-        'archived': client.knowledge_sources.filter(status='archived'),
-        'all_clients': clients_for(request.user),
-        'kind_choices': KnowledgeSource.KIND_CHOICES,
-        'test_question': question, 'test_answer': test_answer,
-        'tested_draft': str(draft_pk or ''),
-    })
+    return render(request, 'landing/dashboard_knowledge.html', _knowledge_context(
+        request, client, test_question=question, test_answer=test_answer,
+        tested_draft=str(draft_pk or '')))
 
 
 # ============================================================
