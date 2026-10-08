@@ -195,3 +195,29 @@ class EvalParserTests(SimpleTestCase):
         handlers = fake_handlers(called)
         handlers['create_booking']({})
         self.assertEqual(called, ['create_booking'])
+
+
+class EffortHardeningTests(SimpleTestCase):
+    def test_no_false_positives_on_normal_messages(self):
+        for text in ('Please contact as soon as possible', 'necesito una exact assessment',
+                     'gracias por tu promptitud', 'ignoro las instrucciones del formulario',
+                     'La aseguradora aprobó mi cita, ¿es gratis?', '¿Cómo actúa como empresa?'):
+            with self.subTest(text=text):
+                self.assertEqual(agent.pick_effort([{'role': 'user', 'content': text}]), 'low')
+
+    @override_settings(DOMINIO_AGENT_EFFORT='hihg')
+    def test_invalid_effort_falls_back_to_low(self):
+        with self.assertLogs('landing.agent', level='WARNING'):
+            self.assertEqual(agent._effort_kwargs('claude-haiku-5-5'),
+                             {'output_config': {'effort': 'low'}})
+
+    @override_settings(DOMINIO_AGENT_EFFORT='low')
+    def test_missing_model_is_safe(self):
+        self.assertEqual(agent._effort_kwargs(None), {'output_config': {'effort': 'low'}})
+
+    @override_settings(ANTHROPIC_API_KEY='k', DOMINIO_AGENT_MODEL='claude-haiku-5-5')
+    def test_english_fallback(self):
+        client = _fake_client(_resp(text='', stop='refusal'))
+        with patch.object(agent, '_provider_client', return_value=client):
+            reply, _ = agent.answer([{'role': 'user', 'content': 'x'}], language='en')
+        self.assertEqual(reply, agent.FALLBACK_REPLY_EN)

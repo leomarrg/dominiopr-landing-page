@@ -291,9 +291,13 @@ DEFAULT_MODEL = 'claude-haiku-5-5'
 # used up the reply cap). Never send the visitor an empty bubble.
 FALLBACK_REPLY = ("Disculpa, no pude responder eso ahora mismo. ¿Me lo dices de otra forma, "
                   "o prefieres que alguien del equipo te contacte?")
+FALLBACK_REPLY_EN = ("Sorry, I couldn't answer that right now. Could you rephrase it, or would "
+                     "you like someone from the team to contact you?")
 
 # Models without the `effort` parameter (it 400s on them).
-_NO_EFFORT_MODELS = ('claude-haiku-4-5', 'claude-sonnet-4-5', 'claude-3')
+_NO_EFFORT_MODELS = ('claude-haiku-4-5', 'claude-sonnet-4-5', 'claude-sonnet-4-2', 'claude-sonnet-4-0',
+                     'claude-opus-4-1', 'claude-opus-4-0', 'claude-opus-4-2', 'claude-3')
+_EFFORT_LEVELS = ('low', 'medium', 'high', 'xhigh', 'max')
 
 
 def _model():
@@ -305,11 +309,13 @@ def _model():
 # look like manipulation, as cheap insurance for rule-following. Regex only, no
 # extra model call.
 _INJECTION_RE = re.compile(
-    r'ignor\w*\s+(?:\w+\s+){0,3}(?:instruc|regla|rule|previous|anterior)'
-    r'|system\s*prompt|tu\s+prompt|your\s+prompt|instrucciones\s+(?:internas|del\s+sistema)'
-    r'|act\s+as|act[uú]a\s+como|eres\s+ahora|you\s+are\s+now|developer\s+mode|jailbreak'
-    r'|repite\s+(?:el|todo\s+el)\s+texto|repeat\s+the\s+text'
-    r'|(?:aprob[oó]|autoriz[oó]|approved|authorized)\b.{0,40}(?:descuento|discount|excepci|exception|gratis|free)',
+    r'\bignor(?:a|e|en|ad)\s+(?:\w+\s+){0,3}(?:instruc|regla|rule|previous)'
+    r'|\bsystem\s*prompt\b|\btu\s+prompt\b|\byour\s+prompt\b'
+    r'|\binstrucciones\s+(?:internas|del\s+sistema)\b'
+    r'|\bact\s+as\b|\bact[uú]a\s+como\s+(?:un|una|si)\b|\beres\s+ahora\b|\byou\s+are\s+now\b'
+    r'|\bdeveloper\s+mode\b|\bjailbreak\b'
+    r'|\brepite\s+(?:el|todo\s+el)\s+texto\b|\brepeat\s+the\s+text\b'
+    r'|\b(?:aprob[oó]|autoriz[oó]|approved|authorized)\b.{0,40}\b(?:descuento|discount|excepci\w*|exception)',
     re.IGNORECASE)
 
 
@@ -336,25 +342,30 @@ def pick_effort(history):
 def _effort_kwargs(model, history=None):
     """`output_config.effort` for models that support it; nothing for older ones,
     so pinning DOMINIO_AGENT_MODEL back to Haiku 4.5 still works."""
-    effort = getattr(settings, 'DOMINIO_AGENT_EFFORT', 'low')
-    if not effort or model.startswith(_NO_EFFORT_MODELS):
+    effort = (getattr(settings, 'DOMINIO_AGENT_EFFORT', 'low') or '').strip().lower()
+    if not effort or (model or '').startswith(_NO_EFFORT_MODELS):
         return {}
     if effort == 'auto':
         effort = pick_effort(history)
+    elif effort not in _EFFORT_LEVELS:
+        # A typo here would 400 every chat request; fall back instead.
+        logger.warning('Invalid DOMINIO_AGENT_EFFORT %r; using low', effort)
+        effort = 'low'
     return {'output_config': {'effort': effort}}
 
 
-def _reply_text(response):
-    """The visible answer, or FALLBACK_REPLY when there is none."""
+def _reply_text(response, language='es'):
+    """The visible answer, or the fallback reply when there is none."""
+    fallback = FALLBACK_REPLY_EN if language == 'en' else FALLBACK_REPLY
     if response.stop_reason == 'refusal':
         details = getattr(response, 'stop_details', None)
         logger.warning('Agent declined a message (category=%s)',
                        getattr(details, 'category', None))
-        return FALLBACK_REPLY
+        return fallback
     text = ''.join(b.text for b in response.content if b.type == 'text').strip()
     if not text:
         logger.warning('Agent returned no text (stop_reason=%s)', response.stop_reason)
-        return FALLBACK_REPLY
+        return fallback
     return text
 
 
@@ -435,7 +446,7 @@ def answer(history, business_prompt=None, handlers=None, language='es'):
             **tool_kwarg, **effort_kwarg)
         _accumulate_usage(usage, response)
         if response.stop_reason != 'tool_use':
-            return _reply_text(response), usage
+            return _reply_text(response, language), usage
 
         messages.append({'role': 'assistant', 'content': response.content})
         tool_results = []
@@ -462,4 +473,4 @@ def answer(history, business_prompt=None, handlers=None, language='es'):
         model=model, max_tokens=max_tokens, system=system, messages=messages,
         tools=tools, tool_choice={'type': 'none'}, **effort_kwarg)
     _accumulate_usage(usage, response)
-    return _reply_text(response), usage
+    return _reply_text(response, language), usage
