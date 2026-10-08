@@ -301,3 +301,10 @@ class PurgeRetentionTests(TestCase):
         kept = lead(beta, days_old=45)
         call_command('purge_expired', stdout=StringIO())
         self.assertTrue(ContactSubmission.objects.filter(pk=kept.pk).exists())
+
+    def test_legacy_leads_without_client_use_default_retention(self):
+        stale = lead(None, days_old=400, source='chat')
+        fresh = lead(None, days_old=100, source='chat')
+        call_command('purge_expired', stdout=StringIO())
+        self.assertFalse(ContactSubmission.objects.filter(pk=stale.pk).exists())
+        self.assertTrue(ContactSubmission.objects.filter(pk=fresh.pk).exists())

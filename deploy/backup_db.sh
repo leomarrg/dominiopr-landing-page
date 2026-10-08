@@ -94,14 +94,14 @@ find "$BACKUP_DIR" -name 'db-*.sqlite3.gz' -mtime +"$KEEP_DAYS" -delete
 #
 # Restore from S3 (on any box with aws cli + gpg + python3):
 #   aws s3 cp "s3://mi-bucket/dominio-db/db-YYYYMMDD.sqlite3.gz.gpg" .
-#   gpg --batch --passphrase-file /ruta/passphrase -o db-YYYYMMDD.sqlite3.gz -d db-YYYYMMDD.sqlite3.gz.gpg
+#   gpg --batch --pinentry-mode loopback --passphrase-file /ruta/passphrase -o db-YYYYMMDD.sqlite3.gz -d db-YYYYMMDD.sqlite3.gz.gpg
 #   gunzip db-YYYYMMDD.sqlite3.gz
 #   python3 -c "import sqlite3; print(sqlite3.connect('db-YYYYMMDD.sqlite3').execute('PRAGMA integrity_check').fetchone()[0])"
 #   # Must print "ok"; then follow the restore drill at the top of this file.
 if [ -n "${BACKUP_S3_URI:-}" ] && [ -n "${BACKUP_PASSPHRASE_FILE:-}" ]; then
     ENC="$OUT.gz.gpg"
     # The local $OUT.gz is already verified and kept no matter what happens here.
-    if ! gpg --batch --yes --symmetric --cipher-algo AES256 \
+    if ! gpg --batch --yes --pinentry-mode loopback --symmetric --cipher-algo AES256 \
             --passphrase-file "$BACKUP_PASSPHRASE_FILE" -o "$ENC" "$OUT.gz"; then
         rm -f "$ENC"
         echo "Backup local OK ($OUT.gz) pero la copia externa FALLÓ: no se pudo cifrar" >&2
