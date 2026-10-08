@@ -6,3 +6,7 @@
 *.service     text eol=lf
 *.conf        text eol=lf
 deploy/**     text eol=lf
+
+# Binary documents: never convert line endings (a reportlab PDF is mostly ASCII
+# and git would otherwise treat it as text and corrupt it on checkout).
+*.pdf         binary
