@@ -7,7 +7,12 @@ are faked (the real SSRF checks still run), and the model client is a stub.
 """
 import io
 import json
+import os
+import re
 import socket
+import subprocess
+import sys
+import time
 import urllib.error
 import zipfile
 from datetime import timedelta
@@ -23,11 +28,11 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import Client as HttpClient
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from . import ingest, knowledge
+from . import extract_worker, ingest, knowledge
 from .models import Client, KnowledgeFragment, KnowledgeSource, Membership, UsageEvent
 
 # ------------------------------------------------------------------
@@ -60,11 +65,11 @@ def fake_getaddrinfo(host, port, *args, **kwargs):
 
 class FakeResp:
     def __init__(self, body, ctype):
-        self._body = body if isinstance(body, bytes) else body.encode('utf-8')
+        self._body = io.BytesIO(body if isinstance(body, bytes) else body.encode('utf-8'))
         self.headers = {'Content-Type': ctype}
 
     def read(self, n=-1):
-        return self._body if n is None or n < 0 else self._body[:n]
+        return self._body.read(-1 if n is None else n)
 
     def __enter__(self):
         return self
@@ -828,3 +833,398 @@ class IngestViewTests(TestCase):
         self.http.post(reverse('knowledge_save'), {
             'client': 'acme', 'kind': 'site', 'title': 'X', 'content': 'y'})
         self.assertEqual(KnowledgeSource.objects.get().kind, 'text')
+
+
+# ==================================================================
+# Security audit of e789d3f (regressions)
+# ==================================================================
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+class NginxUploadLimitsTests(SimpleTestCase):
+    """H1: the upload location must not buffer bodies in RAM and must restate
+    its connection limits (a location-level limit_conn replaces inherited ones)."""
+
+    def read(self, name):
+        with open(os.path.join(REPO_ROOT, 'deploy', 'nginx', name), encoding='utf-8') as fh:
+            return fh.read()
+
+    def upload_block(self):
+        conf = self.read('dominio.conf')
+        match = re.search(r'location\s*=\s*/dashboard/knowledge/upload/\s*\{(.*?)\}', conf, re.S)
+        self.assertIsNotNone(match, 'upload location missing')
+        # Drop comments so a mention in prose does not count as a directive.
+        return re.sub(r'#[^\n]*', '', match.group(1))
+
+    def test_no_large_in_memory_body_buffer(self):
+        block = self.upload_block()
+        for value, unit in re.findall(r'client_body_buffer_size\s+(\d+)([kKmMgG]?)\s*;', block):
+            size = int(value) * {'': 1, 'k': 1024, 'm': 1024 ** 2, 'g': 1024 ** 3}[unit.lower()]
+            self.assertLess(size, 1024 ** 2, 'client_body_buffer_size >= 1m in the upload location')
+
+    def test_limits_restated_in_location(self):
+        block = self.upload_block()
+        self.assertRegex(block, r'limit_conn\s+dominio_upload_total\s+\d+\s*;')
+        self.assertRegex(block, r'limit_conn\s+dominio_conn\s+2\s*;')
+        self.assertRegex(block, r'limit_req\s+zone=dominio_auth\b')
+        self.assertRegex(block, r'client_max_body_size\s+6m\s*;')
+        self.assertRegex(block, r'client_body_timeout\s+20s\s*;')
+        limits = re.sub(r'#[^\n]*', '', self.read('dominio-limits.conf'))
+        self.assertRegex(limits, r'limit_conn_zone\s+\$server_name\s+zone=dominio_upload_total:\d+m\s*;')
+
+    def test_nginx_files_are_lf(self):
+        for name in ('dominio.conf', 'dominio-limits.conf'):
+            with open(os.path.join(REPO_ROOT, 'deploy', 'nginx', name), 'rb') as fh:
+                self.assertNotIn(b'\r\n', fh.read(), name)
+
+
+def _dtd_docx_xml(encoding):
+    return (f'<?xml version="1.0" encoding="{encoding}"?>'
+            '<!DOCTYPE x [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;">]>'
+            f'<w:document xmlns:w="{W_NS}"><w:body><w:p><w:r><w:t>&b;</w:t></w:r></w:p>'
+            '</w:body></w:document>')
+
+
+def _laughs(levels=10):
+    ents = '<!ENTITY l0 "lol">' + ''.join(
+        f'<!ENTITY l{i} "' + f'&l{i - 1};' * 10 + '">' for i in range(1, levels))
+    return f'<?xml version="1.0"?><!DOCTYPE r [{ents}]><r>&l{levels - 1};</r>'
+
+
+class XmlEntityGuardTests(NetTestCase):
+    """H2: the DTD guard lives in the parser, so a UTF-16 document (whose
+    '<!DOCTYPE' bytes a regex over raw input cannot see) is refused too."""
+
+    def test_parser_refuses_doctype_utf8_and_utf16_before_expansion(self):
+        start = time.monotonic()
+        for raw in (_laughs().encode('utf-8'),
+                    _laughs().replace('?>', ' encoding="utf-16"?>', 1).encode('utf-16')):
+            self.assertIsNone(extract_worker.parse_xml(raw))
+        self.assertLess(time.monotonic() - start, 2)  # a billion laughs never expanded
+        self.assertIsNone(extract_worker.parse_xml(b'<!DOCTYPE r SYSTEM "file:///etc/passwd"><r/>'))
+        self.assertIsNone(extract_worker.parse_xml(b'<r>&undefined;</r>'))
+
+    def test_old_regex_could_not_see_the_utf16_doctype(self):
+        raw = _dtd_docx_xml('utf-16').encode('utf-16')
+        self.assertNotIn(b'<!DOCTYPE', raw)  # why a byte regex was not enough
+        self.assertIsNone(extract_worker.parse_xml(raw))
+
+    def test_docx_with_entities_rejected_utf8_and_utf16(self):
+        for encoding, codec in (('utf-8', 'utf-8'), ('utf-16', 'utf-16')):
+            data = make_docx(document_xml=_dtd_docx_xml(encoding).encode(codec))
+            with self.assertRaises(extract_worker.ExtractError, msg=encoding):
+                extract_worker.text_from_docx(data)
+            with self.assertRaises(ValueError, msg=encoding):
+                ingest.extract_text_from_file(SimpleUploadedFile('dtd.docx', data))
+
+    def test_normal_docx_still_parses_including_utf16(self):
+        xml = (f'<?xml version="1.0" encoding="utf-16"?><w:document xmlns:w="{W_NS}"><w:body>'
+               '<w:p><w:r><w:t>Horario 9 a 5</w:t></w:r></w:p></w:body></w:document>')
+        data = make_docx(document_xml=xml.encode('utf-16'))
+        self.assertIn('Horario 9 a 5', extract_worker.text_from_docx(data))
+        self.assertIn('Precio: $40', extract_worker.text_from_docx(make_docx(['Precio: $40'])))
+
+    def test_document_xml_over_4mb_rejected(self):
+        big = (f'<w:document xmlns:w="{W_NS}"><w:body><w:p><w:r><w:t>'
+               + 'A' * (4 * 1024 * 1024 + 10) + '</w:t></w:r></w:p></w:body></w:document>')
+        with self.assertRaises(extract_worker.ExtractError):
+            extract_worker.text_from_docx(make_docx(document_xml=big))
+
+    def test_utf16_sitemap_with_doctype_is_ignored(self):
+        bomb = ('<?xml version="1.0" encoding="utf-16"?><!DOCTYPE u [<!ENTITY e "x">]>'
+                '<urlset><url><loc>https://example.com/x</loc></url></urlset>').encode('utf-16')
+        web = self.serve({
+            'https://example.com/': (HTML, html('Inicio')),
+            'https://example.com/sitemap.xml': ('application/xml', bomb),
+            'https://example.com/x': (HTML, html('X')),
+        })
+        ingest.crawl_site('https://example.com/')
+        self.assertNotIn('https://example.com/x', web.requested)
+
+    def test_utf16_sitemap_without_doctype_still_works(self):
+        sitemap = ('<?xml version="1.0" encoding="utf-16"?>'
+                   '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+                   '<url><loc>https://example.com/oculta</loc></url></urlset>').encode('utf-16')
+        self.serve({
+            'https://example.com/': (HTML, html('Inicio')),
+            'https://example.com/sitemap.xml': ('application/xml', sitemap),
+            'https://example.com/oculta': (HTML, html('Solo en el sitemap')),
+        })
+        self.assertIn('https://example.com/oculta',
+                      [u for u, _t in ingest.crawl_site('https://example.com/')])
+
+
+class DripResp:
+    """A server that sends one byte per read and never finishes."""
+
+    def __init__(self, clock, step):
+        self.clock, self.step = clock, step
+        self.headers = {'Content-Type': HTML}
+
+    def read1(self, n=-1):
+        self.clock['t'] += self.step
+        return b'a'
+
+    read = read1
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class SlowDripTests(TestCase):
+    """M1: total deadline per fetch, and the crawl budget bounds every fetch."""
+
+    def setUp(self):
+        self.clock = {'t': 1000.0}
+        fake_time = MagicMock()
+        fake_time.monotonic.side_effect = lambda: self.clock['t']
+        for target in (patch.object(knowledge, 'time', fake_time),
+                       patch.object(ingest, 'time', fake_time),
+                       patch.object(knowledge.socket, 'getaddrinfo', side_effect=fake_getaddrinfo)):
+            target.start()
+            self.addCleanup(target.stop)
+
+    def open_with(self, handler):
+        p = patch('urllib.request.OpenerDirector.open', side_effect=handler)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_trickling_response_raises_after_deadline(self):
+        self.open_with(lambda req, *a, **kw: DripResp(self.clock, 1.0))
+        start = self.clock['t']
+        with self.assertRaisesMessage(ValueError, 'La página tardó demasiado.'):
+            knowledge.fetch_resource('https://example.com/')
+        self.assertLessEqual(self.clock['t'] - start, knowledge.FETCH_DEADLINE + 1)
+
+    def test_deadline_param_is_capped_and_honored(self):
+        self.open_with(lambda req, *a, **kw: DripResp(self.clock, 1.0))
+        start = self.clock['t']
+        with self.assertRaises(ValueError):
+            knowledge.fetch_resource('https://example.com/', deadline=5)
+        self.assertLessEqual(self.clock['t'] - start, 6)
+        with self.assertRaises(ValueError):
+            knowledge.fetch_resource('https://example.com/', deadline=0)
+
+    def test_crawl_returns_within_budget(self):
+        links = [f'/lento{i}' for i in range(10)]
+
+        def handler(req, *a, **kw):
+            url = req.full_url
+            if url == 'https://example.com/':
+                return FakeResp(html('Inicio', links), HTML)
+            if '/lento' in url:
+                return DripResp(self.clock, 2.0)
+            raise urllib.error.HTTPError(url, 404, 'Not Found', {}, None)
+
+        self.open_with(handler)
+        start = self.clock['t']
+        pages = ingest.crawl_site('https://example.com/', max_pages=30, time_budget=60)
+        self.assertEqual([u for u, _t in pages], ['https://example.com/'])
+        self.assertLessEqual(self.clock['t'] - start, 60 + 2)
+
+
+class SubprocessExtractTests(TestCase):
+    """M2: PDF/DOCX are parsed in a child process with a hard timeout."""
+
+    def test_pdf_and_docx_go_through_the_child_and_text_does_not(self):
+        with patch.object(ingest, '_extract_in_child', wraps=ingest._extract_in_child) as child:
+            self.assertIn('Abrimos', ingest.extract_text_from_file(
+                SimpleUploadedFile('f.pdf', make_pdf('Abrimos de lunes a viernes'))))
+            self.assertIn('Precio: $40', ingest.extract_text_from_file(
+                SimpleUploadedFile('f.docx', make_docx(['Precio: $40']))))
+            self.assertIn('Café', ingest.extract_text_from_file(
+                SimpleUploadedFile('f.txt', 'Café'.encode('utf-8'))))
+        self.assertEqual([c.args[0] for c in child.call_args_list], ['pdf', 'docx'])
+
+    def test_hanging_extractor_times_out_with_friendly_error(self):
+        hang = [sys.executable, '-I', '-c', 'import time; time.sleep(30)']
+        start = time.monotonic()
+        with patch.object(ingest, '_worker_argv', return_value=hang), \
+                patch.object(ingest, 'EXTRACT_TIMEOUT', 1):
+            with self.assertRaisesMessage(ValueError, 'tardó demasiado'):
+                ingest.extract_text_from_file(SimpleUploadedFile('f.pdf', make_pdf('x')))
+        self.assertLess(time.monotonic() - start, 15)
+
+    def test_crashing_child_maps_to_generic_message(self):
+        crash = [sys.executable, '-I', '-c', 'import sys; sys.stderr.write("/srv/x"); sys.exit(3)']
+        with patch.object(ingest, '_worker_argv', return_value=crash):
+            with self.assertRaises(ValueError) as ctx:
+                ingest.extract_text_from_file(SimpleUploadedFile('f.pdf', make_pdf('x')))
+        self.assertNotIn('/srv', str(ctx.exception))
+        self.assertIn('PDF', str(ctx.exception))
+
+    def test_worker_is_importable_without_django(self):
+        code = ('import sys; sys.path.insert(0, sys.argv[1]); import extract_worker; '
+                'print("django" in sys.modules)')
+        out = subprocess.run([sys.executable, '-I', '-c', code, os.path.dirname(ingest.EXTRACT_WORKER)],
+                             capture_output=True, text=True, timeout=30, check=True)
+        self.assertEqual(out.stdout.strip(), 'False')
+
+    def test_child_gets_no_secrets(self):
+        with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'sk-secret', 'DJANGO_SECRET_KEY': 's'}):
+            env = ingest._child_env()
+        self.assertNotIn('ANTHROPIC_API_KEY', env)
+        self.assertNotIn('DJANGO_SECRET_KEY', env)
+
+
+class PublicIpTests(SimpleTestCase):
+    """L7: IPv6 prefixes that route to an embedded IPv4 are not public."""
+
+    def test_nat64_and_6to4_blocked(self):
+        for addr in ('64:ff9b::a9fe:a9fe', '64:ff9b::7f00:1', '2002:a9fe:a9fe::1',
+                     '64:ff9b:1::a00:1'):
+            with self.assertRaises(ValueError, msg=addr):
+                knowledge._assert_public_ip(addr)
+        knowledge._assert_public_ip('2606:4700:4700::1111')  # a real public v6 still passes
+        knowledge._assert_public_ip('93.184.216.34')
+
+
+class ReviewContactsTests(SimpleTestCase):
+
+    def test_site_scan_strips_off_domain_links_and_flags_contacts(self):
+        text = ('Ubicación y contacto:\n- Paga en https://evil-pagos.com/pagar o en evil-pagos.net.\n'
+                '- Web: https://www.acme.com/citas y citas.acme.com\n'
+                '- Email: ventas@acme.com o soporte@evil-pagos.com\n- Tel: 787-555-1234')
+        clean, review = ingest.review_contacts(text, {'acme.com'}, strip_urls=True)
+        self.assertNotIn('evil-pagos.com/pagar', clean)
+        self.assertNotIn('evil-pagos.net', clean)
+        self.assertIn(ingest.REMOVED_LINK, clean)
+        self.assertIn('https://www.acme.com/citas', clean)
+        self.assertIn('soporte@evil-pagos.com', clean)  # emails are flagged, not stripped
+        self.assertEqual(review['removed_urls'], ['https://evil-pagos.com/pagar', 'evil-pagos.net'])
+        self.assertEqual(review['urls'], ['https://www.acme.com/citas', 'citas.acme.com'])
+        self.assertEqual(review['emails'], ['ventas@acme.com'])
+        self.assertEqual(review['foreign_emails'], ['soporte@evil-pagos.com'])
+        self.assertEqual(review['phones'], ['787-555-1234'])
+
+    def test_file_flags_but_keeps_links_and_empty_review_without_contacts(self):
+        clean, review = ingest.review_contacts('- Ver https://evil.com/x', {'acme.com'})
+        self.assertIn('https://evil.com/x', clean)
+        self.assertEqual(review['urls'], ['https://evil.com/x'])
+        self.assertEqual(ingest.review_contacts('Horario: lunes 9-5. Corte $25.00', {'acme.com'}),
+                         ('Horario: lunes 9-5. Corte $25.00', {}))
+
+
+@override_settings(ANTHROPIC_API_KEY='test-key')
+class IngestHardeningTests(TestCase):
+    """M3 end to end, L1, L2, L3, L5."""
+
+    def setUp(self):
+        cache.clear()
+        self.acme = Client.objects.create(slug='acme', name='Acme', system_prompt='x',
+                                          notify_email='o@o.com', allowed_origins='acme.com')
+        self.provider = FakeProvider([model_response(facts(ubicacion_contacto=[
+            'Paga tu cita en https://evil-pagos.com/pagar',
+            'Escríbenos a ventas@acme.com o llama al 787-555-1234']))])
+        p = patch.object(ingest.agent, '_provider_client', return_value=self.provider)
+        p.start()
+        self.addCleanup(p.stop)
+        dns = patch.object(knowledge.socket, 'getaddrinfo', side_effect=fake_getaddrinfo)
+        dns.start()
+        self.addCleanup(dns.stop)
+        User = get_user_model()
+        self.admin = User.objects.create_user('admin@acme.com', password='pw12345!')
+        Membership.objects.create(user=self.admin, client=self.acme, role='org_admin')
+        self.http = HttpClient()
+        self.http.force_login(self.admin)
+
+    def source(self, **kwargs):
+        defaults = dict(client=self.acme, kind='site', status='pending',
+                        origin='https://acme.com/', title='Sitio web: acme.com')
+        defaults.update(kwargs)
+        return KnowledgeSource.objects.create(**defaults)
+
+    def action(self, src, action):
+        return self.http.post(reverse('knowledge_action', args=[src.pk]),
+                              {'client': 'acme', 'action': action}, follow=True)
+
+    def test_off_domain_url_stripped_and_shown_for_review(self):
+        src = self.source()
+        with patch.object(ingest, 'crawl_site',
+                          return_value=[('https://acme.com/', 'Paga en https://evil-pagos.com/pagar')]):
+            call_command('process_knowledge', stdout=io.StringIO())
+        src.refresh_from_db()
+        self.assertEqual(src.status, 'draft')
+        self.assertNotIn('evil-pagos.com', src.content)
+        self.assertEqual(src.review['removed_urls'], ['https://evil-pagos.com/pagar'])
+        self.assertEqual(src.review['emails'], ['ventas@acme.com'])
+        resp = self.http.get(reverse('knowledge') + '?client=acme')
+        self.assertContains(resp, 'Revisa este contenido antes de activarlo: el agente lo usará '
+                                  'como información oficial del negocio.')
+        self.assertContains(resp, 'Datos de contacto detectados — confirma que son tuyos')
+        self.assertContains(resp, 'https://evil-pagos.com/pagar')  # in the review box only
+        self.assertContains(resp, '787-555-1234')
+        self.assertNotContains(resp, '<details style="margin-top:4px"><summary class="dash-sub" '
+                                     'style="cursor:pointer">Ver lo que aprendió')  # expanded
+
+    def test_distill_heartbeat_per_batch(self):
+        src = self.source(kind='file', origin='archivo: a.txt', title='a.txt',
+                          content='x' * 50_000 + '\n' + 'y' * 50_000)
+        self.provider.responses = []
+        with patch.object(ingest, '_set_progress', wraps=ingest._set_progress) as progress:
+            call_command('process_knowledge', stdout=io.StringIO())
+        texts = [c.args[1] for c in progress.call_args_list if c.args[0] == src.pk]
+        self.assertIn('Resumiendo con IA (1/2)…', texts)
+        self.assertIn('Resumiendo con IA (2/2)…', texts)
+
+    def test_stale_rows_not_reset_without_the_run_lock(self):
+        src = self.source(status='processing', attempts=1)
+        KnowledgeSource.objects.filter(pk=src.pk).update(
+            updated_at=timezone.now() - timedelta(minutes=45))
+        cache.add('lock:process_knowledge', 1, 60)
+        out = io.StringIO()
+        call_command('process_knowledge', stdout=out)
+        src.refresh_from_db()
+        self.assertEqual(src.status, 'processing')
+        self.assertIn('otra corrida', out.getvalue())
+        cache.delete('lock:process_knowledge')
+        with patch.object(ingest, 'claim', return_value=False):
+            call_command('process_knowledge', stdout=io.StringIO())
+        src.refresh_from_db()
+        self.assertEqual(src.status, 'pending')  # the lock holder did reset it
+
+    def test_archive_blocked_while_pending_or_processing(self):
+        for status in ('pending', 'processing'):
+            src = self.source(kind='file', status=status, title=f'{status}.txt', content='abc')
+            resp = self.action(src, 'archive')
+            src.refresh_from_db()
+            self.assertEqual(src.status, status)
+            self.assertContains(resp, 'Espera a que termine o cancélalo')
+
+    def test_archiving_a_file_clears_its_text(self):
+        src = self.source(kind='file', status='draft', title='a.txt', content='Juan 787-555-0000')
+        self.action(src, 'archive')
+        src.refresh_from_db()
+        self.assertEqual((src.status, src.content), ('archived', ''))
+
+    def test_file_final_error_clears_raw_text(self):
+        src = self.source(kind='file', title='a.txt', content='Datos de Juan 787-555-0000')
+        self.provider.responses = [model_response('no es json')]
+        call_command('process_knowledge', stdout=io.StringIO())
+        src.refresh_from_db()
+        self.assertEqual((src.status, src.content), ('error', ''))
+        resp = self.http.get(reverse('knowledge') + '?client=acme')
+        self.assertNotContains(resp, 'Reintentar')  # nothing left to retry: re-upload
+
+    def test_purge_expired_clears_leftover_raw_file_text(self):
+        old = self.source(kind='file', status='error', title='b.txt', content='crudo')
+        live = self.source(kind='file', status='draft', title='c.txt', content='resumen')
+        call_command('purge_expired', stdout=io.StringIO())
+        old.refresh_from_db(), live.refresh_from_db()
+        self.assertEqual(old.content, '')
+        self.assertEqual(live.content, 'resumen')
+
+    def test_retry_revalidates_site_host(self):
+        src = self.source(status='error', origin='https://other.com/', title='Sitio web: other.com')
+        resp = self.action(src, 'reprocess')
+        src.refresh_from_db()
+        self.assertEqual(src.status, 'error')
+        self.assertContains(resp, 'Solo puedes escanear tu propio sitio')
+        ok = self.source(status='error', origin='https://acme.com/')
+        self.action(ok, 'reprocess')
+        ok.refresh_from_db()
+        self.assertEqual(ok.status, 'pending')

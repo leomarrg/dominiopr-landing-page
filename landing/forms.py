@@ -1,6 +1,7 @@
 from django import forms
 from django.utils.text import slugify
 
+from .emailcheck import check_email
 from .models import Client, ContactSubmission
 from .phone import normalize_phone
 
@@ -82,6 +83,16 @@ class ContactForm(forms.ModelForm):
         if self.cleaned_data.get('website'):
             raise forms.ValidationError('Se detectó spam.')
         return ''
+
+    def clean_email(self):
+        # Optional here (a phone is enough), but a given email must be one that
+        # can actually receive our reply: no throwaway inboxes, no dead domains.
+        email = (self.cleaned_data.get('email') or '').strip()
+        if email:
+            ok, reason = check_email(email)
+            if not ok:
+                raise forms.ValidationError(reason)
+        return email
 
     def clean_phone(self):
         # Normalize to E.164, or reject garbage. Blank stays blank (optional).

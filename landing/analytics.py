@@ -10,8 +10,9 @@ tenant dashboard. Two rules keep it safe to run with hundreds of clients:
 
 Only portable ORM constructs are used (SQLite now, Postgres later).
 """
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from django.core.cache import cache
 from django.db.models import Avg, Count, Q, Sum
@@ -20,8 +21,8 @@ from django.utils import timezone
 
 from . import usage as usage_ledger
 from .models import (
-    Booking, ChatMessage, ContactSubmission, Conversation, KnowledgeSource,
-    Membership, Survey, UsageEvent,
+    AvailabilityRule, Booking, ChatMessage, ContactSubmission, Conversation,
+    KnowledgeSource, Membership, Survey, UsageEvent,
 )
 
 _CENT = Decimal('0.01')
@@ -210,6 +211,31 @@ def daily_series(client_id, days=30):
     return series
 
 
+def svg_bars(series, key, width=600, height=120):
+    """Bar geometry for an inline SVG (no chart library; CSP is script-src 'self')."""
+    if not series:
+        return []
+    peak = max(d[key] for d in series) or 1
+    step = width / len(series)
+    bars = []
+    for i, d in enumerate(series):
+        h = (d[key] / peak) * (height - 4) if d[key] else 0
+        bars.append({
+            'x': f'{i * step + 1:.1f}', 'w': f'{max(step - 2, 1):.1f}',
+            'y': f'{height - h:.1f}', 'h': f'{h:.1f}',
+            'day': d['day'], 'value': d[key],
+        })
+    return bars
+
+
+def hbars(items, key='n'):
+    """Adds 'pct' (relative to the largest item) for CSS horizontal bars."""
+    peak = max((i[key] for i in items), default=0) or 1
+    for i in items:
+        i['pct'] = round(i[key] * 100 / peak)
+    return items
+
+
 def monthly_table(client_id, months=12):
     """Per-month usage for one client, split by UsageEvent kind, oldest first,
     zero-filled. One grouped query. Each item: {'month', 'kinds': {kind:
@@ -329,6 +355,158 @@ def today_cap_usage(clients):
         out[c.pk] = {'used': used, 'cap': cap,
                      'pct': min(100, round(used * 100 / cap)) if cap else None}
     return out
+
+
+# ------------------------------------------------------------------
+# Tenant dashboard: allowance, business hours, value for money
+# ------------------------------------------------------------------
+# Everything below is safe to hand to a TENANT: no function returns a DOMINIO
+# cost figure (cost_usd). Prices here are what the client PAYS us.
+
+BUSINESS_TZ = ZoneInfo('America/Puerto_Rico')
+# Used for a client with no AvailabilityRule rows: Mon-Fri 8:00-17:00.
+DEFAULT_HOURS = {wd: (time(8, 0), time(17, 0)) for wd in range(5)}
+ALLOWANCE_WARN_PCT = 80
+
+
+def _subscription_of(client):
+    # A missing reverse one-to-one raises RelatedObjectDoesNotExist, an
+    # AttributeError subclass, so getattr's default covers "no subscription".
+    return getattr(client, 'subscription', None)
+
+
+def _local_days(start, end):
+    """Number of local calendar days in [start, end)."""
+    return max(1, (timezone.localtime(end, BUSINESS_TZ).date()
+                   - timezone.localtime(start, BUSINESS_TZ).date()).days)
+
+
+def included_messages(client, days):
+    """Messages the client's plan includes for a month of `days` days: the
+    plan's monthly_messages when PLAN_LIMITS defines one, otherwise the
+    per-tenant daily cap times the days in the month."""
+    from .views import PLAN_LIMITS  # late import, same reason as plan_monthly_revenue
+    sub = _subscription_of(client)
+    monthly = (PLAN_LIMITS.get(sub.plan) or {}).get('monthly_messages') if sub else None
+    if monthly is not None:
+        return int(monthly)
+    return int(client.daily_message_cap or 0) * days
+
+
+def allowance(client, month_start, month_end):
+    """The client's message allowance for one calendar month. One grouped
+    query (usage ledger) plus one cache.get_many for today's counter.
+
+    Returns {'used', 'included', 'pct', 'bar_pct', 'warn', 'projection',
+    'projection_pct', 'projection_warn', 'days', 'elapsed', 'today',
+    'today_cap', 'today_pct', 'today_warn', 'tokens'}. pct/projection_pct are
+    None when nothing is included (cap 0). 'tokens' is the month's total
+    tokens, for the technical detail; no cost is ever returned."""
+    used_row = usage_ledger.rollup_by_client(month_start, month_end, [client.pk]).get(client.pk, {})
+    used = used_row.get('messages', 0)
+    days = _local_days(month_start, month_end)
+    first_day = timezone.localtime(month_start, BUSINESS_TZ).date()
+    today = timezone.localtime(timezone.now(), BUSINESS_TZ).date()
+    elapsed = min(days, max(0, (today - first_day).days + 1))
+    included = included_messages(client, days)
+    projection = round(used / elapsed * days) if elapsed else 0
+
+    def pct_of(n):
+        return round(n * 100 / included) if included else None
+
+    pct, projection_pct = pct_of(used), pct_of(projection)
+    cap = today_cap_usage([client]).get(client.pk) or {'used': 0, 'cap': 0, 'pct': None}
+    return {
+        'used': used, 'included': included, 'pct': pct,
+        'bar_pct': min(100, pct) if pct is not None else 0,
+        'warn': pct is not None and pct >= ALLOWANCE_WARN_PCT,
+        'projection': projection, 'projection_pct': projection_pct,
+        'projection_warn': projection_pct is not None and projection_pct >= 100,
+        'days': days, 'elapsed': elapsed,
+        'today': cap['used'], 'today_cap': cap['cap'], 'today_pct': cap['pct'],
+        'today_warn': cap['pct'] is not None and cap['pct'] >= ALLOWANCE_WARN_PCT,
+        'tokens': used_row.get('tokens', 0),
+    }
+
+
+def business_hours(client_ids):
+    """{client_id: {weekday: (open, close)}} from AvailabilityRule. Clients
+    absent from the result have no rules (use DEFAULT_HOURS). One query."""
+    out = {}
+    rows = (_scoped(AvailabilityRule.objects.all(), client_ids).order_by()
+            .values_list('client_id', 'weekday', 'open_time', 'close_time'))
+    for cid, weekday, open_t, close_t in rows:
+        out.setdefault(cid, {})[weekday] = (open_t, close_t)
+    return out
+
+
+def is_after_hours(moment, hours):
+    """True when an aware datetime falls outside `hours` ({weekday: (open,
+    close)}), evaluated in Puerto Rico time. A weekday with no window is
+    closed all day."""
+    local = timezone.localtime(moment, BUSINESS_TZ)
+    window = hours.get(local.weekday())
+    if window is None:
+        return True
+    open_t, close_t = window
+    return not (open_t <= local.time() < close_t)
+
+
+def after_hours(client_ids, start, end, rules=None):
+    """{client_id: n} conversations started outside each client's business
+    hours in [start, end). Two queries (started_at values + rules), computed
+    in Python so it stays portable across databases and time zones. Pass
+    `rules` (a business_hours() result) when the caller already loaded it."""
+    if rules is None:
+        rules = business_hours(client_ids)
+    out = {}
+    rows = (_scoped(Conversation.objects.filter(started_at__gte=start, started_at__lt=end),
+                    client_ids)
+            .order_by().values_list('client_id', 'started_at'))
+    for cid, started in rows.iterator():
+        if cid not in out:
+            out[cid] = 0
+        if is_after_hours(started, rules.get(cid) or DEFAULT_HOURS):
+            out[cid] += 1
+    return out
+
+
+def months_in_period(start, end):
+    """1 for an exact calendar month, otherwise the window length in 30-day
+    months (30d -> 1, 90d -> 3). Used to compare a monthly price with a period."""
+    month_start, month_end = usage_ledger.month_bounds(start)
+    if start == month_start and end == month_end:
+        return Decimal(1)
+    return (Decimal((end - start).total_seconds()) / Decimal(30 * 86400)).quantize(_CENT)
+
+
+def value_metrics(client, start, end, vol=None, after=None):
+    """What the client pays vs what its agent did in [start, end).
+
+    Based on the PRICE THE CLIENT PAYS (plan_monthly_revenue), never on
+    DOMINIO's AI cost. 'price' is None when unknown or $0 (no paid plan):
+    the template hides the value card then. cost_per_lead /
+    cost_per_conversation are None when the divisor is zero (shown as "—").
+    Pass `vol` (a volume() row) and `after` (an after_hours() count) to reuse
+    figures the caller already has; otherwise they are queried here."""
+    price = plan_monthly_revenue(_subscription_of(client))
+    if vol is None:
+        vol = volume([client.pk], start, end).get(client.pk) or _empty_volume()
+    if after is None:
+        after = after_hours([client.pk], start, end).get(client.pk, 0)
+    conversations, leads = vol['conversations'], vol['chat_leads']
+    known = price is not None and price > 0
+    paid = (price * months_in_period(start, end)).quantize(_CENT) if known else None
+
+    def per(n):
+        return (paid / n).quantize(_CENT) if known and n else None
+
+    return {
+        'price': price if known else None, 'paid': paid,
+        'months': months_in_period(start, end),
+        'conversations': conversations, 'after_hours': after, 'leads': leads,
+        'cost_per_lead': per(leads), 'cost_per_conversation': per(conversations),
+    }
 
 
 def first_user_turns(conversation_ids, turns=3):

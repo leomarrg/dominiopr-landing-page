@@ -21,7 +21,7 @@ from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
-from django.db.models import Avg, Count, Q, Sum
+from django.db.models import Count, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -29,11 +29,11 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.views.decorators.http import require_POST
 
-from . import agent, ingest, knowledge
+from . import agent, analytics, ingest, knowledge
 from . import usage as usage_ledger
 from .models import (
     AvailabilityRule, Booking, Client, ContactSubmission, Conversation,
-    KnowledgeSource, Membership, Survey, UsageEvent,
+    KnowledgeSource, Membership, UsageEvent,
 )
 from .views import (
     _audit, _client_ip, _member_client_ids, _rate_limited, _send_plain_email,
@@ -272,80 +272,129 @@ def availability_delete(request, pk):
 # M-03 — Reports / analytics per organization
 # ============================================================
 
-@login_required
-def reports(request):
-    now = timezone.now()
-    since = now - timezone.timedelta(days=30)
-    convs = conversations_for(request.user).filter(started_at__gte=since)
-    leads = leads_for(request.user).filter(created_at__gte=since)
+# Volume fields a tenant may see. 'cost' (DOMINIO's AI spend) is deliberately
+# absent: the tenant context is built from this whitelist, never from the
+# full analytics row, so a cost figure cannot reach the template by accident.
+TENANT_VOLUME_KEYS = ('conversations', 'escalated', 'leads', 'chat_leads', 'bookings',
+                      'messages', 'csat_avg', 'csat_n')
+WEEKDAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
-    n_convs = convs.count()
-    n_chat_leads = leads.filter(source='chat').count()
-    tokens = convs.aggregate(t=Sum('tokens_used'))['t'] or 0
-    # Money is operator-only: tenants never get a cost figure, not even in the
-    # context. Staff sees the real ledger spend (every kind, demo included).
-    ledger = usage_ledger.rollup_by_client(since, now) if request.user.is_staff else {}
-    if request.user.is_staff:
-        tokens = sum(row['tokens'] for row in ledger.values())
-    est_cost = sum((row['cost'] for row in ledger.values()), Decimal(0))
-    csat = Survey.objects.filter(
-        conversation__in=conversations_for(request.user),
-        created_at__gte=since).aggregate(a=Avg('score'), n=Count('id'))
 
-    stats = {
-        'conversations': n_convs,
-        'escalated': convs.filter(state='escalated').count(),
-        'chat_leads': n_chat_leads,
-        'conversion': round(n_chat_leads / n_convs * 100) if n_convs else 0,
-        'leads_total': leads.count(),
-        'leads_form': leads.filter(source='contact_form').count(),
-        'leads_signup': leads.filter(source='signup').count(),
-        'tokens': tokens,
-        'est_cost': est_cost.quantize(Decimal('0.0001')) if request.user.is_staff else None,
+def _operator_block(start, end):
+    """Staff-only: real AI spend across every client in [start, end) (demo
+    included). Fixed number of queries. Never called for a tenant."""
+    ledger = usage_ledger.rollup_by_client(start, end)
+    conv_rows = {
+        r['client_id']: r for r in
+        Conversation.objects.filter(started_at__gte=start, started_at__lt=end)
+        .order_by().values('client_id')
+        .annotate(n=Count('id'), leads=Count('lead', distinct=True))}
+    ids = (set(conv_rows) | set(ledger)) - {None}
+    names = dict(Client.objects.filter(pk__in=ids).values_list('pk', 'name'))
+    names[None] = 'Demo público / sin cliente'
+    per_client = []
+    for cid in ids | ({None} & set(ledger)):
+        used = ledger.get(cid, {})
+        conv = conv_rows.get(cid, {})
+        per_client.append({
+            'client__name': names.get(cid, f'#{cid}'),
+            'n': conv.get('n', 0), 'leads': conv.get('leads', 0),
+            'messages': used.get('messages', 0), 'tokens': used.get('tokens', 0),
+            'cost': used.get('cost', Decimal(0)).quantize(Decimal('0.0001')),
+        })
+    per_client.sort(key=lambda r: (-r['cost'], -r['n'], r['client__name']))
+    return {
+        'est_cost': sum((row['cost'] for row in ledger.values()),
+                        Decimal(0)).quantize(Decimal('0.0001')),
+        'tokens': sum(row['tokens'] for row in ledger.values()),
         # The ledger only exists from its deploy on; older traffic has no cost row.
         'ledger_since': (UsageEvent.objects.order_by('created_at')
-                         .values_list('created_at', flat=True).first()
-                         if request.user.is_staff else None),
-        'csat_avg': round(csat['a'], 1) if csat['a'] else None,
-        'csat_n': csat['n'],
+                         .values_list('created_at', flat=True).first()),
+        'per_client': per_client[:50],
     }
 
-    # Escalation reasons = the raw material for the monthly tuning cycle (M-19).
-    unanswered = list(
-        convs.filter(state='escalated').exclude(escalation_reason='')
-        .values_list('escalation_reason', flat=True)[:20])
 
-    per_client = None
-    if request.user.is_staff:
-        conv_rows = {
-            r['client_id']: r for r in
-            convs.order_by().values('client_id')
-            .annotate(n=Count('id'), leads=Count('lead', distinct=True))}
-        ids = (set(conv_rows) | set(ledger)) - {None}
-        names = dict(Client.objects.filter(pk__in=ids).values_list('pk', 'name'))
-        names[None] = 'Demo público / sin cliente'
-        per_client = []
-        for cid in ids | ({None} & set(ledger)):
-            used = ledger.get(cid, {})
-            conv = conv_rows.get(cid, {})
-            per_client.append({
-                'client__name': names.get(cid, f'#{cid}'),
-                'n': conv.get('n', 0), 'leads': conv.get('leads', 0),
-                'messages': used.get('messages', 0), 'tokens': used.get('tokens', 0),
-                'cost': used.get('cost', Decimal(0)).quantize(Decimal('0.0001')),
-            })
-        per_client.sort(key=lambda r: (-r['cost'], -r['n'], r['client__name']))
-        per_client = per_client[:50]
+def _hours_display(rules):
+    """[(label, open, close)] for the business hours actually used."""
+    hours = rules or analytics.DEFAULT_HOURS
+    return [(WEEKDAY_LABELS[wd], hours[wd][0], hours[wd][1]) for wd in sorted(hours)]
 
-    top_pages = (
-        leads.exclude(page_url='').values('page_url')
-        .annotate(n=Count('id')).order_by('-n')[:10])
 
-    return render(request, 'landing/dashboard_reports.html', {
+@login_required
+def reports(request):
+    """Tenant dashboard for ONE agent: allowance in messages, value for the
+    price paid, and what visitors did. Never any DOMINIO cost figure for a
+    tenant (the staff-only operator block is computed only for staff).
+
+    Scoping: the agent is resolved through clients_for(user); a ?client= slug
+    outside that set falls back to the user's own first agent."""
+    user = request.user
+    period, start, end = analytics.period_bounds(request.GET.get('period'))
+    scope = clients_for(user)
+    options = list(scope.order_by('name').values_list('slug', 'name'))
+    wanted = (request.GET.get('client') or '').strip()
+    slugs = {slug for slug, _name in options}
+    slug = wanted if wanted in slugs else (options[0][0] if options else None)
+    client = scope.select_related('subscription').filter(slug=slug).first() if slug else None
+
+    context = {
         'active_tab': 'reports',
-        'stats': stats, 'unanswered': unanswered,
-        'per_client': per_client, 'top_pages': top_pages,
+        'client_obj': client, 'client_options': options,
+        'period': period, 'periods': analytics.PERIODS,
+        'period_label': analytics.PERIOD_LABELS[period],
+        'start': start, 'end': end,
+        'operator': _operator_block(start, end) if user.is_staff else None,
+    }
+    if client is None:
+        return render(request, 'landing/dashboard_reports.html', context)
+
+    ids = [client.pk]
+    row = analytics.volume(ids, start, end).get(client.pk) or analytics.empty_volume()
+    stats = {key: row[key] for key in TENANT_VOLUME_KEYS}
+    rules = analytics.business_hours(ids).get(client.pk)
+    after = analytics.after_hours(ids, start, end, rules={client.pk: rules} if rules else {}
+                                  ).get(client.pk, 0)
+    convs = stats['conversations']
+    stats.update({
+        'conversion': round(stats['chat_leads'] * 100 / convs) if convs else 0,
+        'after_hours': after,
+        'after_hours_pct': round(after * 100 / convs) if convs else 0,
     })
+    month_start, month_end = usage_ledger.month_bounds()
+    daily = analytics.daily_series(client.pk, days=30)  # has 'cost': only bars leave here
+
+    def pages(qs, date_field):
+        return analytics.hbars(list(
+            qs.filter(client_id=client.pk, **{f'{date_field}__gte': start,
+                                                f'{date_field}__lt': end})
+            .exclude(page_url='').order_by().values('page_url')
+            .annotate(n=Count('id')).order_by('-n', 'page_url')[:10]))
+
+    context.update({
+        'stats': stats,
+        'allowance': analytics.allowance(client, month_start, month_end),
+        'value': analytics.value_metrics(client, start, end, vol=row, after=after),
+        'month_start': month_start,
+        'msg_bars': analytics.svg_bars(daily, 'messages'),
+        'conv_bars': analytics.svg_bars(daily, 'conversations'),
+        'daily_messages': sum(d['messages'] for d in daily),
+        'daily_conversations': sum(d['conversations'] for d in daily),
+        'intents': analytics.hbars(analytics.top_intents(ids, start, end)),
+        # Clinic clients: stored topics never reach the template, even ones
+        # tagged before clinic mode was switched on.
+        'topics': ([] if client.clinic_mode
+                   else analytics.hbars(analytics.top_topics(ids, start, end, n=10))),
+        'hours': _hours_display(rules), 'custom_hours': bool(rules),
+        'lead_pages': pages(ContactSubmission.objects, 'created_at'),
+        'conv_pages': pages(Conversation.objects, 'started_at'),
+        # Escalation reasons = the raw material for the monthly tuning cycle (M-19).
+        'unanswered': list(
+            Conversation.objects.filter(client_id=client.pk, state='escalated',
+                                        started_at__gte=start, started_at__lt=end)
+            .exclude(escalation_reason='').order_by('-started_at')
+            .values_list('escalation_reason', flat=True)[:20]),
+    })
+    return render(request, 'landing/dashboard_reports.html', context)
 
 
 # ============================================================
@@ -570,9 +619,18 @@ def knowledge_action(request, pk):
     if action == 'activate' and source.status == 'draft' and source.compiled_text():
         KnowledgeSource.objects.filter(pk=source.pk).update(status='active', error='')
         messages.success(request, f'"{source.title}" está activa — el agente ya la usa.')
+    elif action == 'archive' and source.in_progress:
+        messages.error(request, 'Esa fuente se está procesando. Espera a que termine o cancélalo.')
     elif action == 'archive':
-        KnowledgeSource.objects.filter(pk=source.pk).update(status='archived')
-        messages.success(request, f'"{source.title}" archivada.')
+        archive = {'status': 'archived'}
+        if source.kind == 'file':
+            archive['content'] = ''  # the uploaded text is not kept once retired
+        # Conditional update: the cron may have claimed it since we loaded it.
+        if KnowledgeSource.objects.filter(pk=source.pk).exclude(
+                status__in=('pending', 'processing')).update(**archive):
+            messages.success(request, f'"{source.title}" archivada.')
+        else:
+            messages.error(request, 'Esa fuente se está procesando. Espera a que termine o cancélalo.')
     elif action == 'reprocess' and source.kind in KnowledgeSource.INGEST_KINDS:
         return _retry_ingest(request, client, source)
     elif action == 'reprocess' and not source.in_progress:
@@ -596,9 +654,14 @@ def _retry_ingest(request, client, source):
         messages.error(request, 'Solo se puede reintentar una fuente con error. '
                                 'Para actualizarla, escanea o sube de nuevo.')
         return _knowledge_redirect(client)
-    if source.kind == 'site' and ingest.scan_running(client):
-        messages.error(request, 'Ya hay un escaneo de tu sitio en curso. Espera a que termine.')
-        return _knowledge_redirect(client)
+    if source.kind == 'site':
+        # Same checks as a new scan: allowed_origins may have changed since the
+        # source was queued, and the host may no longer resolve to a public IP.
+        try:
+            ingest.validate_scan(client, source.origin, any_host=request.user.is_staff)
+        except ValueError as exc:
+            messages.error(request, str(exc))
+            return _knowledge_redirect(client)
     if _tenant_action_cap_hit('ingest', client):
         messages.error(request, 'Llegaste al límite de escaneos y archivos de hoy para este '
                                 'agente. Intenta de nuevo mañana.')

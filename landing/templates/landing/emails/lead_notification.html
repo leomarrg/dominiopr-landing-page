@@ -18,6 +18,7 @@
     <td style="padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.08);">
       <span style="display:block; color:rgba(255,255,255,0.45); font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Correo</span>
       <a href="mailto:{{ submission.email }}" style="color:#3bc0c7; font-size:15px; text-decoration:none;">{{ submission.email }}</a>
+      {% if email_unconfirmed %}<span style="display:inline-block; margin-left:8px; padding:2px 8px; border-radius:999px; background:rgba(240,180,80,0.14); color:#f0c070; font-size:11px; font-weight:600;">(correo sin confirmar)</span>{% endif %}
     </td>
   </tr>
   {% endif %}

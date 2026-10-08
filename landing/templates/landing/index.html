@@ -529,6 +529,7 @@
                         <input type="text" name="company" aria-label="Compañía u organización" placeholder="Compañía / Organización" value="{{ form.company.value|default:'' }}">
                         <input type="tel" name="phone" aria-label="Teléfono" placeholder="(787) 123-4567" inputmode="tel" autocomplete="tel" maxlength="14" value="{{ form.phone.value|default:'' }}">
                     </div>
+                    {% if form.email.errors %}<p style="color:#f0a0a0;font-size:.8rem;margin:-6px 0 0;">{{ form.email.errors|striptags }}</p>{% endif %}
                     {% if form.phone.errors %}<p style="color:#f0a0a0;font-size:.8rem;margin:-6px 0 0;">{{ form.phone.errors|striptags }}</p>{% endif %}
                     <p style="color:rgba(255,255,255,.5);font-size:.78rem;margin:-6px 0 0;">Déjanos un email o un teléfono — lo que te sea más cómodo.</p>
                     <div class="form-row">

@@ -2,7 +2,7 @@
 Recibido el {{ submission.created_at|date:"d/m/Y, g:i A" }}
 
 Nombre:      {{ submission.name }}
-Correo:      {{ submission.email|default:"-" }}
+Correo:      {{ submission.email|default:"-" }}{% if email_unconfirmed %} (correo sin confirmar){% endif %}
 Teléfono:    {{ submission.phone|default:"-" }}
 Empresa:     {{ submission.company|default:"-" }}
 Servicio:    {{ submission.get_service_display }}

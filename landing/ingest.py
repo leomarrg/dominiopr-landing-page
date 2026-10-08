@@ -22,11 +22,11 @@ import json
 import logging
 import os
 import re
+import subprocess
+import sys
 import time
 import unicodedata
 import urllib.robotparser
-import xml.etree.ElementTree as ET
-import zipfile
 from collections import deque
 from datetime import timedelta
 from urllib.parse import urljoin, urlparse, urlunparse
@@ -39,7 +39,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.utils import timezone
 
-from . import agent, knowledge
+from . import agent, extract_worker, knowledge
 from . import usage as usage_ledger
 from .models import KnowledgeFragment, KnowledgeSource
 
@@ -52,12 +52,9 @@ MAX_QUEUE = 600               # discovered-but-unvisited URLs kept per crawl
 MAX_SITEMAPS = 6              # sitemap files read per crawl (index + children)
 ROBOTS_MAX_BYTES = 100 * 1024
 
-MAX_RAW_CHARS = 200_000       # raw file text kept while the source is pending
-DOCX_MAX_UNCOMPRESSED = 10 * 1024 * 1024
-DOCX_MAX_MEMBERS = 1000
-PDF_MAX_PAGES = 100
-PDF_TIME_BUDGET = 20          # seconds of text extraction inside the request
-PDF_STREAM_LIMIT = 20_000_000  # per-stream decompression ceiling (pypdf default 75MB)
+MAX_RAW_CHARS = extract_worker.MAX_RAW_CHARS  # raw file text kept while pending
+EXTRACT_TIMEOUT = 25          # hard wall-clock limit of the PDF/DOCX child process
+EXTRACT_WORKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'extract_worker.py')
 
 BATCH_CHARS = 60_000          # document text per model request
 MAX_DISTILL_INPUT_CHARS = 400_000  # cost ceiling per source (~100k tokens)
@@ -156,6 +153,9 @@ class _Crawl:
     def time_left(self):
         return time.monotonic() < self.deadline
 
+    def remaining(self):
+        return self.deadline - time.monotonic()
+
     def same_site(self, url):
         return bool(url) and site_key(urlparse(url).hostname) == self.site
 
@@ -171,7 +171,10 @@ class _Crawl:
             if not self.allowed(url):
                 raise ValueError('robots.txt no permite leer esta página.')
             try:
-                ctype, raw = knowledge.fetch_resource(url, allowed_types, max_bytes)
+                # Each request gets at most what is left of the crawl budget, so
+                # one slow page cannot push the crawl past it.
+                ctype, raw = knowledge.fetch_resource(url, allowed_types, max_bytes,
+                                                      deadline=self.remaining())
                 return url, ctype, raw
             except knowledge.RedirectRefused as exc:
                 target = normalize_url(exc.location, base=url) if exc.location else None
@@ -192,18 +195,9 @@ def _load_robots(crawl):
     return parser
 
 
-_DTD_RE = re.compile(rb'<!(?:doctype|entity)', re.IGNORECASE)
-
-
-def _parse_xml(raw):
-    """ElementTree root or None. A DOCTYPE/ENTITY is refused outright: sitemaps
-    and .docx never need one, and it is the vehicle for entity-expansion bombs."""
-    if _DTD_RE.search(raw):
-        return None
-    try:
-        return ET.fromstring(raw)
-    except ET.ParseError:
-        return None
+# ElementTree root or None; any DOCTYPE is refused by the parser itself (see
+# extract_worker.parse_xml: works for UTF-16 documents too).
+_parse_xml = extract_worker.parse_xml
 
 
 def _local(tag):
@@ -352,90 +346,48 @@ def _text_from_plain(data):
         return data.decode('latin-1')
 
 
-_W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+_GENERIC_EXTRACT_ERROR = {
+    'pdf': 'No se pudo leer el PDF (¿está dañado o es demasiado complejo?).',
+    'docx': 'No se pudo leer el archivo Word.',
+}
 
 
-def _text_from_docx(data):
+def _child_env():
+    # The child parses attacker-supplied bytes: it gets no secrets from our
+    # environment (API keys, SECRET_KEY), only what the interpreter needs.
+    keep = ('PATH', 'SYSTEMROOT', 'SystemRoot', 'TEMP', 'TMP', 'LANG', 'LC_ALL')
+    return {k: os.environ[k] for k in keep if k in os.environ}
+
+
+def _worker_argv(kind):
+    # -I: no PYTHON* env vars, no user site, no script dir on sys.path.
+    return [sys.executable, '-I', EXTRACT_WORKER, kind]
+
+
+def _extract_in_child(kind, data, timeout=None):
+    """Run extract_worker in a separate process with a hard timeout (and, on
+    Linux, memory/CPU limits set by the child). A hostile PDF that spins or
+    balloons kills the child, never the gunicorn worker. ValueError on any
+    failure, with the worker's own message when it has one for the tenant."""
     try:
-        zf = zipfile.ZipFile(io.BytesIO(data))
-        infos = zf.infolist()
-    except (zipfile.BadZipFile, ValueError, OSError):
-        raise ValueError('El archivo Word está dañado o no es un .docx.')
-    if len(infos) > DOCX_MAX_MEMBERS:
-        raise ValueError('El archivo Word tiene una estructura inválida.')
-    if sum(i.file_size for i in infos) > DOCX_MAX_UNCOMPRESSED:
-        raise ValueError('El contenido del archivo Word es demasiado grande.')
-    try:
-        info = zf.getinfo('word/document.xml')
-    except KeyError:
-        raise ValueError('El archivo no es un documento de Word (.docx) válido.')
-    if info.flag_bits & 0x1:
-        raise ValueError('El archivo Word está protegido con contraseña.')
-    try:
-        with zf.open(info) as member:
-            # Declared sizes can lie: read at most the cap, decompressing lazily.
-            xml_bytes = member.read(DOCX_MAX_UNCOMPRESSED + 1)
-    except (zipfile.BadZipFile, RuntimeError, OSError, NotImplementedError):
-        raise ValueError('No se pudo leer el archivo Word.')
-    if len(xml_bytes) > DOCX_MAX_UNCOMPRESSED:
-        raise ValueError('El contenido del archivo Word es demasiado grande.')
-    root = _parse_xml(xml_bytes)
-    if root is None:
-        raise ValueError('No se pudo leer el archivo Word.')
-    paragraphs = []
-    for para in root.iter(_W + 'p'):
-        parts = []
-        for node in para.iter():
-            if node.tag == _W + 't' and node.text:
-                parts.append(node.text)
-            elif node.tag == _W + 'tab':
-                parts.append('\t')
-            elif node.tag in (_W + 'br', _W + 'cr'):
-                parts.append('\n')
-        line = ''.join(parts).strip()
-        if line:
-            paragraphs.append(line)
-    return '\n'.join(paragraphs)
-
-
-def _text_from_pdf(data):
-    import pypdf
-    from pypdf.errors import PyPdfError
-
-    limits = dict(
-        maximum_declared_stream_length=PDF_STREAM_LIMIT,
-        zlib_maximum_output_length=PDF_STREAM_LIMIT,
-        lzw_maximum_output_length=PDF_STREAM_LIMIT,
-        run_length_maximum_output_length=PDF_STREAM_LIMIT,
-        array_based_stream_maximum_output_length=PDF_STREAM_LIMIT,
-    )
-    parts, size = [], 0
-    deadline = time.monotonic() + PDF_TIME_BUDGET
-    try:
-        with pypdf.apply_configuration(**limits):
-            reader = pypdf.PdfReader(io.BytesIO(data))
-            if reader.is_encrypted:
-                try:
-                    ok = reader.decrypt('')
-                except Exception:
-                    ok = 0
-                if not ok:
-                    raise ValueError('El PDF está protegido con contraseña.')
-            for index, page in enumerate(reader.pages):
-                if index >= PDF_MAX_PAGES or size > MAX_RAW_CHARS or time.monotonic() > deadline:
-                    break
-                try:
-                    text = page.extract_text() or ''
-                except (PyPdfError, ValueError, KeyError, TypeError, RecursionError):
-                    continue  # one bad page should not lose the rest
-                parts.append(text)
-                size += len(text)
-    except ValueError:
-        raise
-    except (PyPdfError, KeyError, TypeError, AttributeError, RecursionError, OSError) as exc:
-        logger.info('pdf extract failed: %s', type(exc).__name__)
-        raise ValueError('No se pudo leer el PDF (¿está dañado?).')
-    return '\n\n'.join(parts)
+        proc = subprocess.run(
+            _worker_argv(kind), input=data, capture_output=True,
+            timeout=timeout or EXTRACT_TIMEOUT, env=_child_env(), check=False)
+    except subprocess.TimeoutExpired:
+        logger.info('%s extract timed out', kind)
+        raise ValueError('El archivo tardó demasiado en leerse. Prueba con una versión más '
+                         'sencilla (por ejemplo, exporta el texto a .txt o .docx).')
+    except OSError as exc:
+        logger.warning('%s extract could not start: %s', kind, type(exc).__name__)
+        raise ValueError(_GENERIC_EXTRACT_ERROR[kind])
+    if proc.returncode == 0:
+        return proc.stdout.decode('utf-8', errors='replace')
+    if proc.returncode == 2:
+        message = proc.stderr.decode('utf-8', errors='replace').strip()[:200]
+        if message:
+            raise ValueError(message)
+    logger.info('%s extract failed: exit %s', kind, proc.returncode)
+    raise ValueError(_GENERIC_EXTRACT_ERROR[kind])
 
 
 def extract_text_from_file(uploaded_file, max_bytes=None):
@@ -458,11 +410,11 @@ def extract_text_from_file(uploaded_file, max_bytes=None):
     if ext == '.pdf':
         if not is_pdf:
             raise ValueError('El archivo no es un PDF válido.')
-        text = _text_from_pdf(data)
+        text = _extract_in_child('pdf', data)
     elif ext == '.docx':
         if not is_zip:
             raise ValueError('El archivo no es un documento de Word (.docx) válido.')
-        text = _text_from_docx(data)
+        text = _extract_in_child('docx', data)
     elif ext in TEXT_EXTS:
         if is_pdf or is_zip:
             raise ValueError('El contenido del archivo no coincide con su extensión.')
@@ -683,14 +635,15 @@ def _llm():
     return agent._provider_client(api_key).with_options(timeout=LLM_TIMEOUT, max_retries=2)
 
 
-def distill(client, chunks, source_label=''):
+def distill(client, chunks, source_label='', on_batch=None):
     """Turn raw page/file text into concise factual knowledge (Spanish), via
     the configured Haiku model with a JSON-schema output and effort low.
     `chunks` = [(label, text)] or [text]. Every billed call is recorded as a
     'knowledge_ingest' UsageEvent for `client`. Returns the rendered text
     (<= MAX_OUTPUT_CHARS). Raises ValueError when nothing usable came back,
     agent.AgentNotConfigured without an API key, anthropic.APIError on API
-    failure (calls already made stay recorded)."""
+    failure (calls already made stay recorded). `on_batch(done, total)` runs
+    before each model call (the cron uses it as the row's heartbeat)."""
     pairs = [(c if isinstance(c, tuple) else (source_label, c)) for c in chunks]
     pairs = [(str(label or source_label), str(text)) for label, text in pairs if str(text).strip()]
     if not pairs:
@@ -698,7 +651,10 @@ def distill(client, chunks, source_label=''):
     provider = _llm()
     model = agent._model()
     results = []
-    for batch in _batches(pairs):
+    batches = list(_batches(pairs))  # bounded by MAX_DISTILL_INPUT_CHARS
+    for index, batch in enumerate(batches):
+        if on_batch is not None:
+            on_batch(index + 1, len(batches))
         kwargs = _request_kwargs(model, batch)
         response = provider.messages.create(**kwargs)
         usage = agent.new_usage(model)
@@ -716,6 +672,104 @@ def distill(client, chunks, source_label=''):
     if not text.strip():
         raise ValueError('La IA no encontró información del negocio en el contenido.')
     return text
+
+
+# ============================================================
+# Review: contact data in a draft must be confirmed by the tenant
+# ============================================================
+# A page or document can carry injected text ("pagos en evil.example",
+# "escribe a soporte@evil.example") that the model copies faithfully as a fact.
+# Activation is always manual; these helpers make the risky part visible
+# before it is: every URL, email and phone in the draft is listed for the
+# tenant to confirm, and on a SITE scan any link outside the tenant's own
+# domains is removed from the draft outright (it is shown, not used).
+
+_REVIEW_TLDS = ('com|net|org|pr|us|io|co|info|biz|me|app|site|online|store|shop|link|'
+                'page|dev|xyz|ly|gl|gg|to|ai|es|mx|do')
+_EMAIL_RE = re.compile(r'(?<![\w.+-])[\w.+-]{1,64}@((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+'
+                       r'[a-z]{2,24})\b', re.IGNORECASE)
+_URL_RE = re.compile(
+    r'(?:\bhttps?://|\bwww\.)[^\s<>"\'‹›()\[\]{}]+'
+    r'|(?<![\w.@/-])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:' + _REVIEW_TLDS + r')\b'
+    r'(?:/[^\s<>"\'‹›()\[\]{}]*)?', re.IGNORECASE)
+_PHONE_RE = re.compile(r'(?<![\w])(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}(?!\d)')
+_TRAILING_PUNCT = '.,;:!?)»”\'"'
+REVIEW_MAX_ITEMS = 30
+REMOVED_LINK = '[enlace eliminado: revisa abajo]'
+
+
+def _url_host(url):
+    target = url if '://' in url else 'http://' + url
+    try:
+        return (urlparse(target).hostname or '').lower().rstrip('.')
+    except ValueError:
+        return ''
+
+
+def _host_is_own(host, sites):
+    key = site_key(host)
+    return bool(key) and any(key == s or key.endswith('.' + s) for s in sites)
+
+
+def _review_sites(source):
+    """The tenant's own sites: allowed_origins, plus the scanned host itself
+    (staff may scan a host that is not in allowed_origins yet)."""
+    sites = set(allowed_scan_sites(source.client))
+    if source.kind == 'site':
+        host = _url_host(source.origin or '')
+        if host:
+            sites.add(site_key(host))
+    return sites
+
+
+def _unique(values):
+    seen, out = set(), []
+    for value in values:
+        if value.casefold() not in seen:
+            seen.add(value.casefold())
+            out.append(value)
+    return out[:REVIEW_MAX_ITEMS]
+
+
+def review_contacts(text, sites, strip_urls=False):
+    """(text, review). review = {} when the draft has no contact data, else
+    {'phones', 'emails', 'urls', 'foreign_emails', 'removed_urls'} (lists).
+    With strip_urls, URLs on hosts outside `sites` are replaced in the text
+    by REMOVED_LINK and reported in removed_urls; otherwise they stay and are
+    reported in urls with the rest."""
+    emails, foreign_emails = [], []
+    for match in _EMAIL_RE.finditer(text):
+        address = match.group(0)
+        (emails if _host_is_own(match.group(1), sites) else foreign_emails).append(address)
+    email_spans = [m.span() for m in _EMAIL_RE.finditer(text)]
+
+    urls, removed = [], []
+
+    def replace(match):
+        start, end = match.span()
+        if any(s <= start < e for s, e in email_spans):
+            return match.group(0)
+        raw = match.group(0)
+        url = raw.rstrip(_TRAILING_PUNCT)
+        tail = raw[len(url):]
+        host = _url_host(url)
+        if not host:
+            return raw
+        if strip_urls and not _host_is_own(host, sites):
+            removed.append(url)
+            return REMOVED_LINK + tail
+        urls.append(url)
+        return raw
+
+    text = _URL_RE.sub(replace, text)
+    phones = [m.group(0).strip() for m in _PHONE_RE.finditer(text)]
+    review = {
+        'phones': _unique(phones), 'emails': _unique(emails), 'urls': _unique(urls),
+        'foreign_emails': _unique(foreign_emails), 'removed_urls': _unique(removed),
+    }
+    if not any(review.values()):
+        return text, {}
+    return text, review
 
 
 # ============================================================
@@ -805,19 +859,40 @@ def enqueue_file(client, uploaded_file):
         origin=f'archivo: {name}'[:500], content=text, progress='En cola…')
 
 
+def has_stale(now=None):
+    """Read-only twin of reset_stale(): is there anything for it to do? The
+    cron checks this BEFORE taking its run lock; only the lock holder resets."""
+    cutoff = (now or timezone.now()) - STALE_AFTER
+    return KnowledgeSource.objects.filter(status='processing', updated_at__lt=cutoff).exists()
+
+
 def reset_stale(now=None):
     """'processing' rows untouched for STALE_AFTER (worker killed, OOM, box
-    rebooted): retried once, then error. Returns (retried, failed)."""
+    rebooted): retried once, then error. Returns (retried, failed). Call it
+    only while holding the process_knowledge run lock: a live run refreshes
+    updated_at per page and per model call, but a second run must not reset
+    rows the first one is still working on."""
     now = now or timezone.now()
     cutoff = now - STALE_AFTER
     retried = KnowledgeSource.objects.filter(
         status='processing', updated_at__lt=cutoff, attempts__lt=MAX_ATTEMPTS,
     ).update(status='pending', progress='Reintentando tras una interrupción…', updated_at=now)
-    failed = KnowledgeSource.objects.filter(
-        status='processing', updated_at__lt=cutoff, attempts__gte=MAX_ATTEMPTS,
-    ).update(status='error', progress='', updated_at=now,
-             error='El procesamiento se interrumpió dos veces. Usa "Reintentar" o súbelo de nuevo.')
+    stuck = KnowledgeSource.objects.filter(
+        status='processing', updated_at__lt=cutoff, attempts__gte=MAX_ATTEMPTS)
+    stuck_files = list(stuck.filter(kind='file').values_list('pk', flat=True))
+    failed = stuck.update(
+        status='error', progress='', updated_at=now,
+        error='El procesamiento se interrumpió dos veces. Usa "Reintentar" o súbelo de nuevo.')
+    if stuck_files:  # raw upload text is not kept once the file has failed
+        KnowledgeSource.objects.filter(pk__in=stuck_files, status='error').update(
+            content='', error='El procesamiento se interrumpió dos veces. Súbelo de nuevo.')
     return retried, failed
+
+
+def _scrub(source):
+    """Extra fields for a FINAL error: a file's raw extracted text (it may hold
+    personal data) is dropped; the tenant re-uploads if they want to retry."""
+    return {'content': ''} if source.kind == 'file' else {}
 
 
 def claim(pk):
@@ -861,7 +936,15 @@ def run_source(source):
         else:
             raise ValueError('Este tipo de fuente no se procesa en segundo plano.')
         _set_progress(pk, 'Resumiendo con IA…')
-        content = distill(source.client, chunks, source.title)
+
+        def on_batch(done, total):
+            # Heartbeat per model call: a long but live distill is never
+            # mistaken for a dead worker by reset_stale().
+            _set_progress(pk, f'Resumiendo con IA ({done}/{total})…')
+
+        content = distill(source.client, chunks, source.title, on_batch=on_batch)
+        content, review = review_contacts(
+            content, _review_sites(source), strip_urls=(source.kind == 'site'))
     except agent.AgentNotConfigured:
         _finish(pk, status='pending', progress='En espera: la IA no está configurada.',
                 attempts=F('attempts') - 1)
@@ -871,21 +954,25 @@ def run_source(source):
         if source.attempts < MAX_ATTEMPTS:
             _finish(pk, status='pending', progress='La IA no respondió; se reintentará.')
             return 'pending'
-        _finish(pk, status='error', progress='',
-                error='La IA no respondió. Usa "Reintentar" en unos minutos.')
+        _finish(pk, status='error', progress='', **_scrub(source),
+                error='La IA no respondió. Sube el archivo de nuevo en unos minutos.'
+                if source.kind == 'file' else
+                'La IA no respondió. Usa "Reintentar" en unos minutos.')
         return 'error'
     except ValueError as exc:
         _finish(pk, status='error', progress='', error=str(exc)[:300],
-                pages_scanned=pages_scanned)
+                pages_scanned=pages_scanned, **_scrub(source))
         return 'error'
     except Exception:
         logger.exception('knowledge ingest failed for source %s', pk)
-        _finish(pk, status='error', progress='', error='Error inesperado procesando la fuente.')
+        _finish(pk, status='error', progress='', error='Error inesperado procesando la fuente.',
+                **_scrub(source))
         return 'error'
 
     with transaction.atomic():
         updated = _finish(pk, status='draft', content=content, progress='', error='',
-                          pages_scanned=pages_scanned)
+                          pages_scanned=pages_scanned,
+                          review_notes=json.dumps(review, ensure_ascii=False) if review else '')
         if updated:
             # compiled_text() prefers fragments: drop any stale ones.
             KnowledgeFragment.objects.filter(source_id=pk).delete()
@@ -898,8 +985,8 @@ def pending_ids(limit):
 
 
 def process_pending(limit=3):
-    """One cron pass: reset stale rows, then claim and run up to `limit`
-    pending sources, oldest first. Returns [(source, status)]."""
+    """One cron pass (caller holds the run lock): reset stale rows, then claim
+    and run up to `limit` pending sources, oldest first. Returns [(source, status)]."""
     reset_stale()
     done = []
     for pk in pending_ids(limit):

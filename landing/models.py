@@ -1,4 +1,5 @@
 import hashlib
+import json
 import secrets
 
 from django.conf import settings
@@ -212,6 +213,10 @@ class ContactSubmission(models.Model):
     # Exact page the visitor was on when the lead was captured (widget sends
     # location.href; forms fall back to the Referer header). Blank on old leads.
     page_url = models.CharField(max_length=500, blank=True)
+    # Double opt-in: set when the visitor clicks "Confirmar mi correo" in the
+    # confirmation email (views.lead_confirm). Null = not confirmed (or no
+    # email, or a lead from before the feature).
+    email_verified_at = models.DateTimeField(null=True, blank=True)
 
     # Metadata (captured server-side, not from the user)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
@@ -505,6 +510,10 @@ class KnowledgeSource(models.Model):
     progress = models.CharField(max_length=120, blank=True)
     pages_scanned = models.PositiveSmallIntegerField(default=0)
     attempts = models.PositiveSmallIntegerField(default=0)
+    # Ingest drafts: JSON written by ingest.review_contacts (phones, emails,
+    # URLs found, off-domain links removed) for the tenant to confirm before
+    # activating. Empty = nothing to review. Read it through .review.
+    review_notes = models.TextField(blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -527,6 +536,20 @@ class KnowledgeSource(models.Model):
     @property
     def in_progress(self):
         return self.status in ('pending', 'processing')
+
+    @property
+    def review(self):
+        """review_notes as a dict of lists ({} when empty or unreadable)."""
+        if not self.review_notes:
+            return {}
+        try:
+            data = json.loads(self.review_notes)
+        except (TypeError, ValueError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return {k: [str(v) for v in vals][:50] for k, vals in data.items()
+                if isinstance(vals, list) and vals}
 
     def compiled_text(self):
         """Fragments if the processor produced them, else the raw content."""

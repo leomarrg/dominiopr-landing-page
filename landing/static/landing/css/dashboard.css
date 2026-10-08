@@ -515,3 +515,16 @@ a { color: var(--accent); text-decoration: none; }
     .ctl-dl { grid-template-columns: 1fr; gap: 2px 0; }
     .ctl-dl dd { margin-bottom: 8px; }
 }
+
+/* Tenant reports (Phase 3b): reuses the ctl-* blocks above; only the
+   allowance meter and the technical-detail toggle are new. */
+.rep-big { font-size: 1rem; margin: 0 0 10px; }
+.rep-progress { display: block; height: 12px; border-radius: 6px; margin: 0 0 10px; }
+.rep-fill--warn { background: var(--contacted); }
+.rep-details summary { cursor: pointer; font-family: 'Space Grotesk', sans-serif; font-weight: 600; }
+.rep-details[open] summary { margin-bottom: 12px; }
+.rep-details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Lead double opt-in: small status under the email in the leads table. */
+.dash-badge--verified { background: rgba(46, 168, 87, 0.16); color: #6fd394; margin-top: 4px; }
+.dash-badge--unverified { background: rgba(246, 169, 107, 0.14); color: var(--contacted); margin-top: 4px; }

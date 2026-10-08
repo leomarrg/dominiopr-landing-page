@@ -3,6 +3,7 @@ Django settings for dominio_website project.
 """
 
 import os
+import sys
 from pathlib import Path
 
 # Optional: load .env file in local development
@@ -14,6 +15,10 @@ except ImportError:
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# True under `manage.py test`. Used to switch off anything that would reach the
+# network from the test suite (tests that need it turn it back on explicitly).
+TESTING = sys.argv[1:2] == ['test']
 
 
 # ============================================================
@@ -344,6 +349,14 @@ DEFAULT_FROM_EMAIL = os.environ.get(
 )
 # Where new contact-form leads are emailed.
 CONTACT_NOTIFY_EMAIL = os.environ.get('DJANGO_CONTACT_NOTIFY_EMAIL', 'creatudominiopr@gmail.com')
+# Lead/booking emails: after the syntax + disposable-domain checks, ask DNS
+# (DNS-over-HTTPS, 3 s timeout, cached 24 h per domain) whether the domain can
+# receive mail at all. Fail-open: a slow or unreachable resolver never blocks a
+# lead. Always off under `manage.py test` so the suite never hits the network.
+DOMINIO_EMAIL_DNS_CHECK = (
+    os.environ.get('DOMINIO_EMAIL_DNS_CHECK', 'True').lower() in ('true', '1', 'yes')
+    and not TESTING
+)
 
 
 # ============================================================

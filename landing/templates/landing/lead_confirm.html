@@ -1,0 +1,58 @@
+{% load static %}<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if state == 'ask' %}Confirma tu correo{% elif state == 'done' or state == 'already' %}Correo confirmado{% elif state == 'expired' %}Este enlace expiró{% else %}Enlace no válido{% endif %} — {{ business|default:"DOMINIO" }}</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="preload" href="{% static 'landing/fonts/space-grotesk-latin-var.woff2' %}" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="{% static 'landing/css/fonts.css' %}">
+    <link rel="stylesheet" href="{% static 'landing/css/style.css' %}">
+    <link rel="icon" href="{% static 'landing/images/brand/favicon-32.png' %}" sizes="32x32" type="image/png">
+    <style>
+        .lc-wrap{background:var(--primary);min-height:100vh;display:flex;align-items:center;padding:48px 0}
+        .lc-card{max-width:520px;margin:0 auto;background:var(--primary-light);border:1px solid rgba(52,214,200,.2);border-radius:20px;padding:40px 36px;text-align:center}
+        .lc-icon{width:56px;height:56px;border-radius:50%;background:rgba(52,214,200,.14);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:1.6rem;color:var(--accent)}
+        .lc-icon--err{background:rgba(224,98,98,.14);color:#f0a0a0}
+        .lc-card h1{color:var(--white);font-family:'Space Grotesk',sans-serif;font-size:1.6rem;margin:0 0 12px;line-height:1.25}
+        .lc-card p{color:rgba(255,255,255,.72);font-size:.95rem;line-height:1.6;margin:0 0 22px}
+        .lc-card .btn-primary{min-height:44px}
+        .lc-card .btn-primary:focus-visible,.lc-card .btn-outline:focus-visible{outline:3px solid #fff;outline-offset:3px}
+        .lc-note{color:rgba(255,255,255,.5);font-size:.82rem;margin:18px 0 0}
+        @media (max-width:560px){.lc-card{padding:30px 24px;border-radius:16px}.lc-card h1{font-size:1.35rem}}
+    </style>
+</head>
+<body>
+<main class="lc-wrap">
+    <div class="container">
+        <div class="lc-card">
+            {% if state == 'ask' %}
+            <div class="lc-icon" aria-hidden="true">&#9993;</div>
+            <h1>Confirma tu correo</h1>
+            <p>Un clic más y {{ business }} sabe que este correo es tuyo y que puede escribirte sobre tu solicitud.</p>
+            <form method="post" action="">
+                {% csrf_token %}
+                <button type="submit" class="btn-primary">Confirmar mi correo</button>
+            </form>
+            <p class="lc-note">Si no pediste nada a {{ business }}, ignora este mensaje: no haremos nada con tu correo.</p>
+            {% elif state == 'done' or state == 'already' %}
+            <div class="lc-icon" aria-hidden="true">&#10003;</div>
+            <h1>¡Correo confirmado!</h1>
+            <p>Gracias. {{ business }} ya tiene tu solicitud y te escribe a este correo con los próximos pasos.</p>
+            <a class="btn-outline" href="/">Volver al inicio</a>
+            {% elif state == 'expired' %}
+            <div class="lc-icon lc-icon--err" aria-hidden="true">!</div>
+            <h1>Este enlace expiró</h1>
+            <p>Los enlaces de confirmación duran 7 días. Tu solicitud sigue guardada: si quieres, responde al correo que te enviamos y te contestamos igual.</p>
+            <a class="btn-outline" href="/">Volver al inicio</a>
+            {% else %}
+            <div class="lc-icon lc-icon--err" aria-hidden="true">!</div>
+            <h1>Enlace no válido</h1>
+            <p>No pudimos confirmar este enlace. Puede que esté incompleto o que ya no corresponda a tu solicitud. Copia el enlace completo del correo o respóndenos directamente.</p>
+            <a class="btn-outline" href="/">Volver al inicio</a>
+            {% endif %}
+        </div>
+    </div>
+</main>
+</body>
+</html>

@@ -331,8 +331,9 @@ class DashboardTests(TestCase):
         resp = self._login('staff@dominiopr.com').get(reverse('reports'))
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, '$0.15')
-        self.assertEqual(resp.context['stats']['est_cost'], Decimal('0.15'))
-        row = next(r for r in resp.context['per_client'] if r['client__name'] == 'Acme')
+        self.assertEqual(resp.context['operator']['est_cost'], Decimal('0.15'))
+        row = next(r for r in resp.context['operator']['per_client']
+                   if r['client__name'] == 'Acme')
         self.assertEqual((row['messages'], row['cost']), (1, Decimal('0.15')))
 
     def test_tenant_reports_never_show_cost(self):
@@ -340,8 +341,8 @@ class DashboardTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertNotContains(resp, '$0.15')
         self.assertNotContains(resp, 'Costo')
-        self.assertIsNone(resp.context['stats']['est_cost'])
-        self.assertIsNone(resp.context['per_client'])
+        self.assertNotIn('est_cost', resp.context['stats'])
+        self.assertIsNone(resp.context['operator'])
 
     def test_clients_list_shows_month_usage(self):
         resp = self._login('staff@dominiopr.com').get(reverse('clients_list'))

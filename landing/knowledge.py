@@ -17,6 +17,7 @@ import ipaddress
 import logging
 import re
 import socket
+import time
 import urllib.error
 import urllib.request
 from html.parser import HTMLParser
@@ -29,7 +30,9 @@ logger = logging.getLogger(__name__)
 MAX_FETCH_BYTES = 500 * 1024
 MAX_TEXT_CHARS = 30000
 FRAGMENT_CHARS = 2000
-TIMEOUT = 12
+TIMEOUT = 12            # per socket operation (connect, one recv)
+FETCH_DEADLINE = 20.0   # whole request, headers + body
+READ_CHUNK = 65536
 
 
 class _TextExtractor(HTMLParser):
@@ -76,10 +79,22 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         raise RedirectRefused(newurl)
 
 
+# IPv6 prefixes that embed an IPv4 address and are routed to it by a
+# translator/relay (NAT64, 6to4). ipaddress reports them as global, but
+# 64:ff9b::a9fe:a9fe is 169.254.169.254 on a host with a NAT64 gateway.
+_EMBEDDED_V4_NETS = (
+    ipaddress.ip_network('64:ff9b::/96'),
+    ipaddress.ip_network('64:ff9b:1::/48'),
+    ipaddress.ip_network('2002::/16'),
+)
+
+
 def _assert_public_ip(value):
     ip = ipaddress.ip_address(str(value).split('%', 1)[0])
     if ip.version == 6 and ip.ipv4_mapped:
         ip = ip.ipv4_mapped
+    if ip.version == 6 and any(ip in net for net in _EMBEDDED_V4_NETS):
+        raise ValueError('Esa dirección no es pública.')
     if (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
             or ip.is_multicast or ip.is_unspecified or not ip.is_global):
         raise ValueError('Esa dirección no es pública.')
@@ -167,19 +182,44 @@ def validate_public_url(url):
     return parsed
 
 
-def fetch_resource(url, allowed_types=PAGE_TYPES, max_bytes=MAX_FETCH_BYTES):
+def _read_bounded(resp, max_bytes, ends_at):
+    """Body up to max_bytes + 1, giving up at `ends_at` (monotonic). The socket
+    timeout only bounds ONE recv: a server dripping a byte every few seconds
+    would otherwise hold the caller for as long as it likes. read1() returns
+    after a single underlying read, so the clock is checked between drips;
+    the worst overshoot is one socket TIMEOUT."""
+    read = getattr(resp, 'read1', None) or resp.read
+    chunks, size = [], 0
+    while size <= max_bytes:
+        if time.monotonic() >= ends_at:
+            raise ValueError('La página tardó demasiado.')
+        chunk = read(min(READ_CHUNK, max_bytes + 1 - size))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        size += len(chunk)
+    return b''.join(chunks)
+
+
+def fetch_resource(url, allowed_types=PAGE_TYPES, max_bytes=MAX_FETCH_BYTES, deadline=None):
     """GET a public http(s) URL with every guard on: public host (before and
     at connect time), ports 80/443, no redirects, timeout, size cap, content
-    type allowlist. Returns (content_type, raw_bytes); raises ValueError with
+    type allowlist, and a TOTAL time limit for the whole request: `deadline`
+    seconds (the crawler passes what is left of its budget), never more than
+    FETCH_DEADLINE. Returns (content_type, raw_bytes); raises ValueError with
     a message safe to show the tenant (RedirectRefused on a 3xx)."""
     validate_public_url(url)
+    allowed = FETCH_DEADLINE if deadline is None else min(float(deadline), FETCH_DEADLINE)
+    if allowed <= 0:
+        raise ValueError('La página tardó demasiado.')
+    ends_at = time.monotonic() + allowed
     req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
     try:
-        with _opener().open(req, timeout=TIMEOUT) as resp:
+        with _opener().open(req, timeout=max(1.0, min(TIMEOUT, allowed))) as resp:
             ctype = resp.headers.get('Content-Type', '') or ''
             if not any(t in ctype for t in allowed_types):
                 raise ValueError(f'Tipo de contenido no soportado: {ctype[:60]}')
-            raw = resp.read(max_bytes + 1)
+            raw = _read_bounded(resp, max_bytes, ends_at)
     except ValueError:
         raise
     except Exception as e:

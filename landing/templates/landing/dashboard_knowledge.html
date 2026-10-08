@@ -27,7 +27,22 @@
                     {% if s.error %}<div class="dash-sub" style="color:#a12626">{{ s.error }}</div>{% endif %}
                     {% if s.in_progress %}<div class="dash-sub">{{ s.progress|default:"En cola…" }} Se procesa en segundo plano, recarga en unos minutos.</div>{% endif %}
                     {% if s.kind == 'site' and s.pages_scanned and not s.in_progress %}<div class="dash-sub">{{ s.pages_scanned }} página{{ s.pages_scanned|pluralize }} leída{{ s.pages_scanned|pluralize }}</div>{% endif %}
-                    {% if s.kind == 'site' or s.kind == 'file' %}{% if s.status == 'draft' or s.status == 'active' %}
+                    {% if s.kind == 'site' or s.kind == 'file' %}{% if s.status == 'draft' %}
+                    <div class="kn-review" style="margin-top:6px">
+                        <p class="dash-sub" style="margin:0 0 6px"><b>Revisa este contenido antes de activarlo: el agente lo usará como información oficial del negocio.</b></p>
+                        {% with rv=s.review %}{% if rv %}
+                        <div class="kn-review__contacts" style="border:1px solid #e0b84c;background:#fff8e6;border-radius:8px;padding:8px 10px;margin:0 0 6px;font-size:13px">
+                            <b>Datos de contacto detectados — confirma que son tuyos</b>
+                            {% if rv.phones %}<div>Teléfonos: {{ rv.phones|join:", " }}</div>{% endif %}
+                            {% if rv.emails %}<div>Emails: {{ rv.emails|join:", " }}</div>{% endif %}
+                            {% if rv.foreign_emails %}<div>Emails con un dominio que no es el tuyo: {{ rv.foreign_emails|join:", " }}</div>{% endif %}
+                            {% if rv.urls %}<div>Enlaces: {{ rv.urls|join:", " }}</div>{% endif %}
+                            {% if rv.removed_urls %}<div>Enlaces fuera de tu dominio, quitados del borrador (si son tuyos, añádelos a mano en una fuente de texto): {{ rv.removed_urls|join:", " }}</div>{% endif %}
+                        </div>
+                        {% endif %}{% endwith %}
+                        <pre style="white-space:pre-wrap;font:inherit;font-size:13px;margin:0;max-height:420px;overflow:auto;border:1px solid #dde;border-radius:8px;padding:8px 10px">{{ s.compiled_text }}</pre>
+                    </div>
+                    {% elif s.status == 'active' %}
                     <details style="margin-top:4px"><summary class="dash-sub" style="cursor:pointer">Ver lo que aprendió el agente</summary>
                         <pre style="white-space:pre-wrap;font:inherit;font-size:13px;margin:6px 0 0;max-height:320px;overflow:auto">{{ s.compiled_text }}</pre>
                     </details>
@@ -42,7 +57,7 @@
                         {% endif %}
                         {% if s.kind == 'url' %}
                         <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="reprocess"><button class="save-btn save-btn--sm">Reprocesar</button></form>
-                        {% elif s.status == 'error' and s.kind == 'site' or s.status == 'error' and s.kind == 'file' %}
+                        {% elif s.status == 'error' and s.kind == 'site' or s.status == 'error' and s.kind == 'file' and s.content %}
                         <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="reprocess"><button class="save-btn save-btn--sm">Reintentar</button></form>
                         {% endif %}
                         {% if s.status == 'processing' %}

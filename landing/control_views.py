@@ -167,28 +167,9 @@ def control_overview(request):
     })
 
 
-def _svg_bars(series, key, width=600, height=120):
-    """Bar geometry for an inline SVG (no chart library; CSP is script-src 'self')."""
-    if not series:
-        return []
-    peak = max(d[key] for d in series) or 1
-    step = width / len(series)
-    bars = []
-    for i, d in enumerate(series):
-        h = (d[key] / peak) * (height - 4) if d[key] else 0
-        bars.append({
-            'x': f'{i * step + 1:.1f}', 'w': f'{max(step - 2, 1):.1f}',
-            'y': f'{height - h:.1f}', 'h': f'{h:.1f}',
-            'day': d['day'], 'value': d[key],
-        })
-    return bars
-
-
-def _hbars(items, key='n'):
-    peak = max((i[key] for i in items), default=0) or 1
-    for i in items:
-        i['pct'] = round(i[key] * 100 / peak)
-    return items
+# Shared with the tenant reports page (platform_views.reports).
+_svg_bars = analytics.svg_bars
+_hbars = analytics.hbars
 
 
 @login_required

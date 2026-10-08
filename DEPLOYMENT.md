@@ -328,7 +328,10 @@ python manage.py preflight   # Stripe, SMTP, IA y Django reales (--stripe|--emai
 */5 * * * * cd /ruta/app && venv/bin/python manage.py publish_due
 # Fase 8: escaneos de sitio y archivos subidos -> conocimiento en BORRADOR (nunca activa solo).
 # Máx 3 fuentes por corrida; un candado evita dos corridas a la vez. Sale con error sin ANTHROPIC_API_KEY.
-*/5 * * * * cd /ruta/app && venv/bin/python manage.py process_knowledge >> /home/ubuntu/dominio-cron.log 2>&1
+# `timeout 900` es el tope duro de la corrida (cada página y cada llamada a la IA ya tienen su
+# límite; esto cubre lo imprevisto). Si lo mata, la fila queda "procesando" y se reintenta sola
+# a los 30 min (luego queda en error); el candado expira solo.
+*/5 * * * * cd /ruta/app && timeout 900 venv/bin/python manage.py process_knowledge >> /home/ubuntu/dominio-cron.log 2>&1
 # M-01: reconciliación de suscripciones contra Stripe, diario
 45 4 * * * cd /ruta/app && venv/bin/python manage.py reconcile_stripe
 ```
@@ -340,9 +343,15 @@ memoria y no se guarda). El trabajo pesado lo hace el cron `process_knowledge` d
 30 páginas / 120 s por sitio, Haiku con salida estructurada, costo en el libro de uso como
 `knowledge_ingest`). El resultado queda en borrador para probarlo y activarlo. Para escanear el
 sitio de DOMINIO desde el servidor: `venv/bin/python manage.py process_knowledge --scan-site dominio https://dominiopr.com`.
-Requiere `pip install -r requirements.txt` (añade `pypdf`), `migrate` (0032) y recargar nginx
-con el `dominio.conf` actualizado (location `/dashboard/knowledge/upload/` con
-`client_max_body_size 6m`; sin eso nginx responde 413 a cualquier archivo de más de 256 KB).
+Requiere `pip install -r requirements.txt` (añade `pypdf`), `migrate` (0032, 0033) y recargar nginx
+con el `dominio.conf` y el `dominio-limits.conf` actualizados (location
+`/dashboard/knowledge/upload/` con `client_max_body_size 6m`, máx. 2 subidas por IP y 4 en total
+con la zona `dominio_upload_total`; sin eso nginx responde 413 a cualquier archivo de más de
+256 KB). Copiar ambos archivos juntos y probar con `sudo nginx -t` antes de recargar: el
+`dominio.conf` nuevo usa una zona que solo existe en el `dominio-limits.conf` nuevo.
+La lectura de PDF/Word corre en un proceso aparte (`landing/extract_worker.py`) con 25 s de tope
+y, en Linux, 350 MB de memoria y 30 s de CPU; si se pasa, el inquilino ve un mensaje y el worker
+de gunicorn sigue sano.
 
 **Redes sociales (M-20):** app `social/` (Instagram/Facebook via Graph API, TikTok via
 Content Posting API; sin dependencias nuevas). Al desplegarla por primera vez:

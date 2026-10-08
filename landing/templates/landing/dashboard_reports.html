@@ -1,50 +1,164 @@
 {% extends 'landing/dashboard_base.html' %}
+{% load landing_extras %}
 {% block title %}Reportes{% endblock %}
 {% block content %}
-<h1 class="dash-h1">Reportes — últimos 30 días</h1>
+<div class="ctl-head">
+    <h1 class="dash-h1">Reportes{% if client_obj %} — {{ client_obj.name }}{% endif %}</h1>
+    {% if client_obj %}
+    <nav class="ctl-periods" aria-label="Periodo">
+        {% for key, label in periods %}
+        <a href="?client={{ client_obj.slug|urlencode }}&amp;period={{ key }}" class="{% if key == period %}is-active{% endif %}"{% if key == period %} aria-current="true"{% endif %}>{{ label }}</a>
+        {% endfor %}
+    </nav>
+    {% endif %}
+</div>
+
+{% if client_options|length > 1 %}
+<form method="get" class="dash-filters" aria-label="Escoger agente">
+    <label for="rep-client" class="ctl-muted">Agente</label>
+    <select id="rep-client" name="client">
+        {% for slug, name in client_options %}<option value="{{ slug }}"{% if client_obj and slug == client_obj.slug %} selected{% endif %}>{{ name }}</option>{% endfor %}
+    </select>
+    <input type="hidden" name="period" value="{{ period }}">
+    <button type="submit">Ver</button>
+</form>
+{% endif %}
+
+{% if not client_obj %}
+<div class="ctl-card"><p class="ctl-muted">Todavía no tienes un agente asignado. Cuando DOMINIO active el tuyo, sus reportes aparecerán aquí.</p></div>
+{% else %}
+
+<div class="ctl-grid">
+    <section class="ctl-card" aria-labelledby="rep-allowance">
+        <h2 id="rep-allowance">Tu plan este mes</h2>
+        {% if allowance.included %}
+        <p class="rep-big">Llevas <b>{{ allowance.used|thousands }}</b> de {{ allowance.included|thousands }} mensajes este mes <span class="{% if allowance.warn %}ctl-badge ctl-badge--warn{% else %}ctl-muted{% endif %}">{{ allowance.pct }}%</span></p>
+        <span class="ctl-hbar__track rep-progress" role="progressbar" aria-label="Mensajes usados este mes" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ allowance.bar_pct }}"><span class="ctl-hbar__fill{% if allowance.warn %} rep-fill--warn{% endif %}" style="width:{{ allowance.bar_pct }}%"></span></span>
+        <p class="ctl-muted">A este ritmo cerrarías el mes con unos <b>{{ allowance.projection|thousands }}</b> mensajes ({{ allowance.projection_pct }}% de lo incluido){% if allowance.projection_warn %} — <span class="ctl-badge ctl-badge--warn">te pasarías del plan</span>{% endif %}. Día {{ allowance.elapsed }} de {{ allowance.days }}.</p>
+        {% else %}
+        <p class="rep-big">Llevas <b>{{ allowance.used|thousands }}</b> mensajes este mes.</p>
+        {% endif %}
+        <p class="ctl-muted">Hoy: <b>{{ allowance.today|thousands }}</b>{% if allowance.today_cap %} de {{ allowance.today_cap|thousands }} mensajes (tope diario){% if allowance.today_warn %} <span class="ctl-badge ctl-badge--warn">{{ allowance.today_pct }}% del tope de hoy</span>{% endif %}{% else %} mensajes{% endif %}.</p>
+    </section>
+
+    {% if value.price %}
+    <section class="ctl-card" aria-labelledby="rep-value">
+        <h2 id="rep-value">Lo que pagas vs. lo que recibes · {{ period_label }}</h2>
+        <p class="rep-big">Pagas <b>{{ value.price|usd }}</b>/mes{% if value.months != 1 %} <span class="ctl-muted">(≈ {{ value.paid|usd }} en este periodo)</span>{% endif %}</p>
+        <ul class="ctl-list">
+            <li>Tu agente atendió <b>{{ value.conversations|thousands }}</b> conversaciones (<b>{{ value.after_hours|thousands }}</b> fuera de horario)</li>
+            <li>Captó <b>{{ value.leads|thousands }}</b> lead{{ value.leads|pluralize }} por el chat</li>
+            <li><b>{{ value.cost_per_lead|usd }}</b> por lead · <b>{{ value.cost_per_conversation|usd }}</b> por conversación</li>
+        </ul>
+        {% if period == 'month' %}<p class="ctl-muted">En lo que va del mes: el precio por lead baja a medida que el agente trabaja.</p>{% endif %}
+    </section>
+    {% endif %}
+</div>
 
 <section class="dash-stats">
-    <div class="dash-stat"><div class="dash-stat__num">{{ stats.conversations }}</div><div class="dash-stat__label">Conversaciones</div></div>
-    <div class="dash-stat dash-stat--accent"><div class="dash-stat__num">{{ stats.chat_leads }}</div><div class="dash-stat__label">Leads del chat</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{{ stats.conversations|thousands }}</div><div class="dash-stat__label">Conversaciones · {{ period_label }}</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{{ stats.messages|thousands }}</div><div class="dash-stat__label">Mensajes</div></div>
+    <div class="dash-stat dash-stat--accent"><div class="dash-stat__num">{{ stats.chat_leads|thousands }}</div><div class="dash-stat__label">Leads del chat ({{ stats.leads|thousands }} en total)</div></div>
     <div class="dash-stat"><div class="dash-stat__num">{{ stats.conversion }}%</div><div class="dash-stat__label">Conversión chat→lead</div></div>
-    <div class="dash-stat"><div class="dash-stat__num">{{ stats.escalated }}</div><div class="dash-stat__label">Escaladas</div></div>
 </section>
 <section class="dash-stats">
-    <div class="dash-stat"><div class="dash-stat__num">{{ stats.leads_total }}</div><div class="dash-stat__label">Leads totales</div></div>
-    <div class="dash-stat"><div class="dash-stat__num">{{ stats.leads_form }}</div><div class="dash-stat__label">Del formulario</div></div>
-    <div class="dash-stat"><div class="dash-stat__num">{% if stats.csat_avg %}{{ stats.csat_avg }}/5{% else %}—{% endif %}</div><div class="dash-stat__label">CSAT ({{ stats.csat_n }} votos)</div></div>
-    {% if request.user.is_staff %}
-    <div class="dash-stat"><div class="dash-stat__num">${{ stats.est_cost }}</div><div class="dash-stat__label">Costo IA real ({{ stats.tokens }} tokens){% if stats.ledger_since %} · registrado desde {{ stats.ledger_since|date:"j M Y" }}{% endif %}</div></div>
-    {% endif %}
+    <div class="dash-stat"><div class="dash-stat__num">{{ stats.after_hours|thousands }}</div><div class="dash-stat__label">Fuera de horario ({{ stats.after_hours_pct }}%)</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{{ stats.bookings|thousands }}</div><div class="dash-stat__label">Citas{% if not client_obj.enable_bookings %} (no activadas){% endif %}</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{{ stats.escalated|thousands }}</div><div class="dash-stat__label">Escaladas a una persona</div></div>
+    <div class="dash-stat"><div class="dash-stat__num">{% if stats.csat_avg %}{{ stats.csat_avg }}/5{% else %}—{% endif %}</div><div class="dash-stat__label">Satisfacción ({{ stats.csat_n }} voto{{ stats.csat_n|pluralize }})</div></div>
+</section>
+
+<div class="ctl-grid">
+    <section class="ctl-card">
+        <h2>Conversaciones por día — últimos 30 días ({{ daily_conversations|thousands }})</h2>
+        <svg class="ctl-chart" viewBox="0 0 600 120" role="img" aria-label="Conversaciones por día, últimos 30 días">
+            <line x1="0" y1="119.5" x2="600" y2="119.5"></line>
+            {% for b in conv_bars %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}"><title>{{ b.day|date:"j M" }}: {{ b.value }} conversaciones</title></rect>{% endfor %}
+        </svg>
+        {% if conv_bars %}{% with last=conv_bars|last %}<p class="ctl-muted">{{ conv_bars.0.day|date:"j M" }} – {{ last.day|date:"j M" }}</p>{% endwith %}{% endif %}
+    </section>
+    <section class="ctl-card">
+        <h2>Mensajes por día — últimos 30 días ({{ daily_messages|thousands }})</h2>
+        <svg class="ctl-chart" viewBox="0 0 600 120" role="img" aria-label="Mensajes del chat por día, últimos 30 días">
+            <line x1="0" y1="119.5" x2="600" y2="119.5"></line>
+            {% for b in msg_bars %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}"><title>{{ b.day|date:"j M" }}: {{ b.value }} mensajes</title></rect>{% endfor %}
+        </svg>
+        {% if msg_bars %}{% with last=msg_bars|last %}<p class="ctl-muted">{{ msg_bars.0.day|date:"j M" }} – {{ last.day|date:"j M" }}</p>{% endwith %}{% endif %}
+    </section>
+</div>
+
+<div class="ctl-grid">
+    <section class="ctl-card">
+        <h2>Qué buscan tus visitantes · {{ period_label }}</h2>
+        {% for i in intents %}
+        <div class="ctl-hbar"><span>{{ i.label }}</span><span class="ctl-hbar__track"><span class="ctl-hbar__fill" style="width:{{ i.pct }}%"></span></span><span class="num">{{ i.n }}</span></div>
+        {% empty %}<p class="ctl-muted">Sin conversaciones clasificadas en este periodo (se clasifican cada noche).</p>{% endfor %}
+    </section>
+    <section class="ctl-card">
+        <h2>Temas más preguntados · {{ period_label }}</h2>
+        {% if client_obj.clinic_mode %}<p class="ctl-muted">En modo clínica no se guardan temas.</p>{% else %}
+        {% for t in topics %}
+        <div class="ctl-hbar"><span>{{ t.topic }}</span><span class="ctl-hbar__track"><span class="ctl-hbar__fill" style="width:{{ t.pct }}%"></span></span><span class="num">{{ t.n }}</span></div>
+        {% empty %}<p class="ctl-muted">Sin temas todavía.</p>{% endfor %}
+        {% endif %}
+    </section>
+</div>
+
+<div class="ctl-grid">
+    <section class="ctl-card">
+        <h2>Páginas donde más conversan</h2>
+        {% for p in conv_pages %}
+        <div class="ctl-hbar"><span title="{{ p.page_url }}">{{ p.page_url|truncatechars:48 }}</span><span class="ctl-hbar__track"><span class="ctl-hbar__fill" style="width:{{ p.pct }}%"></span></span><span class="num">{{ p.n }}</span></div>
+        {% empty %}<p class="ctl-muted">Sin datos de página en este periodo.</p>{% endfor %}
+    </section>
+    <section class="ctl-card">
+        <h2>Páginas que más leads producen</h2>
+        {% for p in lead_pages %}
+        <div class="ctl-hbar"><span title="{{ p.page_url }}">{{ p.page_url|truncatechars:48 }}</span><span class="ctl-hbar__track"><span class="ctl-hbar__fill" style="width:{{ p.pct }}%"></span></span><span class="num">{{ p.n }}</span></div>
+        {% empty %}<p class="ctl-muted">Sin leads con página en este periodo.</p>{% endfor %}
+    </section>
+</div>
+
+<section class="ctl-card">
+    <h2>Horario usado para "fuera de horario"</h2>
+    <p class="ctl-muted">{% if custom_hours %}Tu horario configurado en Citas:{% else %}Horario por defecto (no has configurado el tuyo en Citas):{% endif %}
+        {% for label, open_t, close_t in hours %}{{ label }} {{ open_t|time:"g:i a" }}–{{ close_t|time:"g:i a" }}{% if not forloop.last %} · {% endif %}{% endfor %} (hora de Puerto Rico).</p>
 </section>
 
 {% if unanswered %}
-<div class="dash-card">
+<section class="ctl-card">
     <h2>Motivos de escalamiento recientes (material para afinar el agente)</h2>
-    <ul>{% for r in unanswered %}<li>{{ r }}</li>{% endfor %}</ul>
-</div>
+    <ul class="ctl-list">{% for r in unanswered %}<li>{{ r }}</li>{% endfor %}</ul>
+</section>
 {% endif %}
 
-{% if top_pages %}
-<div class="dash-card">
-    <h2>Páginas que más leads producen</h2>
-    <table class="dash-table" style="max-width:680px">
-        <tbody>{% for p in top_pages %}<tr><td>{{ p.page_url|truncatechars:70 }}</td><td><b>{{ p.n }}</b></td></tr>{% endfor %}</tbody>
-    </table>
-</div>
+<details class="ctl-card rep-details">
+    <summary>Detalle técnico</summary>
+    <dl class="ctl-dl">
+        <dt>Tokens procesados este mes</dt><dd>{{ allowance.tokens|thousands }}</dd>
+        <dt>Mensajes este mes</dt><dd>{{ allowance.used|thousands }}</dd>
+    </dl>
+    <p class="ctl-muted">Los tokens son la unidad con la que el modelo de IA lee y escribe. Tu plan se mide en mensajes, no en tokens.</p>
+</details>
 {% endif %}
 
-{% if per_client and request.user.is_staff %}
-<div class="dash-card">
-    <h2>Por cliente (operador)</h2>
-    <table class="dash-table">
-        <thead><tr><th>Cliente</th><th>Conversaciones</th><th>Leads</th><th>Mensajes</th><th>Tokens</th><th>Costo IA</th></tr></thead>
+{% if operator and request.user.is_staff %}
+<section class="ctl-card">
+    <h2>Operador · todas las cuentas · {{ period_label }}</h2>
+    <p class="ctl-muted">Solo staff. <a href="{% url 'control' %}">Centro de control</a>{% if client_obj %} · <a href="{% url 'control_client' client_obj.slug %}">Ficha de {{ client_obj.name }}</a>{% endif %}</p>
+    <p>Costo IA real: <b>{{ operator.est_cost|usd:4 }}</b> ({{ operator.tokens|thousands }} tokens){% if operator.ledger_since %} · registrado desde {{ operator.ledger_since|date:"j M Y" }}{% endif %}</p>
+    {% if operator.per_client %}
+    <div class="ctl-scroll" style="border:none;margin:0;">
+    <table class="ctl-table">
+        <thead><tr><th scope="col">Cliente</th><th scope="col" class="num">Conversaciones</th><th scope="col" class="num">Leads</th><th scope="col" class="num">Mensajes</th><th scope="col" class="num">Tokens</th><th scope="col" class="num">Costo IA</th></tr></thead>
         <tbody>
-            {% for row in per_client %}
-            <tr><td>{{ row.client__name }}</td><td>{{ row.n }}</td><td>{{ row.leads }}</td><td>{{ row.messages }}</td><td>{{ row.tokens }}</td><td>${{ row.cost }}</td></tr>
+            {% for row in operator.per_client %}
+            <tr><td>{{ row.client__name }}</td><td class="num">{{ row.n }}</td><td class="num">{{ row.leads }}</td><td class="num">{{ row.messages }}</td><td class="num">{{ row.tokens|thousands }}</td><td class="num">{{ row.cost|usd:4 }}</td></tr>
             {% endfor %}
         </tbody>
     </table>
-</div>
+    </div>
+    {% endif %}
+</section>
 {% endif %}
 {% endblock %}

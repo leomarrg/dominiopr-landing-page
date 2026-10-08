@@ -13,7 +13,9 @@ result as a DRAFT for the tenant to test and activate. Never activates.
 enqueues a website scan for a client from the CLI (any public host allowed,
 it is the operator) and processes it in the same run.
 
-Rows stuck in 'processing' for 30+ minutes are retried once, then marked error.
+Rows stuck in 'processing' for 30+ minutes are retried once, then marked error
+(only by the run holding the lock). Run it under `timeout 900` in cron (see
+DEPLOYMENT.md): every fetch and model call is bounded, this is the backstop.
 """
 import os
 
@@ -41,7 +43,9 @@ class Command(BaseCommand):
         if options.get('scan_site'):
             self._enqueue(*options['scan_site'])
 
-        if not ingest.pending_ids(1) and not ingest.reset_stale()[0]:
+        # Read-only checks before the lock: resetting stale rows here, outside
+        # it, could pull a row out from under a run that is still alive.
+        if not ingest.pending_ids(1) and not ingest.has_stale():
             self.stdout.write('Conocimiento: no hay fuentes en cola.')
             return
         if not getattr(settings, 'ANTHROPIC_API_KEY', ''):
@@ -50,6 +54,7 @@ class Command(BaseCommand):
             self.stdout.write('Conocimiento: otra corrida está en curso; nada que hacer.')
             return
         try:
+            # process_pending() runs reset_stale() first, under the lock.
             results = ingest.process_pending(limit=max(0, options['limit']))
         finally:
             cache.delete(LOCK_KEY)

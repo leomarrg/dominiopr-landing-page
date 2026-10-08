@@ -60,7 +60,8 @@
                             {% if lead.message %}<div class="dash-sub dash-preview">{{ lead.message|truncatechars:64 }}</div>{% endif %}
                         </td>
                         <td data-label="Contacto">
-                            {% if lead.email %}<div class="dash-email">{{ lead.email }}</div>{% endif %}
+                            {% if lead.email %}<div class="dash-email">{{ lead.email }}</div>
+                            {% if lead.email_verified_at %}<span class="dash-badge dash-badge--verified" title="Confirmó su correo el {{ lead.email_verified_at|date:'d/m/Y' }}">Correo confirmado</span>{% else %}<span class="dash-badge dash-badge--unverified">Sin confirmar</span>{% endif %}{% endif %}
                             {% if lead.phone %}<div class="dash-sub">{{ lead.phone|format_phone }}</div>{% endif %}
                             {% if not lead.email and not lead.phone %}<div class="dash-sub">—</div>{% endif %}
                         </td>

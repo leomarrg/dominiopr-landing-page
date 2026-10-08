@@ -11,7 +11,10 @@ default), deletes:
     conversation linked to one of those leads — Conversation.lead is SET_NULL,
     so a recent transcript would otherwise outlive the lead it belongs to;
   - bookings whose `start` is before the cutoff.
-Also drops webhook-idempotency rows older than 90 days. --dry-run only counts.
+Also drops webhook-idempotency rows older than 90 days, and clears the raw
+extracted text of uploaded-file knowledge sources that ended in error or were
+archived (ingest already does it at that moment; this catches older rows).
+--dry-run only counts.
 """
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -19,7 +22,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from landing.models import (
-    Booking, Client, ContactSubmission, Conversation, ProcessedWebhookEvent,
+    Booking, Client, ContactSubmission, Conversation, KnowledgeSource, ProcessedWebhookEvent,
 )
 
 
@@ -69,6 +72,15 @@ class Command(BaseCommand):
         n_wh = stale.count()
         if n_wh and not dry_run:
             stale.delete()
+        raw_files = (KnowledgeSource.objects
+                     .filter(kind='file', status__in=('error', 'archived'))
+                     .exclude(content=''))
+        n_raw = raw_files.count()
+        if n_raw and not dry_run:
+            raw_files.update(content='')
+        if n_raw:
+            self.stdout.write(f'{"[dry-run] " if dry_run else ""}{n_raw} archivos de conocimiento '
+                              f'con error/archivados: texto crudo borrado.')
         self.stdout.write(self.style.SUCCESS(
             f'{"[dry-run] " if dry_run else ""}'
             f'{totals["conv"]} conversaciones, {totals["leads"]} leads y '

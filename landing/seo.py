@@ -55,6 +55,7 @@ def robots_txt(request):
         'Disallow: /admin/',
         'Disallow: /api/',
         'Disallow: /bienvenida/',
+        'Disallow: /confirmar/',
         'Disallow: /widget.js',
         '',
         f'Sitemap: {settings.SITE_URL}/sitemap.xml',

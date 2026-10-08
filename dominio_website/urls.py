@@ -55,6 +55,8 @@ urlpatterns = [
     path('widget.js', views.widget_js, name='widget_js'),
     path('get-started/', views.get_started, name='get_started'),
     path('bienvenida/', views.bienvenida, name='bienvenida'),
+    # Double opt-in link from the lead confirmation email (GET shows, POST confirms).
+    path('confirmar/<str:token>/', views.lead_confirm, name='lead_confirm'),
     path('terms/', views.terms, name='terms'),
     # SEO plumbing (public): crawler rules, sitemap, PWA-style manifest for icons.
     path('robots.txt', seo.robots_txt, name='robots_txt'),

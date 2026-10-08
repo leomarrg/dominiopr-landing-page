@@ -1,7 +1,12 @@
 Gracias, {{ submission.name }}.
 
 Recibimos tu solicitud y nuestro equipo ya la está revisando.
-
+{% if confirm_url %}
+CONFIRMA TU CORREO
+Para asegurarnos de que este correo es tuyo y de que nuestra respuesta te llegue, confírmalo aquí:
+{{ confirm_url }}
+(El enlace vence en 7 días. Si no fuiste tú, ignora este correo.)
+{% endif %}
 QUÉ SIGUE AHORA
 1. Revisamos los detalles que compartiste y evaluamos el mejor enfoque.
 2. Te respondemos con un próximo paso claro — usualmente dentro de 1-2 días laborables.

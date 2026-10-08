@@ -14,6 +14,7 @@ from django.contrib.auth import get_user_model, update_session_auth_hash
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth.views import PasswordResetConfirmView
+from django.core import signing
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.mail import EmailMultiAlternatives
@@ -25,6 +26,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
+from django.utils.crypto import salted_hmac
 from django.utils.text import slugify
 from django.utils.encoding import force_bytes
 from django.utils.http import url_has_allowed_host_and_scheme, urlsafe_base64_encode
@@ -35,6 +37,7 @@ from django.views.decorators.http import require_POST
 
 from . import agent, notify, payments
 from . import usage as usage_ledger
+from .emailcheck import check_email
 from .forms import ContactForm
 from .models import (
     AuditEvent, Booking, ChatMessage, Client, ContactSubmission, Conversation,
@@ -273,15 +276,40 @@ CLINIC_ESCALATION_REASON = 'Solicitó hablar con el equipo (modo clínica)'
 CLINIC_DASHBOARD_NOTE = 'Revisa el dashboard para los detalles.'
 
 
+LEAD_CONFIRM_SALT = 'lead-confirm'
+LEAD_CONFIRM_MAX_AGE = 7 * 86400
+
+
+def _lead_email_tag(email):
+    """Keyed, non-reversible fingerprint of an email for the confirm token.
+    signing.dumps only signs (the payload is plain base64), and the link ends
+    up in access logs and mail-scanner logs, so the address itself never goes
+    in the URL — only this tag, which still binds the token to that email."""
+    return salted_hmac('landing.lead-confirm.email',
+                       (email or '').strip().lower()).hexdigest()[:24]
+
+
+def lead_confirm_url(lead):
+    """Absolute double-opt-in link for a lead's email. The token is signed
+    (SECRET_KEY + salt), carries the lead id AND a tag of the email it was sent
+    to (a later email change voids it), and expires after LEAD_CONFIRM_MAX_AGE
+    (checked on use)."""
+    token = signing.dumps({'l': lead.pk, 'e': _lead_email_tag(lead.email)},
+                          salt=LEAD_CONFIRM_SALT)
+    return settings.SITE_URL + reverse('lead_confirm', kwargs={'token': token})
+
+
 def _send_lead_emails(submission, notify_to=None):
-    """Notify the team and send the visitor a styled confirmation.
+    """Notify the team and ask the visitor to confirm their email.
 
     `notify_to` lets each client route its leads to its own inbox; defaults to
-    DOMINIO's configured address.
+    DOMINIO's configured address. The team is told right away (a lead is
+    worth a call even before the click), with the email marked unconfirmed.
     """
     if notify_to is None:
         notify_to = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
     business = submission.client.name if submission.client else 'DOMINIO'
+    unconfirmed = bool(submission.email and not submission.email_verified_at)
     context = {
         'submission': submission,
         'business': business,
@@ -291,12 +319,15 @@ def _send_lead_emails(submission, notify_to=None):
         # Direct link to the leads dashboard so the client can manage the lead
         # (status, reply) right from the notification email.
         'dashboard_url': settings.SITE_URL + reverse('dashboard'),
+        'email_unconfirmed': unconfirmed,
+        'confirm_url': lead_confirm_url(submission) if unconfirmed else '',
     }
 
     # 1) Internal notification to the business inbox.
     if notify_to:
         _send_html_email(
-            subject=f'Nuevo lead para {business}: {submission.name}',
+            subject=(f'Nuevo lead para {business}: {submission.name}'
+                     + (' (correo sin confirmar)' if unconfirmed else '')),
             to=[notify_to],
             html_template='landing/emails/lead_notification.html',
             txt_template='landing/emails/lead_notification.txt',
@@ -306,9 +337,11 @@ def _send_lead_emails(submission, notify_to=None):
 
     # 2) Confirmation to the person who submitted the form — only if they left an
     # email (phone-only leads can't be emailed; the team follows up by phone).
+    # It doubles as the opt-in: a button to confirm the address is theirs.
     if submission.email:
         _send_html_email(
-            subject=f'Recibimos tu solicitud — {business}',
+            subject=(f'Confirma tu correo — {business}' if unconfirmed
+                     else f'Recibimos tu solicitud — {business}'),
             to=[submission.email],
             html_template='landing/emails/lead_confirmation.html',
             txt_template='landing/emails/lead_confirmation.txt',
@@ -537,6 +570,14 @@ def _chat_lead_handler(request, client_obj=None, page_url='', conversation=None)
                 validate_email(email)
             except ValidationError:
                 raise ValueError('Invalid email.')
+            # Throwaway inbox or a domain that can't receive mail: nothing is
+            # saved, and the model gets the reason in plain words (a raised
+            # error only reaches it as a generic "verify the data") so it can
+            # ask the visitor for another address.
+            ok, reason = check_email(email)
+            if not ok:
+                return (f'No se guardó el lead: {reason} Pídele al visitante otro '
+                        'correo (o un teléfono) y vuelve a intentarlo.')
         # Bad phone: drop it if there's a valid email; otherwise ask again.
         if phone is None:
             if email:
@@ -628,6 +669,10 @@ def _human_handler(request, client_obj=None, conversation=None, page_url=''):
                 validate_email(email)
             except ValidationError:
                 email = ''
+        # Same as an invalid one: an escalation is never refused over the
+        # email, a throwaway/undeliverable address is just not kept.
+        if email and not check_email(email)[0]:
+            email = ''
 
         ip = _client_ip(request) or 'unknown'
         cap_key = f'humancap:{ip}'
@@ -708,6 +753,12 @@ def _booking_handler(request, client_obj=None):
             validate_email(email)
         except ValidationError:
             raise ValueError('Invalid email.')
+        # Deliverability only — bookings get no confirmation link. Returned as
+        # text (not raised) so the model can tell the visitor what to fix.
+        ok, reason = check_email(email)
+        if not ok:
+            return (f'No se reservó la cita: {reason} Pídele al visitante otro '
+                    'correo y vuelve a intentarlo.')
 
         ip = _client_ip(request) or 'unknown'
         cap_key = f'bookcap:{ip}'
@@ -1556,6 +1607,10 @@ def get_started(request):
                 validate_email(email)
             except ValidationError:
                 errors['email'] = 'Escribe un email válido.'
+            else:
+                ok, reason = check_email(email)
+                if not ok:
+                    errors['email'] = reason
         phone = normalize_phone(phone)
         if phone is None:
             errors['phone'] = 'Escribe un número de teléfono válido, ej. (787) 123-4567.'
@@ -1985,6 +2040,59 @@ def terms(request):
 
 def privacy(request):
     return render(request, 'landing/privacy.html')
+
+
+def _lead_from_confirm_token(token):
+    """(lead, error_state). error_state is 'expired' or 'invalid' when the
+    token is too old, tampered with, points at a deleted lead, or was issued
+    for an email the lead no longer has."""
+    try:
+        data = signing.loads(token, salt=LEAD_CONFIRM_SALT, max_age=LEAD_CONFIRM_MAX_AGE)
+        lead_id, token_tag = int(data["l"]), str(data["e"])
+    except signing.SignatureExpired:
+        return None, 'expired'
+    except (signing.BadSignature, KeyError, TypeError, ValueError):
+        return None, 'invalid'
+    lead = ContactSubmission.objects.select_related('client').filter(pk=lead_id).first()
+    if lead is None or not lead.email or not hmac.compare_digest(
+            _lead_email_tag(lead.email), token_tag):
+        return None, 'invalid'
+    return lead, ''
+
+
+@_rate_limited('leadconfirm', limit=20, window=300, methods=('GET', 'POST'))
+def lead_confirm(request, token):
+    """Double opt-in for a lead's email (link in the confirmation email).
+
+    GET only shows a "Confirmar mi correo" button and never writes: Outlook
+    Safe Links and other scanners open every link in an email, which must not
+    count as the person confirming. The POST (CSRF-protected) does the work,
+    idempotently. Bad, expired or mismatched tokens get a friendly 400.
+    """
+    if request.method not in ('GET', 'POST'):
+        return HttpResponse(status=405, headers={'Allow': 'GET, POST'})
+    lead, error = _lead_from_confirm_token(token)
+    if error:
+        resp = render(request, 'landing/lead_confirm.html', {'state': error}, status=400)
+    else:
+        business = lead.client.name if lead.client else 'DOMINIO'
+        if request.method == 'POST':
+            # Conditional UPDATE: a double click or a replayed POST never moves
+            # the first confirmation timestamp.
+            updated = ContactSubmission.objects.filter(
+                pk=lead.pk, email_verified_at__isnull=True,
+            ).update(email_verified_at=timezone.now())
+            if updated:
+                logger.info('Lead email confirmed: submission=%s', lead.pk)
+            state = 'done'
+        else:
+            state = 'already' if lead.email_verified_at else 'ask'
+        resp = render(request, 'landing/lead_confirm.html',
+                      {'state': state, 'business': business, 'token': token})
+    # The token is in the URL: keep it out of shared caches and Referer headers.
+    resp['Cache-Control'] = 'no-store'
+    resp['Referrer-Policy'] = 'no-referrer'
+    return resp
 
 
 # ============================================================
