@@ -296,4 +296,18 @@ class Command(BaseCommand):
 
         # Mirrors the default in landing/agent.py so a stale pin shows up here.
         model = getattr(settings, 'DOMINIO_AGENT_MODEL', 'claude-haiku-5-5')
-        self._line(OK, 'model', model)
+        if model.startswith('claude-haiku-4-5'):
+            self._line(WARN, 'model', f'{model} — pinned to the old model; Haiku 5.5 is ~10x cheaper')
+        else:
+            self._line(OK, 'model', model)
+        self._line(OK, 'effort', getattr(settings, 'DOMINIO_AGENT_EFFORT', 'low') or '(none)')
+
+        # DOMINIO's own agent reads its knowledge from the DB row, which was seeded
+        # once from agent.DOMINIO_BUSINESS — edits to the constant don't reach it.
+        from landing import agent
+        from landing.models import Client
+        dominio = Client.objects.filter(slug='dominio').first()
+        if dominio is not None and dominio.system_prompt.strip() != agent.DOMINIO_BUSINESS.strip():
+            self._line(WARN, 'dominio prompt',
+                       'DB system_prompt differs from agent.DOMINIO_BUSINESS — the live agent '
+                       'answers from the DB copy; re-sync it if the code is the newer one')
