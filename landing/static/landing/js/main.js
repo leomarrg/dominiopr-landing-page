@@ -537,10 +537,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
             },
-            // Fire as the item crosses into the viewport (minus a small bottom
-            // band so it reveals just as it reaches the screen). threshold 0 so
-            // items at the very bottom of the page still reveal at max scroll.
-            { threshold: 0, rootMargin: '0px 0px -10% 0px' }
+            // Fire once the item is genuinely on screen: past a bottom band of
+            // 14% of the viewport, so it is visible (not just peeking) when the
+            // CSS hold + transition start. threshold 0 so items at the very
+            // bottom of the page still reveal at max scroll.
+            { threshold: 0, rootMargin: '0px 0px -14% 0px' }
         );
 
         items.forEach((el) => itemObserver.observe(el));

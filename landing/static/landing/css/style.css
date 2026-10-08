@@ -1703,11 +1703,13 @@ section > .container > .section-tag {
    no 3D. transform/opacity only (CLS-safe), no persistent will-change (it froze
    the process pips once — see history). */
 .reveal-section .reveal-item {
+    --reveal-hold: 220ms; /* pause after entering the viewport, before moving */
     opacity: 0;
     transform: translateY(16px);
     transition:
-        opacity 780ms cubic-bezier(0.16, 1, 0.3, 1),
-        transform 780ms cubic-bezier(0.16, 1, 0.3, 1);
+        opacity 1100ms cubic-bezier(0.16, 1, 0.3, 1),
+        transform 1100ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition-delay: var(--reveal-hold);
 }
 
 .reveal-section .reveal-item.is-visible {
@@ -1724,9 +1726,10 @@ section > .container > .section-tag {
     transform: translateY(22px);
     filter: blur(6px);
     transition:
-        opacity 900ms cubic-bezier(0.16, 1, 0.3, 1),
-        transform 900ms cubic-bezier(0.16, 1, 0.3, 1),
-        filter 720ms cubic-bezier(0.16, 1, 0.3, 1);
+        opacity 1250ms cubic-bezier(0.16, 1, 0.3, 1),
+        transform 1250ms cubic-bezier(0.16, 1, 0.3, 1),
+        filter 1000ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition-delay: var(--reveal-hold);
 }
 .reveal-section .section-tag.reveal-item.is-visible,
 .reveal-section .section-title.reveal-item.is-visible,
@@ -1743,8 +1746,9 @@ section > .container > .section-tag {
 .reveal-section .ai-use-card.reveal-item {
     transform: translateY(20px) scale(0.985);
     transition:
-        opacity 720ms cubic-bezier(0.16, 1, 0.3, 1),
-        transform 720ms cubic-bezier(0.16, 1, 0.3, 1);
+        opacity 1000ms cubic-bezier(0.16, 1, 0.3, 1),
+        transform 1000ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition-delay: var(--reveal-hold);
 }
 .reveal-section .problem-card.reveal-item.is-visible,
 .reveal-section .process-step.reveal-item.is-visible,
@@ -1752,18 +1756,18 @@ section > .container > .section-tag {
     transform: translateY(0) scale(1);
 }
 
-/* Stagger: now only a MICRO-cascade between neighbours that enter together (a row
-   of cards, or tag+title+intro). Trigger is per-item, so big delays would just
-   stall items that enter alone in a column — capped at ~250ms. */
-.reveal-section .reveal-item.is-visible[data-delay="0"] { transition-delay: 0ms; }
-.reveal-section .reveal-item.is-visible[data-delay="1"] { transition-delay: 60ms; }
-.reveal-section .reveal-item.is-visible[data-delay="2"] { transition-delay: 110ms; }
-.reveal-section .reveal-item.is-visible[data-delay="3"] { transition-delay: 150ms; }
-.reveal-section .reveal-item.is-visible[data-delay="4"] { transition-delay: 185ms; }
-.reveal-section .reveal-item.is-visible[data-delay="5"] { transition-delay: 210ms; }
-.reveal-section .reveal-item.is-visible[data-delay="6"] { transition-delay: 230ms; }
-.reveal-section .reveal-item.is-visible[data-delay="7"] { transition-delay: 245ms; }
-.reveal-section .reveal-item.is-visible[data-delay="8"] { transition-delay: 250ms; }
+/* Stagger: a cascade between neighbours that enter together (a row of cards,
+   or tag+title+intro), on top of the shared hold. Trigger is per-item, so the
+   cascade stays capped (~400ms) or items that enter alone would just stall. */
+.reveal-section .reveal-item.is-visible[data-delay="0"] { transition-delay: var(--reveal-hold); }
+.reveal-section .reveal-item.is-visible[data-delay="1"] { transition-delay: calc(var(--reveal-hold) + 90ms); }
+.reveal-section .reveal-item.is-visible[data-delay="2"] { transition-delay: calc(var(--reveal-hold) + 160ms); }
+.reveal-section .reveal-item.is-visible[data-delay="3"] { transition-delay: calc(var(--reveal-hold) + 220ms); }
+.reveal-section .reveal-item.is-visible[data-delay="4"] { transition-delay: calc(var(--reveal-hold) + 270ms); }
+.reveal-section .reveal-item.is-visible[data-delay="5"] { transition-delay: calc(var(--reveal-hold) + 310ms); }
+.reveal-section .reveal-item.is-visible[data-delay="6"] { transition-delay: calc(var(--reveal-hold) + 340ms); }
+.reveal-section .reveal-item.is-visible[data-delay="7"] { transition-delay: calc(var(--reveal-hold) + 365ms); }
+.reveal-section .reveal-item.is-visible[data-delay="8"] { transition-delay: calc(var(--reveal-hold) + 380ms); }
 
 /* Mobile: drop the text blur (paint-heavy on mobile GPUs) and shorten travel. */
 @media (max-width: 768px) {
@@ -1777,8 +1781,9 @@ section > .container > .section-tag {
         transform: translateY(14px);
         filter: none;
         transition:
-            opacity 740ms cubic-bezier(0.16, 1, 0.3, 1),
-            transform 740ms cubic-bezier(0.16, 1, 0.3, 1);
+            opacity 950ms cubic-bezier(0.16, 1, 0.3, 1),
+            transform 950ms cubic-bezier(0.16, 1, 0.3, 1);
+        transition-delay: var(--reveal-hold);
     }
     .reveal-section .problem-card.reveal-item,
     .reveal-section .process-step.reveal-item,
