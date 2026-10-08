@@ -40,7 +40,7 @@ def fake_dns(answers):
     queries get an empty NOERROR answer. Returns (urlopen, calls)."""
     calls = []
 
-    def urlopen(req, timeout=None):
+    def urlopen(req, timeout=None, context=None):
         query = parse_qs(urlparse(req.full_url).query)
         key = (query['name'][0], query['type'][0])
         calls.append(key)
