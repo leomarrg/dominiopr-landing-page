@@ -39,7 +39,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.utils import timezone
 
-from . import agent, extract_worker, knowledge
+from . import agent, extract_worker, knowledge, publishing
 from . import usage as usage_ledger
 from .models import KnowledgeFragment, KnowledgeSource
 
@@ -993,5 +993,9 @@ def process_pending(limit=3):
         if not claim(pk):
             continue
         source = KnowledgeSource.objects.select_related('client').get(pk=pk)
-        done.append((source, run_source(source)))
+        status = run_source(source)
+        if status == 'draft':
+            # Phase 6: a tenant who can't publish needs DOMINIO to review it.
+            publishing.notify_ingest_draft(source)
+        done.append((source, status))
     return done

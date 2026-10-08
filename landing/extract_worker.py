@@ -191,6 +191,12 @@ def main(argv=None):
         sys.stderr.write('bad kind\n')
         return 3
     _limit_resources()
+    # pypdf logs/warns to stderr, which the parent shows the tenant on exit 2:
+    # keep stderr for our own message only.
+    import logging
+    import warnings
+    logging.disable(logging.CRITICAL)
+    warnings.simplefilter('ignore')
     data = sys.stdin.buffer.read()
     try:
         text = extractor(data)

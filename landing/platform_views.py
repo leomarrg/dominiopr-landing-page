@@ -29,7 +29,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.views.decorators.http import require_POST
 
-from . import agent, analytics, ingest, knowledge
+from . import agent, analytics, ingest, knowledge, publishing
 from . import usage as usage_ledger
 from .models import (
     AvailabilityRule, Booking, Client, ContactSubmission, Conversation,
@@ -457,11 +457,18 @@ def _knowledge_client(request):
 
 
 def _knowledge_context(request, client, **extra):
-    sources = list(client.knowledge_sources.exclude(status='archived'))
+    sources = list(client.knowledge_sources.exclude(status='archived').select_related('replaces'))
+    archived = list(client.knowledge_sources.filter(status='archived'))
+    # Phase 6: past versions per row, and which live source has a pending draft.
+    history = publishing.history_for(sources, archived)
+    pending_for = {s.replaces_id for s in sources if s.status in ('draft', 'error') and s.replaces_id}
+    for s in sources:
+        s.history = history.get(s.pk, [])
+        s.has_open_draft = s.pk in pending_for
     context = {
         'active_tab': 'knowledge',
         'client_obj': client, 'sources': sources,
-        'archived': client.knowledge_sources.filter(status='archived'),
+        'archived': archived,
         'all_clients': clients_for(request.user),
         'kind_choices': [c for c in KnowledgeSource.KIND_CHOICES
                          if c[0] in KnowledgeSource.MANUAL_KINDS],
@@ -470,6 +477,9 @@ def _knowledge_context(request, client, **extra):
         'any_in_progress': any(s.in_progress for s in sources),
         'upload_max_mb': ingest.upload_max_bytes() // (1024 * 1024),
         'test_question': '', 'test_answer': None,
+        'can_publish': publishing.can_publish(request.user, client),
+        'review_message': publishing.REVIEW_MESSAGE,
+        'sizes': publishing.size_report(client),
     }
     context.update(extra)
     return context
@@ -570,11 +580,29 @@ def _knowledge_upload(request):
     return _knowledge_redirect(client)
 
 
+def _after_draft_saved(request, client, source):
+    """Starter / no plan: say who publishes, and tell DOMINIO (once a day)."""
+    if not publishing.can_publish(request.user, client):
+        messages.info(request, publishing.REVIEW_MESSAGE)
+        publishing.request_review(source, request)
+
+
+def _process_as_draft(source):
+    """Fetch/extract into fragments without ever going live (Phase 6)."""
+    return knowledge.process_source(source, success_status='draft')
+
+
 @login_required
 @require_POST
+# Saving a URL source fetches it inside the request: cap how often.
+@_rate_limited('ksave', limit=10, window=300, html='knowledge')
 def knowledge_save(request):
     """Create or update a source; it lands as DRAFT (or error) — activation is a
-    separate, deliberate step after testing (RF-21)."""
+    separate, deliberate step after testing (RF-21).
+
+    Phase 6: editing an ACTIVE source never touches it. The edit goes into a
+    draft copy (replaces=<active>, reused if one is already open) and the live
+    version keeps answering until that draft is activated."""
     client = _knowledge_client(request)
     if client is None:
         messages.error(request, 'Solo un administrador puede gestionar el conocimiento.')
@@ -585,26 +613,47 @@ def knowledge_save(request):
     if source.pk and source.in_progress:
         messages.error(request, 'Esa fuente se está procesando; espera a que termine.')
         return _knowledge_redirect(client)
-    kind = request.POST.get('kind', 'text')
-    # site/file only come from the ingest pipeline, never from this form.
-    source.kind = kind if kind in KnowledgeSource.MANUAL_KINDS else 'text'
+    live = source if source.pk and source.status == 'active' else None
+    if live is not None:
+        source = publishing.open_draft_for(live)
+    if source.kind not in KnowledgeSource.INGEST_KINDS:
+        kind = request.POST.get('kind', 'text')
+        # site/file only come from the ingest pipeline, never from this form.
+        source.kind = kind if kind in KnowledgeSource.MANUAL_KINDS else 'text'
+        source.origin = (request.POST.get('origin') or '').strip()[:500]
+    # (an edited scan/upload keeps its kind and origin: only its text changes)
     source.title = (request.POST.get('title') or '').strip()[:160] or 'Sin título'
-    source.origin = (request.POST.get('origin') or '').strip()[:500]
     source.content = (request.POST.get('content') or '').strip()[:60000]
     source.status = 'draft'
     source.save()
     # Process now: extract/fetch → fragments; failures land visibly in 'error'.
-    knowledge.process_source(source)
+    _process_as_draft(source)
     if source.status == 'error':
         messages.error(request, f'La fuente quedó en error: {source.error}')
     else:
-        # Processing succeeded but activation is explicit — back to draft.
-        KnowledgeSource.objects.filter(pk=source.pk).update(status='draft')
-        messages.success(
-            request, 'Fuente procesada y en borrador. Pruébala y luego actívala.')
+        if live is not None:
+            messages.success(
+                request, f'Tus cambios quedaron en un borrador. La versión activa de '
+                         f'"{live.title}" sigue publicada hasta que actives el borrador.')
+        else:
+            messages.success(
+                request, 'Fuente procesada y en borrador. Pruébala y luego actívala.')
+        _after_draft_saved(request, client, source)
     _audit(request, 'knowledge.save', client=client, target=source.title,
-           result=source.status)
+           result=source.status + (f' (nueva versión de #{live.pk})' if live else ''))
     return redirect(reverse('knowledge') + f'?client={client.slug}')
+
+
+def _publish_denied(request, client, source, action):
+    """Server-side plan gate: 403 with the page and the reason."""
+    if action == 'activate' and source.status == 'draft':
+        publishing.request_review(source, request)
+    messages.error(request, 'Tu plan no incluye publicar cambios desde tu cuenta. '
+                   + publishing.REVIEW_MESSAGE)
+    _audit(request, f'knowledge.{action}', client=client, target=source.title,
+           result='denegado: plan')
+    return render(request, 'landing/dashboard_knowledge.html',
+                  _knowledge_context(request, client), status=403)
 
 
 @login_required
@@ -616,13 +665,30 @@ def knowledge_action(request, pk):
         return redirect('dashboard')
     source = get_object_or_404(client.knowledge_sources, pk=pk)
     action = request.POST.get('action', '')
-    if action == 'activate' and source.status == 'draft' and source.compiled_text():
-        KnowledgeSource.objects.filter(pk=source.pk).update(status='active', error='')
-        messages.success(request, f'"{source.title}" está activa — el agente ya la usa.')
+    # Phase 6: anything that changes what the live agent says is publishing.
+    publishes = action in ('activate', 'restore') or (
+        action == 'archive' and source.status == 'active')
+    if publishes and not publishing.can_publish(request.user, client):
+        return _publish_denied(request, client, source, action)
+    result = 'ok'
+    if action in ('activate', 'restore'):
+        override = request.user.is_staff and request.POST.get('override_caps') == '1'
+        try:
+            retired = publishing.publish(source, restoring=(action == 'restore'),
+                                         override_caps=override)
+        except publishing.PublishError as exc:
+            messages.error(request, str(exc))
+            result = f'rechazada: {exc}'
+        else:
+            verb = 'restaurada' if action == 'restore' else 'activa'
+            note = ' La versión anterior quedó archivada.' if retired else ''
+            messages.success(request, f'"{source.title}" está {verb} — el agente ya la usa.{note}')
+            result = 'activa' + (' (límites ignorados por staff)' if override else '') + (
+                f'; archivadas: {", ".join(retired)}' if retired else '')
     elif action == 'archive' and source.in_progress:
         messages.error(request, 'Esa fuente se está procesando. Espera a que termine o cancélalo.')
     elif action == 'archive':
-        archive = {'status': 'archived'}
+        archive = {'status': 'archived', 'updated_at': timezone.now()}
         if source.kind == 'file':
             archive['content'] = ''  # the uploaded text is not kept once retired
         # Conditional update: the cron may have claimed it since we loaded it.
@@ -634,16 +700,25 @@ def knowledge_action(request, pk):
     elif action == 'reprocess' and source.kind in KnowledgeSource.INGEST_KINDS:
         return _retry_ingest(request, client, source)
     elif action == 'reprocess' and not source.in_progress:
-        knowledge.process_source(source)
-        if source.status != 'error':
-            KnowledgeSource.objects.filter(pk=source.pk).update(status='draft')
-        messages.success(request, f'"{source.title}" reprocesada ({source.status}).')
+        # Re-fetching a LIVE source writes into its draft copy, like an edit.
+        target = source
+        if source.status == 'active':
+            target = publishing.open_draft_for(source)
+            if target.pk is None:
+                target.status = 'draft'
+                target.save()
+        _process_as_draft(target)
+        messages.success(request, f'"{target.title}" reprocesada ({target.get_status_display()}).'
+                         + (' La versión activa sigue publicada.' if target is not source else ''))
+        if target.status == 'draft':
+            _after_draft_saved(request, client, target)
     elif action == 'delete' and source.status in ('pending', 'draft', 'error', 'archived'):
-        source.delete()
+        publishing.delete_source(source)
         messages.success(request, 'Fuente eliminada.')
     else:
         messages.error(request, 'Acción no permitida para el estado de esta fuente.')
-    _audit(request, f'knowledge.{action}', client=client, target=source.title)
+        result = 'no permitida'
+    _audit(request, f'knowledge.{action}', client=client, target=source.title, result=result)
     return redirect(reverse('knowledge') + f'?client={client.slug}')
 
 

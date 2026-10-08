@@ -33,7 +33,9 @@ from django.urls import reverse
 from django.utils import timezone
 
 from . import extract_worker, ingest, knowledge
-from .models import Client, KnowledgeFragment, KnowledgeSource, Membership, UsageEvent
+from .models import (
+    Client, KnowledgeFragment, KnowledgeSource, Membership, Subscription, UsageEvent,
+)
 
 # ------------------------------------------------------------------
 # Fake network
@@ -814,6 +816,8 @@ class IngestViewTests(TestCase):
         self.assertEqual((src.status, src.attempts), ('pending', 0))
 
     def test_draft_site_cannot_be_reprocessed_and_activates_normally(self):
+        # Phase 6: self-publishing is a Pro+ feature (Starter: DOMINIO publishes).
+        Subscription.objects.create(client=self.acme, plan='pro', status='active')
         src = KnowledgeSource.objects.create(client=self.acme, kind='site', status='draft',
                                              origin='https://acme.com/', title='Sitio web: acme.com',
                                              content='Horarios:\n- Lunes 9-5')
@@ -1228,3 +1232,49 @@ class IngestHardeningTests(TestCase):
         self.action(ok, 'reprocess')
         ok.refresh_from_db()
         self.assertEqual(ok.status, 'pending')
+
+
+class HeaderDripWatchdogTests(TestCase):
+    """A server dripping the status/header lines (each recv inside the socket
+    timeout) must still be cut at the TOTAL deadline."""
+
+    def test_header_drip_is_cut_at_deadline(self):
+        import socket as _socket
+        import threading as _threading
+        import time as _time
+        from unittest.mock import patch as _patch
+        from . import knowledge as kn
+
+        srv = _socket.socket()
+        srv.bind(('127.0.0.1', 0))
+        srv.listen(1)
+        port = srv.getsockname()[1]
+        stop = _threading.Event()
+
+        def drip():
+            conn, _ = srv.accept()
+            try:
+                conn.recv(4096)
+                conn.sendall(b'HTTP/1.1 200 OK\r\n')
+                while not stop.is_set():
+                    conn.sendall(b'X')  # a header that never ends
+                    _time.sleep(0.2)
+            except OSError:
+                pass
+            finally:
+                conn.close()
+
+        t = _threading.Thread(target=drip, daemon=True)
+        t.start()
+        try:
+            with _patch.object(kn, 'validate_public_url', lambda url: None), \
+                    _patch.object(kn, '_assert_public_ip', lambda ip: None), \
+                    _patch.object(kn, 'FETCH_DEADLINE', 1.5), \
+                    _patch.object(kn, 'TIMEOUT', 1.0):
+                started = _time.monotonic()
+                with self.assertRaisesMessage(ValueError, 'tardó demasiado'):
+                    kn.fetch_resource(f'http://127.0.0.1:{port}/')
+                self.assertLess(_time.monotonic() - started, 4.0)
+        finally:
+            stop.set()
+            srv.close()

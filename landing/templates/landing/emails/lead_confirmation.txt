@@ -1,4 +1,4 @@
-Gracias, {{ submission.name }}.
+Gracias, {{ submission.name|truncatechars:40 }}.
 
 Recibimos tu solicitud y nuestro equipo ya la está revisando.
 {% if confirm_url %}

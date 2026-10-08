@@ -17,6 +17,7 @@ import ipaddress
 import logging
 import re
 import socket
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -100,6 +101,11 @@ def _assert_public_ip(value):
         raise ValueError('Esa dirección no es pública.')
 
 
+# Sockets opened by the fetch running on this thread, so its watchdog can cut
+# them when the TOTAL deadline passes (see fetch_resource).
+_ACTIVE = threading.local()
+
+
 def _guarded_create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT,
                                source_address=None, *args, **kwargs):
     """Check the address we ACTUALLY connected to. _assert_public_host runs on
@@ -111,7 +117,20 @@ def _guarded_create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT,
     except ValueError:
         sock.close()
         raise
+    tracked = getattr(_ACTIVE, 'socks', None)
+    if tracked is not None:
+        tracked.append(sock)
     return sock
+
+
+def _cut(socks, flag):
+    """Watchdog: shut the fetch's sockets down so a blocked recv returns now."""
+    flag.append(True)
+    for sock in list(socks):
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
 
 
 class _GuardedHTTPConnection(http.client.HTTPConnection):
@@ -214,6 +233,15 @@ def fetch_resource(url, allowed_types=PAGE_TYPES, max_bytes=MAX_FETCH_BYTES, dea
         raise ValueError('La página tardó demasiado.')
     ends_at = time.monotonic() + allowed
     req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
+    # The read loop checks the clock only for the BODY: connect, TLS and the
+    # status/header lines are read by http.client with just a per-recv timeout,
+    # so a server dripping header bytes could hold this thread indefinitely.
+    # A watchdog shuts the socket at the deadline, whatever phase we're in.
+    socks, timed_out = [], []
+    _ACTIVE.socks = socks
+    watchdog = threading.Timer(allowed, _cut, args=(socks, timed_out))
+    watchdog.daemon = True
+    watchdog.start()
     try:
         with _opener().open(req, timeout=max(1.0, min(TIMEOUT, allowed))) as resp:
             ctype = resp.headers.get('Content-Type', '') or ''
@@ -223,10 +251,15 @@ def fetch_resource(url, allowed_types=PAGE_TYPES, max_bytes=MAX_FETCH_BYTES, dea
     except ValueError:
         raise
     except Exception as e:
+        if timed_out:
+            raise ValueError('La página tardó demasiado.')
         # A 404 is routine for the crawler (robots.txt, sitemap.xml).
         log = logger.info if isinstance(e, urllib.error.HTTPError) else logger.warning
         log('knowledge fetch failed for %s: %s', url, e)
         raise ValueError('No se pudo acceder a la URL.')
+    finally:
+        watchdog.cancel()
+        _ACTIVE.socks = None
     if len(raw) > max_bytes:
         raise ValueError(f'La página es demasiado grande (máx. {max_bytes // 1024} KB).')
     return ctype, raw
@@ -270,9 +303,11 @@ def chunk_text(text, size=FRAGMENT_CHARS):
     return [text[i:i + size] for i in range(0, len(text), size)]
 
 
-def process_source(source):
-    """Validate + extract a source into fragments. Sets status to 'active' on
-    success or 'error' (with the message) on failure. Returns the source."""
+def process_source(source, success_status='active'):
+    """Validate + extract a source into fragments. Sets status to
+    `success_status` on success or 'error' (with the message) on failure.
+    The dashboard passes 'draft' so a source never goes live, even for an
+    instant, before it is deliberately activated. Returns the source."""
     try:
         if source.kind == 'url':
             text = fetch_url_text((source.origin or '').strip())
@@ -285,7 +320,7 @@ def process_source(source):
             KnowledgeFragment(source=source, content=chunk, position=i)
             for i, chunk in enumerate(chunk_text(text))
         ])
-        source.status = 'active'
+        source.status = success_status
         source.error = ''
     except ValueError as e:
         source.status = 'error'

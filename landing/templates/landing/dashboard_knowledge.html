@@ -16,7 +16,18 @@
 
 <div class="dash-card">
     <h2>Fuentes</h2>
-    <p class="dash-muted">Solo las fuentes <b>activas</b> participan en las respuestas del agente. Una fuente nueva queda en borrador: pruébala abajo y actívala cuando la respuesta sea correcta.</p>
+    <p class="dash-muted">Solo las fuentes <b>activas</b> participan en las respuestas del agente. Una fuente nueva queda en borrador: pruébala abajo y actívala cuando la respuesta sea correcta. Editar una fuente activa crea un borrador con tus cambios; la versión activa sigue respondiendo hasta que actives el borrador.</p>
+    {% if not can_publish %}
+    <p class="kn-plan-note" style="border:1px solid #c9d6ee;background:#f2f6fd;border-radius:8px;padding:8px 10px;font-size:14px">{{ review_message }}</p>
+    {% endif %}
+    {% if sizes.over_total or sizes.over_sources %}
+    <div class="kn-size-warning" style="border:1px solid #e0b84c;background:#fff8e6;border-radius:8px;padding:8px 10px;margin:0 0 8px;font-size:13px">
+        <b>Conocimiento activo por encima del límite recomendado.</b> Sigue funcionando, pero respuestas más precisas salen de fuentes cortas.
+        {% if sizes.over_total %}<div>Total activo: {{ sizes.total_chars }} caracteres (máximo {{ sizes.max_total }}).</div>{% endif %}
+        {% for o in sizes.over_sources %}<div>"{{ o.title }}" supera {{ sizes.max_source }} caracteres por fuente.</div>{% endfor %}
+        <div>Para publicar algo nuevo tendrás que estar dentro del límite.</div>
+    </div>
+    {% endif %}
     <table class="dash-table">
         <thead><tr><th>Título</th><th>Tipo</th><th>Estado</th><th>Actualizada</th><th>Acciones</th></tr></thead>
         <tbody>
@@ -24,6 +35,8 @@
             <tr>
                 <td><b>{{ s.title }}</b>
                     {% if s.origin %}<div class="dash-sub">{{ s.origin|truncatechars:60 }}</div>{% endif %}
+                    {% if s.replaces and s.status != 'active' %}<div class="dash-sub kn-replaces">Nueva versión de "{{ s.replaces.title }}"{% if s.replaces.status == 'active' %} (la activa sigue publicada hasta que actives este borrador){% endif %}</div>{% endif %}
+                    {% if s.has_open_draft %}<div class="dash-sub kn-open-draft">Hay cambios en borrador para esta fuente (abajo).</div>{% endif %}
                     {% if s.error %}<div class="dash-sub" style="color:#a12626">{{ s.error }}</div>{% endif %}
                     {% if s.in_progress %}<div class="dash-sub">{{ s.progress|default:"En cola…" }} Se procesa en segundo plano, recarga en unos minutos.</div>{% endif %}
                     {% if s.kind == 'site' and s.pages_scanned and not s.in_progress %}<div class="dash-sub">{{ s.pages_scanned }} página{{ s.pages_scanned|pluralize }} leída{{ s.pages_scanned|pluralize }}</div>{% endif %}
@@ -46,14 +59,43 @@
                     <details style="margin-top:4px"><summary class="dash-sub" style="cursor:pointer">Ver lo que aprendió el agente</summary>
                         <pre style="white-space:pre-wrap;font:inherit;font-size:13px;margin:6px 0 0;max-height:320px;overflow:auto">{{ s.compiled_text }}</pre>
                     </details>
-                    {% endif %}{% endif %}</td>
+                    {% endif %}{% endif %}
+                    {% if s.kind == 'text' or s.kind == 'faq' or s.kind == 'url' %}{% if s.status == 'draft' or s.status == 'error' or s.status == 'active' and not s.has_open_draft %}
+                    <details class="kn-edit" style="margin-top:4px"><summary class="dash-sub" style="cursor:pointer">Editar{% if s.status == 'active' %} (crea un borrador){% endif %}</summary>
+                        <form method="post" action="{% url 'knowledge_save' %}" style="margin-top:6px">
+                            {% csrf_token %}
+                            <input type="hidden" name="client" value="{{ client_obj.slug }}">
+                            <input type="hidden" name="pk" value="{{ s.pk }}">
+                            <input type="hidden" name="kind" value="{{ s.kind }}">
+                            <input type="text" name="title" value="{{ s.title }}" maxlength="160" required aria-label="Título" style="width:100%;margin-bottom:6px;padding:6px 8px;border:1px solid #ccd;border-radius:8px;font:inherit">
+                            {% if s.kind == 'url' %}<input type="url" name="origin" value="{{ s.origin }}" maxlength="500" aria-label="URL" style="width:100%;margin-bottom:6px;padding:6px 8px;border:1px solid #ccd;border-radius:8px;font:inherit">
+                            {% else %}<textarea name="content" rows="5" aria-label="Contenido" style="width:100%;padding:6px 8px;border:1px solid #ccd;border-radius:8px;font:inherit">{{ s.content }}</textarea>{% endif %}
+                            <button type="submit" class="save-btn save-btn--sm">Guardar cambios en borrador</button>
+                        </form>
+                    </details>
+                    {% endif %}{% endif %}
+                    {% if s.history %}
+                    <details class="kn-history" style="margin-top:4px"><summary class="dash-sub" style="cursor:pointer">Versiones anteriores ({{ s.history|length }})</summary>
+                        <ul style="margin:6px 0 0;padding-left:18px;font-size:13px">
+                            {% for h in s.history %}
+                            <li>{{ h.title }} <span class="dash-sub">· versión del {{ h.created_at|date:"M d, Y g:i A" }} · archivada {{ h.updated_at|date:"M d, Y" }}</span>
+                                {% if can_publish %}{% if h.content or h.kind != 'file' %}
+                                <form method="post" action="{% url 'knowledge_action' h.pk %}" style="display:inline">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="restore">{% if user.is_staff %}<label class="dash-sub"><input type="checkbox" name="override_caps" value="1"> ignorar límites</label> {% endif %}<button class="save-btn save-btn--sm">Restaurar</button></form>
+                                {% endif %}{% endif %}
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </details>
+                    {% endif %}</td>
                 <td>{{ s.get_kind_display }}</td>
                 <td><span class="dash-pill dash-pill--{{ s.status }}">{{ s.get_status_display }}</span></td>
                 <td class="dash-sub">{{ s.updated_at|date:"M d, g:i A" }}</td>
                 <td>
                     <div class="dash-actions-row" style="margin:0">
-                        {% if s.status == 'draft' %}
-                        <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="activate"><button class="save-btn save-btn--sm">Activar</button></form>
+                        {% if s.status == 'draft' and can_publish %}
+                        <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="activate">{% if user.is_staff %}<label class="dash-sub"><input type="checkbox" name="override_caps" value="1"> ignorar límites</label> {% endif %}<button class="save-btn save-btn--sm">Activar</button></form>
+                        {% elif s.status == 'draft' %}
+                        <span class="dash-sub">DOMINIO lo publica</span>
                         {% endif %}
                         {% if s.kind == 'url' %}
                         <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="reprocess"><button class="save-btn save-btn--sm">Reprocesar</button></form>
@@ -61,9 +103,9 @@
                         <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="reprocess"><button class="save-btn save-btn--sm">Reintentar</button></form>
                         {% endif %}
                         {% if s.status == 'processing' %}
-                        {% elif s.status == 'active' %}
+                        {% elif s.status == 'active' %}{% if can_publish %}
                         <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="archive"><button class="save-btn save-btn--sm">Archivar</button></form>
-                        {% else %}
+                        {% endif %}{% else %}
                         <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="delete"><button class="save-btn save-btn--sm">Borrar</button></form>
                         {% endif %}
                     </div>
@@ -125,7 +167,7 @@
         <select name="draft">
             <option value="">Solo fuentes activas</option>
             {% for s in sources %}{% if s.status == 'draft' %}
-            <option value="{{ s.pk }}" {% if tested_draft == s.pk|stringformat:'s' %}selected{% endif %}>+ borrador: {{ s.title }}</option>
+            <option value="{{ s.pk }}" {% if tested_draft == s.pk|stringformat:'s' %}selected{% endif %}>{% if s.replaces %}Borrador en lugar de la versión activa: {{ s.title }}{% else %}+ borrador: {{ s.title }}{% endif %}</option>
             {% endif %}{% endfor %}
         </select>
         <button type="submit" class="save-btn save-btn--sm">Probar</button>
@@ -143,8 +185,13 @@
     <h2>Archivadas</h2>
     <table class="dash-table"><tbody>
         {% for s in archived %}
-        <tr><td>{{ s.title }}</td><td class="dash-sub">{{ s.updated_at|date:"M d, Y" }}</td>
-            <td><form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="delete"><button class="save-btn save-btn--sm">Borrar</button></form></td></tr>
+        <tr><td>{{ s.title }}</td><td class="dash-sub">versión del {{ s.created_at|date:"M d, Y" }} · archivada {{ s.updated_at|date:"M d, Y" }}</td>
+            <td><div class="dash-actions-row" style="margin:0">
+                {% if can_publish %}{% if s.content or s.kind != 'file' %}
+                <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="restore">{% if user.is_staff %}<label class="dash-sub"><input type="checkbox" name="override_caps" value="1"> ignorar límites</label> {% endif %}<button class="save-btn save-btn--sm">Restaurar</button></form>
+                {% endif %}{% endif %}
+                <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="delete"><button class="save-btn save-btn--sm">Borrar</button></form>
+            </div></td></tr>
         {% endfor %}
     </tbody></table>
 </div>

@@ -139,9 +139,18 @@ class Client(models.Model):
         console preview one draft source before activating it."""
         parts = [self.system_prompt.strip()] if self.system_prompt.strip() else []
         sources = self.knowledge_sources.filter(status='active')
-        if include_draft_pk:
+        try:
+            draft_pk = int(include_draft_pk) if include_draft_pk else None
+        except (TypeError, ValueError):
+            draft_pk = None
+        draft = (self.knowledge_sources.filter(pk=draft_pk, status='draft').first()
+                 if draft_pk else None)
+        if draft is not None:
+            # Phase 6: the draft is a new version of something live — preview it
+            # INSTEAD of the version it would replace, never next to it.
+            hidden = draft.lineage_ids() - {draft.pk}
             sources = self.knowledge_sources.filter(
-                models.Q(status='active') | models.Q(pk=include_draft_pk, status='draft'))
+                (models.Q(status='active') & ~models.Q(pk__in=hidden)) | models.Q(pk=draft.pk))
         for src in sources.order_by('position', 'pk'):
             text = src.compiled_text()
             if text:
@@ -514,6 +523,12 @@ class KnowledgeSource(models.Model):
     # URLs found, off-domain links removed) for the tenant to confirm before
     # activating. Empty = nothing to review. Read it through .review.
     review_notes = models.TextField(blank=True, default='')
+    # Phase 6 versioning: the source this one is a new version of. Editing an
+    # active source creates a draft with replaces=<active>; activating it
+    # archives the old one. Sources linked through `replaces` (either way) form
+    # a lineage, and at most one source per lineage is active.
+    replaces = models.ForeignKey(
+        'self', null=True, blank=True, on_delete=models.SET_NULL, related_name='revisions')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -555,6 +570,25 @@ class KnowledgeSource(models.Model):
         """Fragments if the processor produced them, else the raw content."""
         frags = list(self.fragments.order_by('position').values_list('content', flat=True))
         return '\n'.join(frags).strip() if frags else self.content.strip()
+
+    def lineage_ids(self):
+        """pks of every source of this client connected to this one through
+        `replaces`, in either direction (this one included). One query: a
+        tenant has tens of sources, so the walk happens in memory."""
+        edges = KnowledgeSource.objects.filter(
+            client_id=self.client_id, replaces__isnull=False,
+        ).values_list('pk', 'replaces_id')
+        neighbours = {}
+        for pk, parent in edges:
+            neighbours.setdefault(pk, set()).add(parent)
+            neighbours.setdefault(parent, set()).add(pk)
+        seen, stack = {self.pk}, [self.pk]
+        while stack:
+            for other in neighbours.get(stack.pop(), ()):
+                if other not in seen:
+                    seen.add(other)
+                    stack.append(other)
+        return seen
 
 
 class KnowledgeFragment(models.Model):

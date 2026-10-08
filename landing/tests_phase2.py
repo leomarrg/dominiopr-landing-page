@@ -514,6 +514,8 @@ class KnowledgeTests(TestCase):
         self.assertIn('Base manual.', self.client_obj.compiled_prompt())
 
     def test_org_admin_can_save_and_activate_source(self):
+        # Phase 6: self-publishing is a Pro+ feature (Starter: DOMINIO publishes).
+        Subscription.objects.create(client=self.client_obj, plan='pro', status='active')
         self.http.login(username='admin@acme.com', password='pw12345!')
         resp = self.http.post(reverse('knowledge_save'), {
             'client': 'acme', 'kind': 'text', 'title': 'Horario',

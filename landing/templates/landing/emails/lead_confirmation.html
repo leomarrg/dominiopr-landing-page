@@ -1,7 +1,7 @@
 {% extends "landing/emails/_base.html" %}
 
 {% block content %}
-<h1 style="margin:0 0 18px; color:#ffffff; font-size:22px; font-weight:700;">Gracias, {{ submission.name }}.</h1>
+<h1 style="margin:0 0 18px; color:#ffffff; font-size:22px; font-weight:700;">Gracias, {{ submission.name|truncatechars:40 }}.</h1>
 
 <p style="margin:0 0 18px;">
   Recibimos tu solicitud y nuestro equipo ya la está revisando. Agradecemos

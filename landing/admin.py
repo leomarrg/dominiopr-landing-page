@@ -86,6 +86,7 @@ class KnowledgeSourceAdmin(admin.ModelAdmin):
     list_display = ('client', 'title', 'kind', 'status', 'review_by', 'updated_at')
     list_filter = ('status', 'kind', 'client')
     search_fields = ('title', 'origin', 'content')
+    raw_id_fields = ('replaces',)  # a select would list every tenant's sources
 
 
 @admin.register(AuditEvent)
