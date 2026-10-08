@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Verificación de seguridad</title>
+    <style>
+        html, body { margin: 0; padding: 0; background: #fff; color: #1b2733;
+                     font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+        main { box-sizing: border-box; max-width: 380px; margin: 0 auto; padding: 22px 16px 28px;
+               text-align: center; }
+        h1 { font-size: 18px; margin: 4px 0 8px; }
+        p { font-size: 14px; line-height: 1.5; margin: 0 0 16px; color: #4a5866; }
+        .err { color: #b3261e; font-weight: 600; }
+        .h-captcha { display: inline-block; min-height: 78px; }
+        button { margin-top: 14px; padding: 11px 20px; border: 0; border-radius: 999px;
+                 background: #1b2733; color: #fff; font: inherit; font-size: 14px; cursor: pointer;
+                 min-height: 44px; }
+        button:focus-visible { outline: 3px solid #34d6c8; outline-offset: 2px; }
+    </style>
+</head>
+<body>
+<main>
+{% if pass_data %}
+    <h1>Listo</h1>
+    <p>Gracias. Ya puedes seguir conversando.</p>
+    {{ pass_data|json_script:"dmn-pass" }}
+    {{ origin|json_script:"dmn-origin" }}
+    <script nonce="{{ nonce }}">
+    (function () {
+        var data = JSON.parse(document.getElementById('dmn-pass').textContent);
+        var target = JSON.parse(document.getElementById('dmn-origin').textContent);
+        // Exact origin validated by the server, never a wildcard: only the
+        // page that opened this challenge (and is allowed for this agent)
+        // receives the pass.
+        if (window.parent && window.parent !== window) window.parent.postMessage(data, target);
+    })();
+    </script>
+{% else %}
+    <h1>Verifica que eres humano</h1>
+    <p>Es un paso rápido para proteger este chat del abuso automatizado.</p>
+    {% if error %}<p class="err" role="alert">{{ error }}</p>{% endif %}
+    <form method="post" id="dmn-hv-form">
+        <input type="hidden" name="key" value="{{ key }}">
+        <input type="hidden" name="visitor" value="{{ visitor }}">
+        <input type="hidden" name="origin" value="{{ origin }}">
+        <div class="h-captcha" data-sitekey="{{ HCAPTCHA_SITEKEY }}" data-callback="dmnHumanSolved"></div>
+        <div><button type="submit">Continuar</button></div>
+    </form>
+    <script nonce="{{ nonce }}">
+    window.dmnHumanSolved = function () { document.getElementById('dmn-hv-form').submit(); };
+    </script>
+    <script src="https://js.hcaptcha.com/1/api.js?hl=es" async defer></script>
+{% endif %}
+</main>
+</body>
+</html>

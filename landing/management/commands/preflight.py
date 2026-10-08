@@ -118,6 +118,19 @@ class Command(BaseCommand):
         else:
             self._line(OK, 'SECURE_HSTS_SECONDS', f'{hsts}s')
 
+        # Phase 5: without both keys the human check is silently OFF.
+        sitekey = getattr(settings, 'HCAPTCHA_SITEKEY', '')
+        secret = getattr(settings, 'HCAPTCHA_SECRET', '')
+        if sitekey and secret:
+            if sitekey == '10000000-ffff-ffff-ffff-000000000001' and not settings.DEBUG:
+                self._line(WARN, 'HCAPTCHA', 'test keys — every token passes, no real protection')
+            else:
+                self._line(OK, 'HCAPTCHA', 'human check on (chat, demo, forms, logins)')
+        elif not settings.DEBUG:
+            missing = [n for n, v in (('HCAPTCHA_SITEKEY', sitekey), ('HCAPTCHA_SECRET', secret)) if not v]
+            self._line(WARN, 'HCAPTCHA', f'{", ".join(missing)} missing — human check is OFF '
+                                         '(chat and forms open to bots, only rate limits apply)')
+
     # ---- Stripe ---------------------------------------------------------
 
     def check_stripe(self):

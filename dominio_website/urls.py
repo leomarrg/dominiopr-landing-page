@@ -22,10 +22,15 @@ from django.contrib.sitemaps.views import sitemap
 from django.views.generic import RedirectView
 
 from landing import control_views, platform_views, seo, views
+from landing.forms import (
+    HumanAdminAuthenticationForm, HumanAuthenticationForm, HumanPasswordResetForm,
+)
 
 # Throttle login attempts (brute-force protection): 10 / 5 min / IP.
+# Phase 5: the forms also require hCaptcha, but only when its keys are set.
 login_view = views._rate_limited('login', limit=10, window=300)(
-    auth_views.LoginView.as_view(template_name='landing/dashboard_login.html')
+    auth_views.LoginView.as_view(template_name='landing/dashboard_login.html',
+                                 authentication_form=HumanAuthenticationForm)
 )
 
 # "Forgot password" for dashboard users (clients + staff). The request form is
@@ -33,6 +38,7 @@ login_view = views._rate_limited('login', limit=10, window=300)(
 password_reset_view = views._rate_limited('pwreset', limit=5, window=900)(
     auth_views.PasswordResetView.as_view(
         template_name='landing/dashboard_password_reset.html',
+        form_class=HumanPasswordResetForm,
         email_template_name='landing/emails/password_reset.txt',
         html_email_template_name='landing/emails/password_reset.html',
         subject_template_name='landing/emails/password_reset_subject.txt',
@@ -44,6 +50,11 @@ password_reset_view = views._rate_limited('pwreset', limit=5, window=900)(
 # there sees EVERY tenant's leads, transcripts and billing. Same protection,
 # tighter: an admin password is not something anyone types wrong five times.
 admin.site.login = views._rate_limited('adminlogin', limit=5, window=300)(admin.site.login)
+# Phase 5: hCaptcha on /admin/login/ (no-op while the keys are empty). The
+# template lives in landing/ because django.contrib.admin precedes landing in
+# INSTALLED_APPS, so an admin/login.html override there would never be found.
+admin.site.login_form = HumanAdminAuthenticationForm
+admin.site.login_template = 'landing/admin_login.html'
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -51,6 +62,8 @@ urlpatterns = [
     path('api/chat/', views.chat_api, name='chat_api'),
     path('api/demo/', views.demo_api, name='demo_api'),
     path('api/survey/', views.survey_api, name='survey_api'),
+    # Phase 5: hCaptcha challenge the chat widgets frame (404 while disabled).
+    path('verificar/', views.human_verify, name='human_verify'),
     path('api/stripe/webhook/', views.stripe_webhook, name='stripe_webhook'),
     path('widget.js', views.widget_js, name='widget_js'),
     path('get-started/', views.get_started, name='get_started'),

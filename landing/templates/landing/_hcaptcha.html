@@ -1,0 +1,6 @@
+{% comment %}Phase 5: hCaptcha checkbox for a classic form. Renders nothing while
+the keys are empty (HUMAN_CHECK_ENABLED comes from site_globals). Optional:
+`theme` ('dark' on dark backgrounds).{% endcomment %}{% if HUMAN_CHECK_ENABLED %}
+<div class="h-captcha" data-sitekey="{{ HCAPTCHA_SITEKEY }}"{% if theme %} data-theme="{{ theme }}"{% endif %}></div>
+<script src="https://js.hcaptcha.com/1/api.js?hl=es" async defer></script>
+{% endif %}

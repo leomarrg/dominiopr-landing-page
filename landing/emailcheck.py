@@ -33,7 +33,7 @@ import urllib.request
 from pathlib import Path
 
 from django.conf import settings
-from django.core.cache import cache
+from django.core.cache import caches
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 
@@ -186,6 +186,7 @@ def domain_status(domain):
         logger.warning('Email DNS check skipped: cannot IDNA-encode a domain')
         return ''
     key = _cache_key(ascii_domain)
+    cache = caches['emaildns']
     cached = cache.get(key)
     if cached is not None:
         return cached

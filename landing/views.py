@@ -32,10 +32,11 @@ from django.utils.encoding import force_bytes
 from django.utils.http import url_has_allowed_host_and_scheme, urlsafe_base64_encode
 
 from landing.tokens import welcome_token
+from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from . import agent, notify, payments
+from . import agent, human, notify, payments
 from . import usage as usage_ledger
 from .emailcheck import check_email
 from .forms import ContactForm
@@ -524,6 +525,7 @@ def get_lead_or_404(user, pk):
 def index(request):
     if request.method == 'POST':
         form = ContactForm(request.POST)
+        form.human_ip = _client_ip(request)
         if form.is_valid():
             submission = form.save(commit=False)
             submission.client = Client.objects.filter(slug='dominio').first()
@@ -876,6 +878,15 @@ def chat_api(request):
                           and (o.hostname or '').lower() not in allowed)):
             return JsonResponse({'error': 'Este dominio no está permitido.'}, status=403)
 
+    # Phase 5: a solved hCaptcha (the signed "human pass", bound to this slug
+    # and the widget's visitor id) BEFORE any counter below moves, so a bot
+    # never consumes a tenant's daily quota. Read from the JSON body, not a
+    # header: the CORS preflight only allows Content-Type.
+    if human.enabled() and not human.check_pass(
+            payload.get('human'), client_obj.slug if client_obj else 'dominio',
+            payload.get('visitor')):
+        return human.challenge_response()
+
     raw = payload.get('messages')
     if not isinstance(raw, list) or not raw:
         return JsonResponse({'error': 'No se enviaron mensajes.'}, status=400)
@@ -1100,6 +1111,11 @@ def demo_api(request):
     if not history or history[-1]['role'] != 'user':
         return JsonResponse({'error': 'No hay pregunta que contestar.'}, status=400)
 
+    # Phase 5: human pass before the demo's caps move (see chat_api).
+    if human.enabled() and not human.check_pass(
+            payload.get('human'), human.DEMO_KEY, payload.get('visitor')):
+        return human.challenge_response()
+
     # The demo gets its OWN budget, separate from the tenants'. Sharing
     # 'chat:global:' meant an anonymous visitor hammering this public endpoint
     # could exhaust the ceiling and take every paying client's agent offline
@@ -1138,6 +1154,60 @@ def demo_api(request):
 
     usage_ledger.record('demo', usage)
     return JsonResponse({'reply': reply})
+
+
+@xframe_options_exempt
+@csrf_exempt
+@_rate_limited('humanverify', limit=20, window=600)
+def human_verify(request):
+    """Phase 5: the hCaptcha checkbox the chat widgets open in an iframe
+    (?key=<slug>&visitor=<id>&origin=<parent origin>).
+
+    Framed cross-site on purpose, so it opts out of X-Frame-Options and sends
+    its own CSP whose frame-ancestors lists only the origins allowed for that
+    key. csrf_exempt because inside a cross-site iframe the CSRF cookie is a
+    blocked third-party cookie; the hCaptcha token itself is the protection.
+    A solved checkbox posts a signed pass to the parent window — targeted at
+    the exact validated origin, never '*'.
+    """
+    if not human.enabled():
+        raise Http404
+    if request.method not in ('GET', 'POST'):
+        return HttpResponse(status=405)
+    src = request.POST if request.method == 'POST' else request.GET
+    key = (src.get('key') or 'dominio').strip()[:60] or 'dominio'
+    visitor = human.clean_visitor(src.get('visitor'))
+    origin = human.normalize_origin(src.get('origin'))
+
+    if key == human.DEMO_KEY:
+        client_obj = None
+    else:
+        client_obj = Client.objects.filter(slug=key, is_active=True).first()
+        if client_obj is None and key != 'dominio':
+            return HttpResponse('Agente desconocido.', status=404,
+                                content_type='text/plain; charset=utf-8')
+    if not visitor or not origin:
+        return HttpResponse('Solicitud inválida.', status=400,
+                            content_type='text/plain; charset=utf-8')
+    ancestors = human.frame_ancestors(key, client_obj, origin, request)
+    if ancestors is None:
+        return HttpResponse('Este dominio no está permitido.', status=403,
+                            content_type='text/plain; charset=utf-8')
+
+    nonce = secrets.token_urlsafe(16)
+    ctx = {'key': key, 'visitor': visitor, 'origin': origin, 'nonce': nonce,
+           'error': '', 'pass_data': None}
+    if request.method == 'POST':
+        if human.verify(request.POST.get('h-captcha-response'), _client_ip(request)):
+            ctx['pass_data'] = {'type': 'dominio-human-pass',
+                                'pass': human.issue_pass(key, visitor),
+                                'visitor': visitor}
+        else:
+            ctx['error'] = human.FORM_ERROR
+    resp = render(request, 'landing/human_verify.html', ctx)
+    resp['Content-Security-Policy'] = human.challenge_csp(ancestors, nonce)
+    resp['Cache-Control'] = 'no-store'
+    return resp
 
 
 @csrf_exempt
@@ -1595,6 +1665,12 @@ def get_started(request):
         details = (request.POST.get('message') or '').strip()[:3000]
 
         errors = {}
+        # Phase 5: first, so a bot never reaches the email DNS lookups below.
+        if human.enabled() and not human.verify(
+                request.POST.get('h-captcha-response'), _client_ip(request)):
+            return render(request, 'landing/get_started.html',
+                          {'plans': PLANS, 'form': request.POST,
+                           'errors': {'human': human.FORM_ERROR}})
         if not name:
             errors['name'] = 'Requerido.'
         if not company:
@@ -2641,6 +2717,9 @@ def widget_js(request):
         'border_soft': t['border_soft'],
         'border_bubble': t['border_bubble'],
         'api_url': request.build_absolute_uri(reverse('chat_api')),
+        # Phase 5: absolute, from the public domain (never the Host header):
+        # the iframe origin the widget trusts for the human pass.
+        'challenge_url': settings.SITE_URL.rstrip('/') + reverse('human_verify'),
         'clinic_mode': client_obj.clinic_mode,
     }
     resp = HttpResponse(render_to_string('landing/widget.js', ctx),

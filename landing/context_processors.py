@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.utils.functional import SimpleLazyObject
 
+from . import human
+
 
 def site_globals(request):
     """Expose a few settings to every template (e.g. the GA measurement id)."""
@@ -14,6 +16,9 @@ def site_globals(request):
         # is actually configured, or the page would promise a charge that
         # Checkout never makes.
         'TAX_ON_TOP': bool(getattr(settings, 'STRIPE_TAX_RATE_ID', '')),
+        # hCaptcha: templates render the checkbox only when both keys exist.
+        'HCAPTCHA_SITEKEY': getattr(settings, 'HCAPTCHA_SITEKEY', ''),
+        'HUMAN_CHECK_ENABLED': human.enabled(),
     }
 
 

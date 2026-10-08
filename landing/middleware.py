@@ -77,14 +77,21 @@ class ContentSecurityPolicyMiddleware:
                   'https://region1.google-analytics.com '
                   'https://stats.g.doubleclick.net')
 
+    # Phase 5: hCaptcha (checkbox script, its iframes, styles and API calls).
+    # Always allowed: harmless while the keys are empty, and it avoids a
+    # policy that changes shape with configuration. /verificar/ sends its own
+    # stricter policy (a view-set header wins over the setdefault below).
+    HCAPTCHA = 'https://hcaptcha.com https://*.hcaptcha.com'
+
     POLICY = (
         "default-src 'self'; "
-        f"script-src 'self' 'unsafe-inline' {GA_SCRIPT}; "
-        "style-src 'self' 'unsafe-inline'; "
+        f"script-src 'self' 'unsafe-inline' {GA_SCRIPT} {HCAPTCHA}; "
+        f"style-src 'self' 'unsafe-inline' {HCAPTCHA}; "
         "img-src 'self' data: https://www.google-analytics.com "
         "https://www.googletagmanager.com; "
         "font-src 'self'; "
-        f"connect-src 'self' {GA_CONNECT}; "
+        f"connect-src 'self' {GA_CONNECT} {HCAPTCHA}; "
+        f"frame-src 'self' {HCAPTCHA}; "
         "form-action 'self' https://checkout.stripe.com https://billing.stripe.com; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "

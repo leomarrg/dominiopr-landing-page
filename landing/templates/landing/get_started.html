@@ -111,7 +111,7 @@
             </div>
             <textarea id="demoContext" class="gs-demo__ctx" rows="4" aria-label="Describe tu negocio para el demo" placeholder="Ej. Somos Pizzería Napoli en San Juan. Pizzas al horno de leña, pastas y ensaladas. Abrimos de martes a domingo de 11am a 10pm. Delivery por nuestra página. Tomamos reservaciones para grupos de 6 o más."></textarea>
             <div class="gs-demo__log" id="demoLog"></div>
-            <form class="gs-demo__form" id="demoForm">
+            <form class="gs-demo__form" id="demoForm" data-challenge-url="{% url 'human_verify' %}">
                 <input type="text" id="demoInput" aria-label="Escribe tu pregunta para el demo" placeholder="Pregúntale algo a tu agente…" autocomplete="off" maxlength="2000">
                 <button type="submit" class="btn-primary">Enviar</button>
             </form>
@@ -199,6 +199,8 @@
                 </select>
                 {% if errors.plan %}<div class="err">{{ errors.plan }}</div>{% endif %}
                 <textarea name="message" aria-label="Qué hace tu negocio" rows="4" placeholder="¿Qué hace tu negocio y en qué quieres que ayude el agente?">{{ form.message|default:'' }}</textarea>
+                {% include 'landing/_hcaptcha.html' %}
+                {% if errors.human %}<div class="err" role="alert">{{ errors.human }}</div>{% endif %}
                 <button type="submit" class="btn-primary">Continuar al pago seguro</button>
                 <p class="gs-note">Cobro seguro por Stripe · cancela cuando quieras · si eliges Custom o prefieres hablar primero, te escribimos por email.</p>
             </form>
@@ -206,6 +208,7 @@
     </div>
 </div>
     </main>
+<script src="{% static 'landing/js/human-check.js' %}"></script>
 <script>
     // Insert thousands separators into any "$1234" pattern already rendered
     // server-side (select options, one-time setup lines).
@@ -270,6 +273,11 @@
         var btn = form ? form.querySelector('button') : null;
         if (!form) return;
         var history = [];
+        // Phase 5: hCaptcha human pass for the demo (human-check.js; the
+        // server only asks once hCaptcha is configured).
+        var humanCheck = (window.DominioHuman && form.getAttribute('data-challenge-url'))
+            ? window.DominioHuman.create({key: '_demo', challengeUrl: form.getAttribute('data-challenge-url')})
+            : null;
 
         // Escape HTML, then render the small markdown subset the model emits.
         function renderRich(text){
@@ -303,15 +311,33 @@
             bubble(msg, 'user');
             history.push({role:'user', content: msg});
             input.value = '';
+            post(context, false);
+        });
+
+        function post(context, retried){
             input.disabled = true; btn.disabled = true;
             var thinking = bubble('…', 'assistant');
+            var body = {context: context, messages: history};
+            if (humanCheck){ body.visitor = humanCheck.visitor; body.human = humanCheck.pass(); }
+            var challenged = false;
 
             fetch('/api/demo/', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({context: context, messages: history})
-            }).then(function(r){ return r.json().then(function(data){ return {ok: r.ok, data: data}; }); })
+                body: JSON.stringify(body)
+            }).then(function(r){ return r.json().then(function(data){ return {ok: r.ok, status: r.status, data: data}; }); })
             .then(function(res){
+                if (res.status === 403 && res.data && res.data.challenge && humanCheck && !retried){
+                    challenged = true;
+                    thinking.remove();
+                    humanCheck.challenge(function(){ post(context, true); }, function(){
+                        history.pop();
+                        var note = bubble('', 'err');
+                        note.textContent = 'Para seguir, confirma que eres humano.';
+                        input.focus();
+                    });
+                    return;
+                }
                 if (res.ok && res.data.reply){
                     thinking.innerHTML = renderRich(res.data.reply);
                     history.push({role:'assistant', content: res.data.reply});
@@ -325,9 +351,10 @@
                 thinking.textContent = 'Error de conexión. Intenta de nuevo.';
                 history.pop();
             }).finally(function(){
-                input.disabled = false; btn.disabled = false; input.focus();
+                input.disabled = false; btn.disabled = false;
+                if (!challenged) input.focus();
             });
-        });
+        }
     })();
 </script>
 </body>

@@ -35,6 +35,12 @@
     })();
     var surveyUrl = chatUrl.replace(/chat\/?$/, 'survey/');
 
+    // Phase 5: hCaptcha "human pass" (human-check.js). Absent helper = old
+    // behaviour; the server only asks for it when hCaptcha is configured.
+    var humanCheck = (window.DominioHuman && widget.getAttribute('data-challenge-url'))
+        ? window.DominioHuman.create({ key: 'dominio', challengeUrl: widget.getAttribute('data-challenge-url') })
+        : null;
+
     // A11y: keyboard users must not tab out of an open dialog (WCAG 2.1.1/2.4.3).
     // `role="log" aria-live="polite"` lives in the markup, not here.
     function trapFocus(e) {
@@ -196,8 +202,22 @@
         clearQuickReplies();
         addBubble('user', text);
         messages.push({ role: 'user', content: text });
+        post(false);
+    }
+
+    // The visitor closed the challenge: drop the unanswered turn so the next
+    // message does not arrive as two user turns in a row.
+    function challengeCancelled() {
+        if (messages.length && messages[messages.length - 1].role === 'user') messages.pop();
+        addBubble('assistant', 'Para seguir, confirma que eres humano. Escríbeme de nuevo cuando quieras.');
+        input.focus();
+    }
+
+    function post(retried) {
         setBusy(true);
         showTyping();
+        var body = { messages: messages, session: SESSION, page: location.href };
+        if (humanCheck) { body.visitor = humanCheck.visitor; body.human = humanCheck.pass(); }
 
         fetch(chatUrl, {
             method: 'POST',
@@ -205,15 +225,19 @@
                 'Content-Type': 'application/json',
                 'X-CSRFToken': csrfToken
             },
-            body: JSON.stringify({ messages: messages, session: SESSION, page: location.href })
+            body: JSON.stringify(body)
         })
             .then(function (res) {
                 return res.json().then(function (data) {
-                    return { ok: res.ok, data: data };
+                    return { ok: res.ok, status: res.status, data: data };
                 });
             })
             .then(function (r) {
                 hideTyping();
+                if (r.status === 403 && r.data && r.data.challenge && humanCheck && !retried) {
+                    humanCheck.challenge(function () { post(true); }, challengeCancelled);
+                    return;
+                }
                 if (r.ok && r.data.reply) {
                     addBubble('assistant', r.data.reply);
                     messages.push({ role: 'assistant', content: r.data.reply });
@@ -230,7 +254,7 @@
             })
             .then(function () {
                 setBusy(false);
-                input.focus();
+                if (!(humanCheck && humanCheck.isOpen())) input.focus();
             });
     }
 

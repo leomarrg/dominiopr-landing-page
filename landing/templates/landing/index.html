@@ -552,6 +552,8 @@
                         </select>
                     </div>
                     <textarea name="message" aria-label="Cuéntanos sobre el proyecto" placeholder="Cuéntanos sobre el proyecto" rows="5" required>{{ form.message.value|default:'' }}</textarea>
+                    {% if form.human_failed %}<p style="color:#f0a0a0;font-size:.8rem;margin:-6px 0 0;" role="alert">Confirma que no eres un robot.</p>{% endif %}
+                    {% include 'landing/_hcaptcha.html' with theme='dark' %}
                     <button type="submit" class="btn-primary">Enviar mensaje</button>
                 </form>
             </div>
@@ -584,6 +586,7 @@
     <!-- ===== ASK DOMINIO — AI chat widget ===== -->
     <div class="chat-widget" id="chatWidget"
          data-chat-url="{% url 'chat_api' %}"
+         data-challenge-url="{% url 'human_verify' %}"
          data-csrf="{{ csrf_token }}">
         <button type="button" class="chat-fab" id="chatFab" aria-label="Pregúntale a DOMINIO" aria-expanded="false">
             <svg class="chat-fab__icon" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.6-.8L3 21l1.9-5.4A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z"/></svg>
@@ -610,6 +613,7 @@
             <p class="chat-disclaimer">Asistente de IA — para una cotización real, usa el formulario de contacto.</p>
         </div>
     </div>
+    <script src="{% static 'landing/js/human-check.js' %}"></script>
     <script src="{% static 'landing/js/chat-widget.js' %}"></script>
     {% endif %}
 

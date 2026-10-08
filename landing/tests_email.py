@@ -15,9 +15,9 @@ from urllib.parse import parse_qs, urlparse
 
 from django.contrib.auth import get_user_model
 from django.core import mail, signing
-from django.core.cache import cache
+from django.core.cache import cache, caches
 from django.test import Client as HttpClient
-from django.test import RequestFactory, TestCase, override_settings
+from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -80,6 +80,7 @@ class DefaultsTests(TestCase):
 class CheckEmailTests(TestCase):
     def setUp(self):
         cache.clear()
+        caches['emaildns'].clear()
 
     def test_invalid_syntax_rejected(self):
         self.assertEqual(check_email('no-at-sign'), (False, emailcheck.INVALID_REASON))
@@ -143,10 +144,12 @@ class CheckEmailTests(TestCase):
         for err in (urllib.error.URLError('no route'),
                     urllib.error.HTTPError('u', 503, 'down', {}, None)):
             cache.clear()
+            caches['emaildns'].clear()
             dns, _ = fake_dns({('down.com', 'MX'): err})
             with patch(URLOPEN, side_effect=dns), self.assertLogs('landing.emailcheck', 'WARNING'):
                 self.assertEqual(check_email('a@down.com'), (True, ''))
         cache.clear()
+        caches['emaildns'].clear()
         with patch(URLOPEN, side_effect=fake_dns({('odd.com', 'MX'): ['not', 'a', 'dict']})[0]), \
                 self.assertLogs('landing.emailcheck', 'WARNING'):
             self.assertEqual(check_email('a@odd.com'), (True, ''))
@@ -164,8 +167,8 @@ class CheckEmailTests(TestCase):
             self.assertFalse(check_email('a@gone.com')[0])
             self.assertFalse(check_email('b@gone.com')[0])
         self.assertEqual(calls, [('acme.com', 'MX'), ('gone.com', 'MX')])
-        self.assertEqual(cache.get('emaildns:acme.com'), 'ok')
-        self.assertEqual(cache.get('emaildns:gone.com'), 'bad')
+        self.assertEqual(caches['emaildns'].get('emaildns:acme.com'), 'ok')
+        self.assertEqual(caches['emaildns'].get('emaildns:gone.com'), 'bad')
 
     def test_failure_is_cached_briefly_as_unknown(self):
         dns, calls = fake_dns({('flaky.com', 'MX'): socket.timeout()})
@@ -173,7 +176,7 @@ class CheckEmailTests(TestCase):
             check_email('a@flaky.com')
             check_email('b@flaky.com')
         self.assertEqual(len(calls), 1)  # the '' marker stops a retry storm
-        self.assertEqual(cache.get('emaildns:flaky.com'), '')
+        self.assertEqual(caches['emaildns'].get('emaildns:flaky.com'), '')
 
     def test_idn_domain_is_punycoded_for_the_query(self):
         dns, calls = fake_dns({('xn--espaol-zwa.com', 'MX'): MX_OK})
@@ -192,6 +195,7 @@ class CheckEmailTests(TestCase):
 class FormWiringTests(TestCase):
     def setUp(self):
         cache.clear()
+        caches['emaildns'].clear()
 
     def _contact_data(self, email):
         return {'name': 'Ana', 'email': email, 'phone': '', 'company': '',
@@ -242,6 +246,7 @@ class FormWiringTests(TestCase):
 class ChatHandlerTests(TestCase):
     def setUp(self):
         cache.clear()
+        caches['emaildns'].clear()
         self.rf = RequestFactory()
         self.shop = Client.objects.create(
             slug='acme', widget_token=TOKEN, name='Acme PR', system_prompt='x',
@@ -323,6 +328,7 @@ class LeadDoubleOptInTests(TestCase):
 
     def setUp(self):
         cache.clear()
+        caches['emaildns'].clear()
 
     def _submit(self):
         self.client.post(reverse('index'), self.PAYLOAD)
@@ -462,3 +468,19 @@ class LeadDoubleOptInTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, 'Correo confirmado', count=1)
         self.assertContains(resp, 'Sin confirmar', count=1)  # phone-only lead: no badge
+
+
+class DnsCacheIsolationTests(TestCase):
+    """Attacker-chosen domains must never grow the default cache, whose cull
+    would evict the daily spend counters."""
+
+    def test_dns_verdicts_live_outside_the_default_cache(self):
+        from django.test import override_settings as _ovr
+        from unittest.mock import patch as _patch
+        from . import emailcheck as ec
+        cache.set('chat:global:20261008', 7, 3600)
+        with _ovr(DOMINIO_EMAIL_DNS_CHECK=True),                 _patch.object(ec, '_lookup', return_value='ok', create=True):
+            for i in range(20):
+                ec.check_email(f'a@random-{i}.example')
+        self.assertEqual(cache.get('chat:global:20261008'), 7)
+        self.assertIsNone(cache.get('emaildns:random-0.example'))

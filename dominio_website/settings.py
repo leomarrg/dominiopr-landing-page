@@ -130,7 +130,16 @@ CACHES = {
         # and the API budget would silently reset to zero — exactly the
         # scenario they exist to guard against.
         'OPTIONS': {'MAX_ENTRIES': 100000, 'CULL_FREQUENCY': 4},
-    }
+    },
+    # Email-domain DNS verdicts. Kept OUT of the default cache: the domain is
+    # attacker-chosen, so a flood of random domains would otherwise grow that
+    # cache toward MAX_ENTRIES and the cull would evict the 'chat:*' spend
+    # counters (they sort first). Per-process memory, small and bounded.
+    'emaildns': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'dominio-emaildns',
+        'OPTIONS': {'MAX_ENTRIES': 5000},
+    },
 }
 
 # Reject oversized request bodies before they are parsed into memory (the chat
@@ -357,6 +366,21 @@ DOMINIO_EMAIL_DNS_CHECK = (
     os.environ.get('DOMINIO_EMAIL_DNS_CHECK', 'True').lower() in ('true', '1', 'yes')
     and not TESTING
 )
+
+
+# ============================================================
+# HUMAN CHECK — hCaptcha on the chat widgets, the demo and the public forms.
+# Both keys empty = OFF everywhere: the site behaves exactly as without it.
+# Always off under `manage.py test` (tests enable it with override_settings).
+# A solved challenge on the chat yields a signed "human pass" bound to the
+# tenant slug + the visitor id, valid HUMAN_PASS_TTL seconds and at most
+# HUMAN_PASS_MAX_MESSAGES chat messages (see landing/human.py).
+# ============================================================
+
+HCAPTCHA_SITEKEY = '' if TESTING else os.environ.get('HCAPTCHA_SITEKEY', '').strip()
+HCAPTCHA_SECRET = '' if TESTING else os.environ.get('HCAPTCHA_SECRET', '').strip()
+HUMAN_PASS_TTL = int(os.environ.get('HUMAN_PASS_TTL', '7200'))
+HUMAN_PASS_MAX_MESSAGES = int(os.environ.get('HUMAN_PASS_MAX_MESSAGES', '30'))
 
 
 # ============================================================

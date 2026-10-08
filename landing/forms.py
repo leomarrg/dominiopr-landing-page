@@ -1,9 +1,54 @@
 from django import forms
+from django.contrib.admin.forms import AdminAuthenticationForm
+from django.contrib.auth.forms import AuthenticationForm, PasswordResetForm
 from django.utils.text import slugify
 
+from . import human
 from .emailcheck import check_email
 from .models import Client, ContactSubmission
 from .phone import normalize_phone
+
+
+class HumanCheckMixin:
+    """Phase 5: require a solved hCaptcha checkbox ('h-captcha-response')
+    when human.enabled(); a no-op while the keys are empty.
+
+    Checked in clean() BEFORE the parent's clean(), so on the login forms a
+    bot never reaches authenticate() (no password probing without a human).
+    The visitor IP comes from `self.human_ip` (set by the view) or, on the
+    auth forms, from `self.request`. It is optional for hCaptcha.
+    """
+
+    human_failed = False
+    human_ip = None
+
+    def _human_remote_ip(self):
+        if self.human_ip:
+            return self.human_ip
+        request = getattr(self, 'request', None)
+        if request is None:
+            return None
+        from .views import _client_ip  # views imports this module
+        return _client_ip(request)
+
+    def clean(self):
+        if human.enabled() and not human.verify(
+                self.data.get('h-captcha-response', ''), self._human_remote_ip()):
+            self.human_failed = True
+            raise forms.ValidationError(human.FORM_ERROR, code='human')
+        return super().clean()
+
+
+class HumanAuthenticationForm(HumanCheckMixin, AuthenticationForm):
+    """Dashboard login (/dashboard/login/)."""
+
+
+class HumanPasswordResetForm(HumanCheckMixin, PasswordResetForm):
+    """'Forgot password' request: it sends email, so bots must not drive it."""
+
+
+class HumanAdminAuthenticationForm(HumanCheckMixin, AdminAuthenticationForm):
+    """/admin/login/: a superuser there sees every tenant."""
 
 
 class ClientForm(forms.ModelForm):
@@ -64,7 +109,7 @@ class ClientForm(forms.ModelForm):
         return cleaned
 
 
-class ContactForm(forms.ModelForm):
+class ContactForm(HumanCheckMixin, forms.ModelForm):
     """Validates the landing contact form and includes a honeypot anti-spam field."""
 
     # Honeypot: real users never see/fill this. Bots usually do.

@@ -24,7 +24,8 @@
         border: '{{ border|escapejs }}',
         borderSoft: '{{ border_soft|escapejs }}',
         borderBubble: '{{ border_bubble|escapejs }}',
-        api: '{{ api_url|escapejs }}'
+        api: '{{ api_url|escapejs }}',
+        challenge: '{{ challenge_url|escapejs }}'
     };
 
     var messages = [], greeted = false, busy = false;
@@ -40,6 +41,36 @@
         } catch (e) { return 's' + Date.now() + Math.floor(Math.random() * 1e9); }
     })();
     var SURVEY_API = CFG.api.replace(/chat\/?$/, 'survey/');
+
+    // ---- Phase 5: human check (hCaptcha) ----
+    // VISITOR is stable for the tab session (unlike SESSION, one per page
+    // load) so one solved challenge covers the visit. The signed pass is kept
+    // per agent. Both live in this site's sessionStorage, namespaced dmn-*;
+    // in-memory fallback when storage is blocked. The server only asks for a
+    // pass once hCaptcha is configured, so until then nothing here opens.
+    function readStore(k) { try { return sessionStorage.getItem(k) || ''; } catch (e) { return ''; } }
+    function writeStore(k, v) { try { sessionStorage.setItem(k, v); } catch (e) { /* blocked */ } }
+    var VISITOR = (function () {
+        var v = readStore('dmn-visitor');
+        if (!/^[A-Za-z0-9_-]{8,64}$/.test(v)) {
+            try {
+                var a = new Uint8Array(16); crypto.getRandomValues(a);
+                v = Array.prototype.map.call(a, function (b) {
+                    return ('0' + b.toString(16)).slice(-2);
+                }).join('');
+            } catch (e) { v = 'v' + Date.now() + Math.floor(Math.random() * 1e9); }
+            writeStore('dmn-visitor', v);
+        }
+        return v;
+    })();
+    var PASS_KEY = 'dmn-human:' + CFG.slug, memPass = '';
+    function getPass() { return readStore(PASS_KEY) || memPass; }
+    function setPass(p) { memPass = p; writeStore(PASS_KEY, p); }
+    var CHALLENGE_ORIGIN = (function () {
+        var m = /^(https?:\/\/[^\/?#]+)/i.exec(CFG.challenge);
+        return m ? m[1].toLowerCase() : '';
+    })();
+    var hv = null, hvFrame = null, hvOnPass = null, hvOnCancel = null;
 
     // ---- styles (scoped under .dmn-* so the host page is untouched) ----
     var css = ''
@@ -78,7 +109,15 @@
         + '.dmn-typing span[aria-hidden]{display:inline-block;width:6px;height:6px;border-radius:50%;background:' + CFG.color + ';opacity:.5;margin:0 2px;animation:dmnT 1s infinite}'
         + '.dmn-typing span[aria-hidden]:nth-of-type(3){animation-delay:.15s}.dmn-typing span[aria-hidden]:nth-of-type(4){animation-delay:.3s}'
         + '@keyframes dmnT{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-4px);opacity:1}}'
-        + '@media (prefers-reduced-motion:reduce){.dmn-typing span[aria-hidden]{animation:none;opacity:.7}}';
+        + '@media (prefers-reduced-motion:reduce){.dmn-typing span[aria-hidden]{animation:none;opacity:.7}}'
+        + '.dmn-hv{position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147483600;display:flex;align-items:center;'
+        + 'justify-content:center;padding:12px;background:rgba(5,12,20,.62)}'
+        + '.dmn-hv-box{position:relative;display:flex;flex-direction:column;width:400px;max-width:100%;height:580px;'
+        + 'max-height:100%;overflow:hidden;border-radius:14px;background:#fff;box-shadow:0 24px 60px rgba(0,0,0,.45)}'
+        + '.dmn-hv-bar{display:flex;justify-content:flex-end;flex:0 0 auto}'
+        + '.dmn-hv-x{min-width:44px;min-height:44px;border:0;background:none;color:#1b2733;font-size:24px;line-height:1;cursor:pointer}'
+        + '.dmn-hv-x:focus-visible{outline:3px solid ' + CFG.color + ';outline-offset:-3px}'
+        + '.dmn-hv-frame{flex:1 1 auto;width:100%;min-height:0;border:0}';
     var style = document.createElement('style');
     style.textContent = css;
     document.head.appendChild(style);
@@ -188,26 +227,87 @@
     }
     function setBusy(b) { busy = b; input.disabled = b; sendBtn.disabled = b; }
 
+    // ---- Phase 5: challenge overlay (iframe to /verificar/ on DOMINIO) ----
+    function closeChallenge(cancelled) {
+        if (!hv) return;
+        var cb = cancelled ? hvOnCancel : null;
+        hv.remove();
+        hv = hvFrame = null; hvOnPass = hvOnCancel = null;
+        if (cb) cb();
+    }
+    function openChallenge(onPass, onCancel) {
+        if (hv) return;
+        if (!CHALLENGE_ORIGIN) { if (onCancel) onCancel(); return; }
+        hvOnPass = onPass; hvOnCancel = onCancel;
+        hv = document.createElement('div'); hv.className = 'dmn-hv';
+        var box = document.createElement('div'); box.className = 'dmn-hv-box';
+        box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true');
+        box.setAttribute('aria-label', 'Verificación de seguridad');
+        var bar = document.createElement('div'); bar.className = 'dmn-hv-bar';
+        var x = document.createElement('button');
+        x.type = 'button'; x.className = 'dmn-hv-x'; x.textContent = '×';
+        x.setAttribute('aria-label', 'Cerrar verificación');
+        x.addEventListener('click', function () { closeChallenge(true); });
+        bar.appendChild(x);
+        hvFrame = document.createElement('iframe');
+        hvFrame.className = 'dmn-hv-frame';
+        hvFrame.title = 'Verificación de seguridad';
+        hvFrame.src = CFG.challenge + (CFG.challenge.indexOf('?') < 0 ? '?' : '&')
+            + 'key=' + encodeURIComponent(CFG.slug)
+            + '&visitor=' + encodeURIComponent(VISITOR)
+            + '&origin=' + encodeURIComponent(location.origin);
+        box.appendChild(bar); box.appendChild(hvFrame); hv.appendChild(box);
+        document.body.appendChild(hv);
+        x.focus();
+    }
+    // Accept the pass ONLY from our iframe's window AND DOMINIO's origin.
+    window.addEventListener('message', function (e) {
+        if (!hvFrame || e.source !== hvFrame.contentWindow || e.origin !== CHALLENGE_ORIGIN) return;
+        var d = e.data;
+        if (!d || typeof d !== 'object' || d.type !== 'dominio-human-pass'
+            || typeof d.pass !== 'string' || d.visitor !== VISITOR) return;
+        setPass(d.pass);
+        var cb = hvOnPass; hvOnCancel = null;
+        closeChallenge(false);
+        if (cb) cb();
+    });
+    function challengeCancelled() {
+        // Drop the unanswered turn so the next one is not two user turns in a row.
+        if (messages.length && messages[messages.length - 1].role === 'user') messages.pop();
+        bubble('assistant', 'Para seguir, confirma que eres humano. Escríbeme de nuevo cuando quieras.');
+        input.focus();
+    }
+
     function send(text) {
         bubble('user', text); messages.push({ role: 'user', content: text });
+        post(false);
+    }
+    function post(retried) {
         setBusy(true); typing(true);
         fetch(CFG.api, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ client: CFG.slug, token: CFG.token, messages: messages, page: location.href, session: SESSION })
-        }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+            body: JSON.stringify({ client: CFG.slug, token: CFG.token, messages: messages, page: location.href,
+                                   session: SESSION, visitor: VISITOR, human: getPass() })
+        }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, d: d }; }); })
             .then(function (x) {
                 typing(false);
+                if (x.status === 403 && x.d && x.d.challenge && !retried) {
+                    openChallenge(function () { post(true); }, challengeCancelled);
+                    return;
+                }
                 if (x.ok && x.d.reply) { bubble('assistant', x.d.reply); messages.push({ role: 'assistant', content: x.d.reply }); gotReply = true; }
                 else { bubble('assistant', x.d.error || 'Perdona, algo salió mal.'); }
             })
             .catch(function () { typing(false); bubble('assistant', 'Problema de conexión — trata de nuevo.'); })
-            .then(function () { setBusy(false); input.focus(); });
+            .then(function () { setBusy(false); if (!hv) input.focus(); });
     }
 
     fab.addEventListener('click', function () { root.classList.contains('dmn-open') ? close() : open(); });
     xBtn.addEventListener('click', close);
     document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && root.classList.contains('dmn-open')) close();
+        if (e.key !== 'Escape') return;
+        if (hv) { closeChallenge(true); return; }  // the challenge first, not the chat
+        if (root.classList.contains('dmn-open')) close();
     });
     form.addEventListener('submit', function (e) {
         e.preventDefault();
