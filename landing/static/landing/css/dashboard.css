@@ -112,7 +112,10 @@ a { color: var(--accent); text-decoration: none; }
 .dash-brand span { font-family: 'Space Grotesk', sans-serif; font-weight: 600; letter-spacing: 0.02em; }
 
 /* Section nav (Leads / Agents) — tabs with a clear active state. */
-.dash-nav { display: flex; gap: 4px; }
+.dash-nav { display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.dash-nav::-webkit-scrollbar { display: none; }
+.dash-nav__link { flex: 0 0 auto; white-space: nowrap; }
+.dash-brand { min-width: 0; }
 .dash-nav__link {
     color: var(--muted);
     font-size: 0.88rem;

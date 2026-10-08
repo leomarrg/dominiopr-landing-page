@@ -557,6 +557,22 @@ class TagConversationsTests(TestCase):
             self.assertIsNone(conv.tagged_at)
         self.assertFalse(UsageEvent.objects.exists())
 
+    def test_bad_request_skips_that_conversation_and_continues(self):
+        import httpx as httpx_mod  # anthropic 0.x builds on httpx
+
+        bad = _conv(self.acme, ['rechazada'], idle_minutes=90)
+        good = _conv(self.acme, ['¿Horario?'], idle_minutes=60)
+        request = httpx_mod.Request('POST', 'https://api.anthropic.com/v1/messages')
+        err = anthropic.BadRequestError(
+            'bad', response=httpx_mod.Response(400, request=request), body=None)
+        provider = _provider(err, _model_response({'intent': 'informacion', 'topic': 'horario'}))
+        self._run(provider)
+        bad.refresh_from_db()
+        good.refresh_from_db()
+        self.assertEqual(bad.intent, 'otro')
+        self.assertIsNotNone(bad.tagged_at)
+        self.assertEqual(good.intent, 'informacion')
+
     @override_settings(ANTHROPIC_API_KEY='')
     def test_missing_key_fails_loudly(self):
         _conv(self.acme, ['hola'])

@@ -235,7 +235,10 @@ def control_client(request, slug):
         'daily_bars': _svg_bars(daily, 'messages'),
         'daily_total': sum(d['messages'] for d in daily),
         'intents': _hbars(analytics.top_intents([client.pk], start, end)),
-        'topics': _hbars(analytics.top_topics([client.pk], start, end, n=10)),
+        # Clinic clients: never send stored topics to the template, even ones
+        # tagged before clinic mode was switched on.
+        'topics': ([] if client.clinic_mode
+                   else _hbars(analytics.top_topics([client.pk], start, end, n=10))),
         'questions': ([] if client.clinic_mode
                       else analytics.recent_first_questions(client.pk, n=20)),
         'knowledge': knowledge, 'members': members, 'audits': audits,

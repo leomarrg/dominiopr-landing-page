@@ -179,6 +179,14 @@ class Command(BaseCommand):
                 continue
             try:
                 response = provider.messages.create(**_request_kwargs(model, transcript))
+            except (anthropic.BadRequestError, anthropic.UnprocessableEntityError):
+                # This transcript is rejected every time: tag it 'otro' and move
+                # on, or it would stay first in line and block every nightly run.
+                Conversation.objects.filter(pk=conv.pk, tagged_at__isnull=True).update(
+                    intent='otro', topic='', tagged_at=now)
+                tagged += 1
+                unparsed += 1
+                continue
             except anthropic.APIError as exc:
                 failure = exc
                 break
