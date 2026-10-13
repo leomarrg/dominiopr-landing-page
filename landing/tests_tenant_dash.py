@@ -301,7 +301,7 @@ class ValueTests(_Base):
         make_conv(self.a, 1)
         v = self._value()
         self.assertIsNone(v['cost_per_lead'])
-        self.assertEqual(v['cost_per_conversation'], Decimal('99.00'))
+        self.assertEqual(v['cost_per_conversation'], Decimal('149.00'))
         resp = login('ana@alfa.com').get(self.url())
         self.assertContains(resp, '<b>—</b> por lead', html=False)
 

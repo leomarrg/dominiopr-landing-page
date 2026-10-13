@@ -233,11 +233,11 @@ Es la unica prueba que valida checkout, webhook, activacion del cliente, recibo 
 ### 4.1 Cupon de prueba (en Stripe, modo live)
 
 1. Stripe -> **Product catalog** -> **Coupons** -> **+ New**.
-2. Name `Prueba interna`, Type **Fixed amount**, Amount `598.00` USD, Duration **Once**.
+2. Name `Prueba interna`, Type **Fixed amount**, Amount `648.00` USD, Duration **Once**.
 3. **Use customer-facing coupon codes** -> code `PRUEBA1`. Redemption limit: `1`. Expiration: hoy.
 4. Save.
 
-Starter mensual + instalacion = $99 + $500 = $599. Con $598 de descuento el total debe quedar en **$1.00**.
+Starter mensual + instalacion = $149 + $500 = $649. Con $648 de descuento el total debe quedar en **$1.00**.
 
 ### 4.2 Compra
 
@@ -403,7 +403,7 @@ Por que importa: casi todas las integraciones aqui degradan en silencio a
 proposito. Si un Price id de Stripe falta o esta mal, `price_id_for()` devuelve
 vacio y el checkout **se cae al flujo de correo sin mostrar ningun error** — el
 cliente no ve nada raro y tu nunca te enteras. Peor: si pegas el Price id
-equivocado, el sitio dice $99 y Stripe cobra otra cosa. `preflight` compara cada
+equivocado, el sitio dice $149 y Stripe cobra otra cosa. `preflight` compara cada
 Price contra `PLANS` en `landing/views.py` (monto, intervalo, moneda, activo) y
 verifica que el cargo de instalacion sea one-time y no recurrente.
 

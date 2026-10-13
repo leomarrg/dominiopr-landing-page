@@ -36,8 +36,8 @@ Descripción: `Agente de IA para tu negocio - plan Starter`
 Dos precios en este mismo producto:
 | Precio | Monto | Tipo | Lookup key |
 |---|---|---|---|
-| Mensual | **$99.00** | Recurring, monthly | `starter-monthly` |
-| Anual | **$990.00** | Recurring, yearly | `starter-annual` |
+| Mensual | **$149.00** | Recurring, monthly | `starter-monthly` |
+| Anual | **$1,490.00** | Recurring, yearly | `starter-annual` |
 
 ### 2. `DOMINIO Pro`
 Descripción: `Agente de IA para tu negocio - plan Pro`
@@ -78,7 +78,7 @@ minúsculas y con guion. Si no encuentras el campo en la pantalla de creación,
 crea el precio primero y edítalo después. Si de plano no aparece, dímelo y sigue
 sin él — pero avísame cuáles quedaron sin lookup key.
 
-Ojo con los montos anuales: **$990, $2,990 y $4,990** son el precio de *todo el
+Ojo con los montos anuales: **$1,490, $2,990 y $4,990** son el precio de *todo el
 año*, no mensual. El tipo tiene que ser recurring con intervalo **yearly**.
 
 ## Paso 2 — Webhook

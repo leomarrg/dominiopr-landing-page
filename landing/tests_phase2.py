@@ -1462,13 +1462,13 @@ class PreflightCommandTests(TestCase):
                        STRIPE_PRICES={'starter:monthly': 'price_ok'})
     def test_price_amount_mismatch_is_reported(self):
         """A Price id pointing at the wrong amount is the worst failure mode:
-        the customer sees $99 and Stripe bills something else."""
+        the customer sees $149 and Stripe bills something else."""
         with patch.object(payments, 'account_ping', return_value={}), \
              patch.object(payments, 'retrieve_price', return_value={
                  'active': True, 'currency': 'usd', 'unit_amount': 4900,
                  'recurring': {'interval': 'month'}}):
             out = self._run(stripe=True)
-        self.assertIn('Stripe charges $49.00 but the site advertises $99', out)
+        self.assertIn('Stripe charges $49.00 but the site advertises $149', out)
         self.assertIn('[FAIL]', out)
 
     @override_settings(STRIPE_SECRET_KEY='sk_live_x', STRIPE_WEBHOOK_SECRET='whsec_x',
@@ -1476,7 +1476,7 @@ class PreflightCommandTests(TestCase):
     def test_correct_price_passes(self):
         with patch.object(payments, 'account_ping', return_value={}), \
              patch.object(payments, 'retrieve_price', return_value={
-                 'active': True, 'currency': 'usd', 'unit_amount': 9900,
+                 'active': True, 'currency': 'usd', 'unit_amount': 14900,
                  'recurring': {'interval': 'month'}}):
             out = self._run(stripe=True)
         self.assertIn('Starter monthly', out)
@@ -1488,7 +1488,7 @@ class PreflightCommandTests(TestCase):
         """A yearly Price pasted into the monthly slot bills 12x too rarely."""
         with patch.object(payments, 'account_ping', return_value={}), \
              patch.object(payments, 'retrieve_price', return_value={
-                 'active': True, 'currency': 'usd', 'unit_amount': 9900,
+                 'active': True, 'currency': 'usd', 'unit_amount': 14900,
                  'recurring': {'interval': 'year'}}):
             out = self._run(stripe=True)
         self.assertIn('interval is year, expected month', out)
@@ -2027,7 +2027,7 @@ class ReceiptTests(TestCase):
     def test_starter_matches_too(self):
         with patch.object(payments, 'tax_percent', return_value=11.5):
             r = views._receipt(self._sub(plan='starter'))
-        self.assertEqual(r['total'], '667.89')
+        self.assertEqual(r['total'], '723.64')  # (149 + 500) + 11.5% IVU
 
     @override_settings(STRIPE_PRICES={'pro:monthly': 'p', 'pro:setup': 's'})
     def test_no_tax_configured_shows_no_tax_line(self):

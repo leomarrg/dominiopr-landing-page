@@ -14,7 +14,7 @@ Precios de lanzamiento:
 
 | Plan    | Mensual | Anual   | Instalacion y configuracion (una vez) |
 |---------|---------|---------|----------------------------------------|
-| Starter | $99     | $990    | $500                                   |
+| Starter | $149    | $1,490  | $500                                   |
 | Pro     | $299    | $2,990  | $1,000                                 |
 | Scale   | $499    | $4,990  | $2,500                                 |
 
@@ -87,18 +87,18 @@ Para cada plan (Starter, Pro, Scale):
 3. Description (opcional, aparece en checkout): una linea, por ejemplo `Agente de IA para tu negocio - plan Starter`.
 4. Bloque **Price**:
    - Pricing model: **Recurring** (o "Flat rate" + Recurring segun la version del dashboard).
-   - Amount: `99.00` USD.
+   - Amount: `149.00` USD.
    - Billing period: **Monthly**.
    - Price description (interno): `starter-monthly`.
 5. **Add another price**:
-   - Recurring, Amount `990.00` USD, Billing period **Yearly**, Price description `starter-annual`.
+   - Recurring, Amount `1490.00` USD, Billing period **Yearly**, Price description `starter-annual`.
 6. Boton **Add product** (o **Save product**).
 
 Montos por plan:
 
 | Producto        | Precio mensual | Precio anual |
 |-----------------|----------------|--------------|
-| DOMINIO Starter | 99.00          | 990.00       |
+| DOMINIO Starter | 149.00         | 1,490.00     |
 | DOMINIO Pro     | 299.00         | 2,990.00     |
 | DOMINIO Scale   | 499.00         | 4,990.00     |
 
@@ -134,8 +134,8 @@ Tabla que tienes que llenar (guardala en un lugar privado, no en el repo):
 
 | Variable en `.env`            | Producto                              | Precio          |
 |-------------------------------|---------------------------------------|-----------------|
-| `STRIPE_PRICE_STARTER_MONTHLY`| DOMINIO Starter                       | $99 mensual     |
-| `STRIPE_PRICE_STARTER_ANNUAL` | DOMINIO Starter                       | $990 anual      |
+| `STRIPE_PRICE_STARTER_MONTHLY`| DOMINIO Starter                       | $149 mensual    |
+| `STRIPE_PRICE_STARTER_ANNUAL` | DOMINIO Starter                       | $1,490 anual    |
 | `STRIPE_PRICE_STARTER_SETUP`  | Instalacion y configuracion - Starter | $500 una vez    |
 | `STRIPE_PRICE_PRO_MONTHLY`    | DOMINIO Pro                           | $299 mensual    |
 | `STRIPE_PRICE_PRO_ANNUAL`     | DOMINIO Pro                           | $2,990 anual    |
@@ -162,7 +162,7 @@ Nada de esto se activa hasta reiniciar Gunicorn (seccion 7).
 
 ## 3.5 IVU: el impuesto va SOBRE el precio anunciado
 
-Los precios de la pagina (`$99`, `$299`, `$499`, y las instalaciones) **no incluyen
+Los precios de la pagina (`$149`, `$299`, `$499`, y las instalaciones) **no incluyen
 IVU**. El impuesto se calcula y se suma en el Checkout. Sin esto configurado,
 Stripe factura el precio pelado, nadie ve un error, y el impuesto no se puede
 cobrar despues.
@@ -181,9 +181,9 @@ Tres cosas verificadas contra Stripe el 2026-08-27, para que no haya que
 adivinarlas:
 
 - El IVU se aplica a **los dos** line items: la suscripcion y el cargo de
-  instalacion. Starter mensual pasa de $599.00 a **$667.89**.
+  instalacion. Starter mensual pasa de $649.00 a **$723.64**.
 - Queda **pegado a la suscripcion**, asi que las renovaciones tambien lo cobran
-  (Checkout lo dice: *"Then $110.39 per month"* en vez de $99.00).
+  (Checkout lo dice: *"Then $166.14 per month"* en vez de $149.00).
 - Los precios quedaron en `tax_behavior=exclusive`. Esto solo se puede fijar una
   vez por precio; el comando lo arregla en sitio si estaban en `unspecified`.
 
@@ -304,7 +304,7 @@ Si imprime menos de 9, una linea del `.env` esta vacia o mal escrita.
 1. Con **Test mode** activado en Stripe, abre `https://dominiopr.com/get-started/` en una ventana de incognito.
 2. Elige un plan y llega al checkout de Stripe.
 3. Tarjeta de prueba: `4242 4242 4242 4242`, fecha cualquiera en el futuro, CVC `123`, ZIP `00901`.
-4. Confirma que el total incluye el primer periodo mas la instalacion (por ejemplo Starter mensual: $99 + $500 = $599).
+4. Confirma que el total incluye el primer periodo mas la instalacion (por ejemplo Starter mensual: $149 + $500 = $649).
 5. Completa el pago.
 
 Verifica tres cosas:

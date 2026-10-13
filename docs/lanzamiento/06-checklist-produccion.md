@@ -103,7 +103,7 @@ venv/bin/python -m pip_audit
 - **Organization / ProfessionalService** — nombre, logo, email, área servida
   (Puerto Rico + EE.UU.), idiomas y los servicios que ofreces;
 - **WebSite** — con el publisher enlazado;
-- **Service "DOMINIO Chat 24/7"** — con `AggregateOffer` $99–$499;
+- **Service "DOMINIO Chat 24/7"** — con `AggregateOffer` $149–$499;
 - **FAQPage** — las 6 preguntas de la home (ya existía).
 
 `sameAs` se deja fuera a propósito: no hay perfiles sociales que enlazar, y

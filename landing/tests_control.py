@@ -137,7 +137,7 @@ class RevenueTests(TestCase):
 
     def test_monthly_plan(self):
         self.assertEqual(analytics.plan_monthly_revenue(self._sub(plan='starter')),
-                         Decimal('99.00'))
+                         Decimal('149.00'))
 
     def test_annual_is_a_twelfth_of_the_annual_price(self):
         sub = self._sub(plan='pro', period='annual')
@@ -211,15 +211,15 @@ class OverviewTests(_StaffMixin, TestCase):
 
         resp = self._get()
         totals = resp.context['totals']
-        # 99 + 249.17; canceled is $0 and custom without a price is unknown.
-        self.assertEqual(totals['mrr'], Decimal('348.17'))
+        # 149 + 249.17; canceled is $0 and custom without a price is unknown.
+        self.assertEqual(totals['mrr'], Decimal('398.17'))
         self.assertEqual(totals['unpriced'], 1)
         # Cost includes the demo bucket; margin = MRR - this month's AI cost.
         self.assertEqual(totals['cost'], Decimal('7.5000'))
-        self.assertEqual(totals['margin'], Decimal('340.67'))
+        self.assertEqual(totals['margin'], Decimal('390.67'))
         self.assertEqual(totals['messages'], 3)  # demo events are not chat messages
 
-        self.assertEqual(self._row(resp, 'starter-co')['margin'], Decimal('95.00'))
+        self.assertEqual(self._row(resp, 'starter-co')['margin'], Decimal('145.00'))
         self.assertEqual(self._row(resp, 'gone-co')['margin'], Decimal('-2.00'))
         self.assertIsNone(self._row(resp, 'custom-co')['revenue'])
         self.assertIsNone(self._row(resp, 'custom-co')['margin'])
@@ -237,7 +237,7 @@ class OverviewTests(_StaffMixin, TestCase):
         row = self._row(self._get(period='90d'), 'acme')
         self.assertEqual(row['cost'], Decimal('8.0000'))
         # The 80-day-old event is never in the current month.
-        self.assertEqual(row['margin'], Decimal('96.00'))
+        self.assertEqual(row['margin'], Decimal('146.00'))
 
     def test_inactive_clients_are_listed_with_badge(self):
         make_client('paused', is_active=False)

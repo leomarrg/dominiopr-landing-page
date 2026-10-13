@@ -149,33 +149,34 @@ def footer(canvas, doc):
 # ---------------------------------------------------------------- contenido
 S = []
 S.append(Paragraph('Análisis de costos del agente IA', H1))
-S.append(Paragraph('DOMINIO · Estudio de Software y Tecnología · 8 de octubre de 2026 · '
-                   'Escenario: 3 clientes iniciales', SUB))
+S.append(Paragraph('DOMINIO · Estudio de Software y Tecnología · 8 de octubre de 2026 (actualizado el 13 de '
+                   'octubre) · Escenario: 3 clientes iniciales', SUB))
 
 # Fixed + scenario numbers
 conv_per_client = 300
 ai45_3 = 3 * conv_per_client * H45
 ai55_3 = 3 * conv_per_client * H55
 fixed_low, fixed_high = 5 + 0 + 1.67 + 1, 12 + 0 + 1.67 + 5
-rev_starter = 3 * 99
-rev_mix = 2 * 99 + 299
+STARTER, PRO = 149, 299  # precios mensuales (landing/views.py PLANS)
+rev_starter = 3 * STARTER
+rev_mix = 2 * STARTER + PRO
 stripe = lambda amounts: sum(a * 0.029 + 0.30 for a in amounts)
 
 S.append(Paragraph('Resumen', H2))
 S.append(callout(
     f'Con 3 clientes y unas {conv_per_client} conversaciones al mes cada uno, la IA cuesta '
-    f'<b>~{money(ai45_3, 0)}/mes</b> con el modelo actual (Haiku 4.5) o <b>~{money(ai55_3, 0)}/mes</b> '
-    f'con Haiku 5.5. Sumando servidor, dominio, avisos, backup y comisiones de Stripe, el costo total con '
-    f'3 planes Starter queda en <b>~{money(ai45_3 + fixed_low + stripe([99] * 3), 0)}–'
-    f'{money(ai45_3 + fixed_high + stripe([99] * 3), 0)}/mes</b>, frente a un ingreso de '
-    f'<b>{money(rev_starter, 0)}–{money(rev_mix, 0)}/mes</b> (más instalación). El margen bruto queda por encima del 80%.'))
+    f'<b>~{money(ai55_3, 0)}/mes</b> con el modelo actual (Haiku 5.5, effort low; con el anterior, Haiku 4.5, '
+    f'serían ~{money(ai45_3, 0)}). Sumando servidor, dominio, avisos, backup y comisiones de Stripe, el costo '
+    f'total con 3 planes Starter queda en <b>~{money(ai55_3 + fixed_low + stripe([STARTER] * 3), 0)}–'
+    f'{money(ai55_3 + fixed_high + stripe([STARTER] * 3), 0)}/mes</b>, frente a un ingreso de '
+    f'<b>{money(rev_starter, 0)}–{money(rev_mix, 0)}/mes</b> (más instalación). El margen bruto queda por encima del 85%.'))
 S.append(Spacer(1, 8))
 S += bullets([
     f'Una conversación típica (6 mensajes, captura un lead) cuesta <b>~{money(H45, 3)}</b> en Haiku 4.5 '
     f'y <b>~{money(H55, 4)}</b> en Haiku 5.5.',
     'Los topes diarios que ya existen por plan limitan el gasto aunque alguien abuse del chat.',
-    'Haiku 5.5 es ~7–10 veces más barato y sigue mejor las instrucciones, pero hay que ajustarlo y '
-    'probarlo antes de cambiar (sección 7).',
+    'El agente ya corre en Haiku 5.5 con effort low: ~7–10 veces más barato que Haiku 4.5 y sigue mejor las '
+    'instrucciones; la prueba real está en la sección 11.',
 ])
 
 S.append(Paragraph('1. Cómo se calcula', H2))
@@ -251,9 +252,9 @@ def pnl(label, amounts, ai):
 
 S.append(table([
     ['Escenario (300 conv./cliente)', 'Ingreso', 'IA', 'Stripe', 'Costo total', 'Margen bruto'],
-    pnl('3 × Starter, Haiku 4.5', [99] * 3, ai45_3),
-    pnl('2 Starter + 1 Pro, Haiku 4.5', [99, 99, 299], ai45_3),
-    pnl('2 Starter + 1 Pro, Haiku 5.5', [99, 99, 299], ai55_3),
+    pnl('3 × Starter, Haiku 5.5', [STARTER] * 3, ai55_3),
+    pnl('2 Starter + 1 Pro, Haiku 5.5', [STARTER, STARTER, PRO], ai55_3),
+    pnl('2 Starter + 1 Pro, Haiku 4.5 (anterior)', [STARTER, STARTER, PRO], ai45_3),
 ], [2.0 * inch, 0.8 * inch, 0.7 * inch, 0.8 * inch, 1.3 * inch, 1.3 * inch]))
 S.append(Paragraph('No incluye los cargos de instalación ($500–1,000 por cliente), ni tu tiempo de soporte y '
                    'afinación, que es el costo real más grande del servicio.', SMALL))
@@ -411,7 +412,7 @@ S += bullets([
 # Precios de los planes (landing/views.py PLANS / PLAN_LIMITS) contra el costo de IA.
 MSG_COST = 0.00017  # medido, sección 11
 _PLANS = [  # nombre, mensual, anual, instalación, tope diario, incluye
-    ('Starter', 99, 990, 500, 200, 'Agente 24/7, captura de leads, dashboard privado, instalación por DOMINIO'),
+    ('Starter', STARTER, STARTER * 10, 500, 200, 'Agente 24/7, captura de leads, dashboard privado, instalación por DOMINIO'),
     ('Pro', 299, 2990, 1000, 500, 'Todo Starter + califica leads, citas automáticas, responder desde el dashboard, '
                                   'marca y colores, afinación mensual'),
     ('Scale', 499, 4990, 2500, 1500, 'Todo Pro + WhatsApp/multicanal, hasta 3 locales o marcas, CRM y calendario, '

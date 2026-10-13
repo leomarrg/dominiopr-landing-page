@@ -1270,7 +1270,7 @@ def survey_api(request):
 # alongside the recurring one). Annual = 10x monthly ("2 meses gratis").
 # Custom has no self-serve checkout — it's a conversation.
 PLANS = [
-    {'id': 'starter', 'name': 'Starter', 'monthly': 99, 'annual': 990, 'setup': 500,
+    {'id': 'starter', 'name': 'Starter', 'monthly': 149, 'annual': 1490, 'setup': 500,
      'tagline': 'Para empezar a capturar leads 24/7',
      'features': ['Agente de IA en tu página web', 'Contesta las preguntas de tus clientes 24/7',
                   'Convierte visitantes en leads — directo a tu inbox',
