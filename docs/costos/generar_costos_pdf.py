@@ -7,7 +7,7 @@ from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
-from reportlab.platypus import (KeepTogether, PageBreak, Paragraph, SimpleDocTemplate,
+from reportlab.platypus import (CondPageBreak, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate,
                                 Spacer, Table, TableStyle)
 
 OUT = sys.argv[1]
@@ -449,7 +449,73 @@ S += bullets([
     'con el escaneo automático (fase 8) ese trabajo baja, así que el margen de la instalación sube.',
 ])
 
-S.append(Paragraph('13. Recomendaciones', H2))
+# ---- Ejemplo real, token por token (libro de uso, 8 oct 2026, Haiku 5.5 effort low)
+P_IN, P_OUT, P_CW, P_CR = 0.10, 0.50, 0.125, 0.01  # $ por millón
+
+
+def _c(tok, price):
+    return tok * price / 1e6
+
+
+_ex = [Paragraph('13. Ejemplo real: en qué se van los tokens', H2)]
+_ex.append(Paragraph(
+    'Cada vez que un visitante escribe, el servidor le manda a la IA un paquete con todo lo que necesita para '
+    'contestar, y la IA devuelve la respuesta. Se cobra por los tokens que van y los que vuelven:', BODY))
+_ex.append(table([
+    ['Qué se envía o recibe', 'Tokens aprox.', 'Cómo se cobra'],
+    ['Reglas del agente (tono, captar leads, seguridad, citas, escalar)', '~1,300', 'Parte fija: va al caché'],
+    ['Información del negocio (servicios, precios, horarios…)', '~700–2,000', 'Parte fija: va al caché'],
+    ['Herramientas (guardar lead, agendar cita, pasar a humano)', '~600', 'Parte fija: va al caché'],
+    ['Fecha de hoy (solo si el negocio toma citas)', '~60', 'Entrada normal'],
+    ['Historial de la conversación + mensaje nuevo del visitante', '~180–600 (crece)', 'Entrada normal ($0.10/M)'],
+    ['Razonamiento de la IA (effort low: poco o nada)', '0–150', 'Salida ($0.50/M)'],
+    ['Respuesta que lee el visitante', '~150–350', 'Salida ($0.50/M)'],
+], [3.6 * inch, 1.3 * inch, 2.0 * inch]))
+_ex.append(Spacer(1, 8))
+_ex.append(Paragraph(
+    '<b>Dos mensajes reales del mismo chat</b> (tomados del libro de uso). La parte fija medía 3,573 tokens. El '
+    'primero la escribe en el caché; el segundo, enviado a los pocos minutos, la lee del caché a una décima parte:',
+    BODY))
+_m1 = dict(i=178, cw=3573, cr=0, o=206)
+_m2 = dict(i=178, cw=0, cr=3573, o=180)
+_rows = [['Componente', 'Mensaje 1 (caché vacío)', 'Costo', 'Mensaje 2 (caché listo)', 'Costo']]
+for label, key, price in [('Entrada normal (historial + pregunta)', 'i', P_IN),
+                          ('Parte fija escrita al caché', 'cw', P_CW),
+                          ('Parte fija leída del caché', 'cr', P_CR),
+                          ('Salida (razonamiento + respuesta)', 'o', P_OUT)]:
+    _rows.append([label, f'{_m1[key]:,} tokens', f'${_c(_m1[key], price):.6f}',
+                  f'{_m2[key]:,} tokens', f'${_c(_m2[key], price):.6f}'])
+_t1 = _c(_m1['i'], P_IN) + _c(_m1['cw'], P_CW) + _c(_m1['o'], P_OUT)
+_t2 = _c(_m2['i'], P_IN) + _c(_m2['cr'], P_CR) + _c(_m2['o'], P_OUT)
+_rows.append(['<b>Total del mensaje</b>', '', f'<b>${_t1:.6f}</b>', '', f'<b>${_t2:.6f}</b>'])
+_ex.append(table(_rows, [2.3 * inch, 1.3 * inch, 0.95 * inch, 1.3 * inch, 0.95 * inch], bold_last=True))
+_ex.append(Paragraph(f'El mensaje 2 cuesta {_t1 / _t2:.1f} veces menos que el 1 solo por el caché. El caché dura 5 '
+                     'minutos: si nadie escribe en ese tiempo, el próximo mensaje vuelve a pagar la escritura.', SMALL))
+S.append(KeepTogether(_ex))
+
+# Promedio medido y conversación completa
+AVG_IN, AVG_CR, AVG_OUT = 26536 / 92, 328716 / 92, 15475 / 92  # eval low: 92 llamadas
+_avg_call = _c(AVG_IN, P_IN) + _c(AVG_CR, P_CR) + _c(AVG_OUT, P_OUT)
+_conv = _t1 + 6 * _avg_call  # 6 mensajes: el 1º escribe el caché; 5 más + 1 llamada extra al guardar el lead
+S.append(Paragraph(
+    f'<b>Promedio medido</b> en la prueba real (92 llamadas): {AVG_IN:,.0f} tokens de entrada normal, '
+    f'{AVG_CR:,.0f} leídos del caché y {AVG_OUT:,.0f} de salida por llamada = <b>${_avg_call:.6f} por llamada</b>. '
+    'Cuando el agente guarda un lead o agenda una cita hace 2 llamadas en ese mensaje (una para usar la herramienta '
+    'y otra para contestar), por eso el promedio por mensaje del visitante es ~$0.00017.', BODY))
+S.append(table([
+    ['Conversación típica de 6 mensajes (con un lead guardado)', 'Llamadas', 'Costo'],
+    ['Mensaje 1: escribe la parte fija en el caché', '1', f'${_t1:.6f}'],
+    ['Mensajes 2 a 6 con el caché listo (promedio medido)', '5', f'${5 * _avg_call:.6f}'],
+    ['Llamada extra al guardar el lead', '1', f'${_avg_call:.6f}'],
+    ['<b>Total de la conversación</b>', '<b>7</b>', f'<b>${_conv:.4f}</b>'],
+    ['<b>300 conversaciones al mes (cliente típico)</b>', '', f'<b>${300 * _conv:.2f}</b>'],
+], [4.3 * inch, 1.0 * inch, 1.6 * inch]))
+S.append(Paragraph('Cifras con los precios de Haiku 5.5 (entrada $0.10, salida $0.50, escritura de caché $0.125 y '
+                   'lectura $0.01 por millón de tokens). En el centro de control (/dashboard/control/) se ven estos mismos '
+                   'tokens por cliente y por mes, separados en entrada, salida y caché.', SMALL))
+
+S.append(CondPageBreak(2.2 * inch))  # don't strand the heading at a page bottom
+S.append(Paragraph('14. Recomendaciones', H2))
 S += bullets([
     '<b>Hecho:</b> la prueba real (sección 11) confirmó Haiku 5.5 con effort low; el agente ya corre en ese modelo.',
     '<b>Hecho:</b> cada llamada a la IA queda en el libro de uso por cliente (entrada, salida y caché por separado); '
