@@ -408,14 +408,55 @@ S += bullets([
     'medium ante intentos claros de manipulación.',
 ])
 
-S.append(Paragraph('12. Recomendaciones', H2))
+# Precios de los planes (landing/views.py PLANS / PLAN_LIMITS) contra el costo de IA.
+MSG_COST = 0.00017  # medido, sección 11
+_PLANS = [  # nombre, mensual, anual, instalación, tope diario, incluye
+    ('Starter', 99, 990, 500, 200, 'Agente 24/7, captura de leads, dashboard privado, instalación por DOMINIO'),
+    ('Pro', 299, 2990, 1000, 500, 'Todo Starter + califica leads, citas automáticas, responder desde el dashboard, '
+                                  'marca y colores, afinación mensual'),
+    ('Scale', 499, 4990, 2500, 1500, 'Todo Pro + WhatsApp/multicanal, hasta 3 locales o marcas, CRM y calendario, '
+                                     'soporte prioritario'),
+]
+_pr = [Paragraph('12. Precios de los planes DOMINIO Chat 24/7 y margen', H2)]
+_pr.append(Paragraph(
+    'Precios publicados en /get-started/ (los mismos que cobra Stripe). El plan anual equivale a 10 meses (2 gratis). '
+    'Los precios no incluyen IVU. Custom: precio a convenir (se registra en la suscripción para calcular el margen).',
+    BODY))
+_rows = [['Plan', 'Mensual', 'Anual', 'Instalación (una vez)', 'Tope diario', 'IA típica / mes*',
+          'IA máxima / mes**', 'Margen mensual típico']]
+for name, mo, an, setup, cap, _ in _PLANS:
+    typ = 300 * H55
+    mx = cap * 30 * MSG_COST
+    _rows.append([f'<b>{name}</b>', f'${mo}', f'${an:,}', f'${setup:,}', f'{cap:,} mensajes',
+                  money(typ), money(mx), f'{(mo - typ) / mo * 100:.1f}%'])
+_rows.append(['<b>Custom</b>', 'A convenir', '—', '—', '3,000 mensajes', '—', money(3000 * 30 * MSG_COST), '—'])
+_pr.append(table(_rows, [0.7 * inch, 0.75 * inch, 0.65 * inch, 0.85 * inch, 0.95 * inch, 0.8 * inch,
+                         0.85 * inch, 0.85 * inch]))
+_pr.append(Paragraph('* 300 conversaciones al mes con Haiku 5.5, effort low y caché. '
+                     '** Tope diario × 30 días × $0.00017 por mensaje (medido): el gasto no puede pasar de ahí aunque '
+                     'alguien abuse del chat. El margen no descuenta servidor, Stripe ni tu tiempo (sección 6).', SMALL))
+_pr.append(Spacer(1, 6))
+_pr.append(table([['Plan', 'Qué incluye']] + [[f'<b>{n}</b>', inc] for n, *_r, inc in _PLANS]
+                 + [['<b>Custom</b>', 'Todo Scale + locales y canales ilimitados, integraciones y flujos a la medida, '
+                                      'onboarding dedicado']],
+                 [0.9 * inch, 6.0 * inch]))
+S.append(KeepTogether(_pr))
+S += bullets([
+    '<b>La IA es menos del 2% del precio</b> en cualquier plan, aun en el peor caso del tope. El costo real del '
+    'servicio es tu tiempo de instalación, soporte y afinación, que es lo que cobran la instalación y Pro.',
+    '<b>La instalación cubre el trabajo inicial</b> (configurar el agente, escanear el sitio, instalar el widget); '
+    'con el escaneo automático (fase 8) ese trabajo baja, así que el margen de la instalación sube.',
+])
+
+S.append(Paragraph('13. Recomendaciones', H2))
 S += bullets([
     '<b>Hecho:</b> la prueba real (sección 11) confirmó Haiku 5.5 con effort low; el agente ya corre en ese modelo.',
-    '<b>En curso:</b> registrar cada llamada a la IA por cliente (entrada, salida y caché por separado) para ver '
-    'el costo real por cliente y por mes en el centro de control, y el uso contra el plan en el dashboard de cada cliente.',
+    '<b>Hecho:</b> cada llamada a la IA queda en el libro de uso por cliente (entrada, salida y caché por separado); '
+    'el costo real por cliente y por mes se ve en el centro de control, y cada cliente ve su uso contra el plan '
+    '(sin costos) en su dashboard.',
     '<b>Mantener los topes por plan:</b> son la garantía de que un abuso no se convierte en una factura grande.',
-    '<b>Precio:</b> con un costo de IA de $1–15 por cliente al mes, los planes actuales dejan margen amplio; el '
-    'costo que hay que cuidar es tu tiempo, no la IA.',
+    '<b>Precio:</b> con Haiku 5.5 la IA cuesta ~$1 por cliente al mes (máximo $1–8 según el tope del plan); los '
+    'planes actuales dejan margen amplio. El costo que hay que cuidar es tu tiempo, no la IA.',
 ])
 S.append(Spacer(1, 8))
 S.append(Paragraph(
