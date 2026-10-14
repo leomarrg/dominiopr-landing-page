@@ -36,7 +36,7 @@ from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from . import agent, human, notify, payments
+from . import agent, entitlements, human, notify, payments
 from . import leads as lead_service
 from . import usage as usage_ledger
 from .emailcheck import check_email
@@ -44,6 +44,7 @@ from .forms import ContactForm, LeadNoteForm
 from .models import (
     AuditEvent, Booking, Client, ContactSubmission, Conversation,
     LeadNote, Membership, ProcessedWebhookEvent, Subscription, Survey,
+    route_contact,
 )
 from .phone import normalize_phone
 # Bound of a single visitor message (shared with the channel-agnostic turn
@@ -221,9 +222,10 @@ def _audit(request, action, client=None, target='', result='ok'):
     """M-17: record a critical admin action. Best-effort — auditing must never
     break the action it describes."""
     try:
+        user = getattr(request, 'user', None)
         AuditEvent.objects.create(
             client=client,
-            user=request.user if getattr(request.user, 'is_authenticated', False) else None,
+            user=user if getattr(user, 'is_authenticated', False) else None,
             action=action[:60], target=str(target)[:200], result=str(result)[:200],
             ip_address=_client_ip(request) or None,
         )
@@ -367,16 +369,32 @@ def _send_booking_emails(booking, notify_to=None, business='DOMINIO'):
             html_template='landing/emails/booking_notification.html',
             txt_template='landing/emails/booking_notification.txt',
             context=context,
-            reply_to=[booking.email],
+            reply_to=[booking.email] if booking.email else None,
         )
-    _send_html_email(
-        subject=f'Recibimos tu cita — {business}',
-        to=[booking.email],
-        html_template='landing/emails/booking_confirmation.html',
-        txt_template='landing/emails/booking_confirmation.txt',
-        context=context,
-        reply_to=[notify_to] if notify_to else None,
-    )
+    if booking.email:
+        _send_html_email(
+            subject=f'Recibimos tu cita — {business}',
+            to=[booking.email],
+            html_template='landing/emails/booking_confirmation.html',
+            txt_template='landing/emails/booking_confirmation.txt',
+            context=context,
+            reply_to=[notify_to] if notify_to else None,
+        )
+    elif booking.phone:
+        # Phase D: phone-only booking — the visitor's confirmation goes by SMS.
+        notify.send_to(booking.phone, booking_sms_text(booking, business), 'sms')
+
+
+def booking_sms_text(booking, business, reminder=False):
+    """Visitor-facing SMS for a booking (confirmation or 24h reminder). No
+    service name: the text is short and, in clinic mode, must carry nothing
+    the model wrote."""
+    local = timezone.localtime(booking.start)
+    when = f'{local:%d/%m} a las {local:%I:%M %p}'.replace(' 0', ' ')
+    if reminder:
+        return (f'{business}: te recordamos tu cita manana, {when}. '
+                f'Si necesitas cambiarla, llamanos.')
+    return f'{business}: recibimos tu cita para el {when}. Te confirmamos en breve.'
 
 
 def _send_onboarding_email(client, embed_snippet, login=None):
@@ -749,18 +767,27 @@ def _booking_handler(request, client_obj=None):
     def handle(data):
         name = (data.get('name') or '').strip()[:120]
         email = (data.get('email') or '').strip()[:254]
-        if not name or not email:
-            raise ValueError('Missing name or email.')
-        try:
-            validate_email(email)
-        except ValidationError:
-            raise ValueError('Invalid email.')
-        # Deliverability only — bookings get no confirmation link. Returned as
-        # text (not raised) so the model can tell the visitor what to fix.
-        ok, reason = check_email(email)
-        if not ok:
-            return (f'No se reservó la cita: {reason} Pídele al visitante otro '
-                    'correo y vuelve a intentarlo.')
+        # Phase D: a 10-digit phone is a valid contact when there is no email.
+        phone = normalize_phone((data.get('phone') or '').strip()[:30])
+        if not name:
+            raise ValueError('Missing name.')
+        if not email and not phone:
+            if phone is None:
+                raise ValueError('Invalid phone number — ask the visitor to re-share it.')
+            raise ValueError('Need an email or a 10-digit phone.')
+        if email:
+            try:
+                validate_email(email)
+            except ValidationError:
+                raise ValueError('Invalid email.')
+            # Deliverability only — bookings get no confirmation link. Returned as
+            # text (not raised) so the model can tell the visitor what to fix.
+            ok, reason = check_email(email)
+            if not ok:
+                return (f'No se reservó la cita: {reason} Pídele al visitante otro '
+                        'correo y vuelve a intentarlo.')
+        # A bad phone next to a valid email is simply not kept.
+        phone = phone or ''
 
         ip = _client_ip(request) or 'unknown'
         cap_key = f'bookcap:{ip}'
@@ -798,7 +825,7 @@ def _booking_handler(request, client_obj=None):
         try:
             with transaction.atomic():
                 booking = Booking.objects.create(
-                    client=client_obj, name=name, email=email,
+                    client=client_obj, name=name, email=email, phone=phone,
                     # Clinic mode: no model-written text, it can carry health details.
                     service='' if clinic else (data.get('service') or '').strip()[:120],
                     # Clinic mode: the model's free-text notes are never stored.
@@ -818,7 +845,124 @@ def _booking_handler(request, client_obj=None):
         # No visitor PII in the logs — journald outlives our retention policy.
         logger.info('Booking created: booking=%s client=%s at %s',
                     booking.pk, client_obj.slug, local)
-        return f'Reservado para {local:%A %b %d a las %I:%M %p}. Se envió una confirmación por email.'
+        via = 'email' if email else 'SMS'
+        return f'Reservado para {local:%A %b %d a las %I:%M %p}. Se envió una confirmación por {via}.'
+
+    return handle
+
+
+def _take_message_handler(request, client_obj=None, conversation=None, page_url=''):
+    """Phase D: the receptionist's take_message tool. Stores the message as a
+    ContactSubmission(source='message'), links it to the conversation, routes
+    the alert to the matching StaffContact (person > department > default)
+    or to the client's own notify_email/notify_phone, and audits it. The
+    backend validates the callback phone; an incomplete one stores nothing
+    and tells the model to ask again."""
+    from django.core.exceptions import ValidationError
+    from django.core.validators import validate_email
+
+    business_name = client_obj.name if client_obj else 'DOMINIO'
+    clinic = bool(client_obj and client_obj.clinic_mode)
+    noted = 'Anotado — el equipo ya tiene tu recado y te dará seguimiento.'
+
+    def handle(data):
+        name = (data.get('name') or '').strip()[:120]
+        if not name:
+            raise ValueError('Missing name.')
+        phone = normalize_phone((data.get('callback_phone') or '').strip()[:30])
+        if not phone:
+            # Returned as text, not raised: the model gets the reason in plain
+            # words and re-asks for the one detail (reglas B3).
+            return ('No se guardó el recado: el teléfono no es un número completo de '
+                    '10 dígitos. Pídele al visitante que lo comparta de nuevo.')
+        email = (data.get('email') or '').strip()[:254]
+        if email:
+            try:
+                validate_email(email)
+            except ValidationError:
+                email = ''
+            if email and not check_email(email)[0]:
+                email = ''
+        department = _single_line(data.get('department'), 80) or 'General'
+        recipient = _single_line(data.get('recipient'), 120)
+        urgency = data.get('urgency') if data.get('urgency') in ('normal', 'urgent') else 'normal'
+        target = recipient or department
+
+        ip = _client_ip(request) or 'unknown'
+        cap_key = f'msgcap:{ip}'
+        if cache.get(cap_key, 0) >= 5:
+            logger.warning('Chat message cap reached for IP %s', ip)
+            return noted
+        if _tenant_action_cap_hit('message', client_obj):
+            return noted
+        cache.set(cap_key, cache.get(cap_key, 0) + 1, 3600)
+
+        if clinic:
+            # Nothing the model wrote in free text is stored (B10): the summary
+            # may carry health details even if the rules say it must not.
+            summary = preferred = location = ''
+            message = (f'[Recado] Para: {target} · servicio: no se guarda en modo clínica; '
+                       f'el equipo confirma los detalles con la persona.')
+        else:
+            summary = _single_line(data.get('summary'), 1000)
+            preferred = _single_line(data.get('preferred_time'), 120)
+            location = _single_line(data.get('location'), 80)
+            message = f'[Recado] Para: {target} · Urgencia: {urgency} · {summary}'
+            if preferred:
+                message += f' · Prefiere llamada: {preferred}'
+            if location:
+                message += f' · Local: {location}'
+
+        submission = ContactSubmission.objects.create(
+            client=client_obj, name=name, email=email, phone=phone,
+            service='ai-automation', source='message', message=message[:5000],
+            ip_address=ip if ip != 'unknown' else None,
+            user_agent=request.META.get('HTTP_USER_AGENT', '')[:300],
+            page_url=page_url,
+        )
+        if conversation is not None:
+            Conversation.objects.filter(pk=conversation.pk).update(lead=submission)
+
+        # Routing: a StaffContact wins over the client's default inbox/phone.
+        contact = route_contact(client_obj, department=department, recipient=recipient)
+        notify_to = ((contact.email if contact else '')
+                     or (client_obj.notify_email if client_obj else '')
+                     or getattr(settings, 'CONTACT_NOTIFY_EMAIL', ''))
+        urgent = ' URGENTE' if urgency == 'urgent' else ''
+        if notify_to:
+            lines = [f'El recepcionista virtual de {business_name} tomó un recado.', '',
+                     f'Para: {target}', f'Departamento: {department}',
+                     f'De: {name}', f'Teléfono: {phone}']
+            if email:
+                lines.append(f'Email: {email}')
+            lines.append(f'Urgencia: {urgency}')
+            if clinic:
+                lines.append(f'Modo clínica: el texto del chat no se incluye. {CLINIC_DASHBOARD_NOTE}')
+            else:
+                lines.append(f'Asunto: {summary or "—"}')
+                if preferred:
+                    lines.append(f'Prefiere llamada: {preferred}')
+                if location:
+                    lines.append(f'Local: {location}')
+            lines += ['', f'Página: {page_url or "—"}',
+                      f'Dashboard: {settings.SITE_URL}{reverse("dashboard")}']
+            _send_plain_email(
+                subject=f'[Recado{urgent}] {target} — {business_name}: {name}',
+                to=[notify_to], body='\n'.join(lines),
+                reply_to=[email] if email else None)
+        sms = (f'DOMINIO Chat: recado{urgent.lower()} para {target} ({business_name}) — '
+               f'{name}, {phone}. ' + (CLINIC_DASHBOARD_NOTE if clinic else (summary[:120] or '')))
+        if contact is not None:
+            notify.notify_client(client_obj, sms, phone=contact.phone, channel=contact.channel)
+        else:
+            notify.notify_client(client_obj, sms)
+
+        _audit(request, 'lead.message', client=client_obj, target=f'lead:{submission.pk}',
+               result=f'{department}|{urgency}')
+        logger.info('Message taken via chat: submission=%s client=%s',
+                    submission.pk, client_obj.slug if client_obj else '-')
+        return (f'Recado guardado para {target}; el equipo de {business_name} le dará '
+                'seguimiento. No prometas un tiempo de respuesta.')
 
     return handle
 
@@ -1003,13 +1147,22 @@ def chat_api(request):
     # The caller controls the request body, so the 'assistant' turns it sends
     # are not evidence of anything we said: run_turn rebuilds the history from
     # the server-owned transcript and takes ONLY the new user turn from here.
-    handlers = {'capture_lead': _chat_lead_handler(
-        request, client_obj, page_url=page, conversation=conversation)}
+    turn_kwargs = {}
+    if client_obj is not None and client_obj.agent_profile == 'receptionist':
+        # Phase D: the front desk takes messages instead of capturing leads or
+        # escalating (take_message and request_human overlap; the model would
+        # pick at random). Bookings stay opt-in.
+        handlers = {'take_message': _take_message_handler(
+            request, client_obj, conversation=conversation, page_url=page)}
+        turn_kwargs['profile'] = 'receptionist'
+    else:
+        handlers = {'capture_lead': _chat_lead_handler(
+            request, client_obj, page_url=page, conversation=conversation)}
+        if client_obj is not None:
+            handlers['request_human'] = _human_handler(
+                request, client_obj, conversation=conversation, page_url=page)
     if client_obj and client_obj.enable_bookings:
         handlers['create_booking'] = _booking_handler(request, client_obj)
-    if client_obj is not None:
-        handlers['request_human'] = _human_handler(
-            request, client_obj, conversation=conversation, page_url=page)
 
     # From here on the turn is channel-agnostic (landing.turns): history,
     # model call, persistence and the usage ledger. This view only maps the
@@ -1020,7 +1173,7 @@ def chat_api(request):
         # ignored and the server-owned transcript wins.
         result = run_turn(client_obj, conversation, history[-1]['content'],
                           channel='web', handlers=handlers, page_url=page,
-                          fallback_history=history[:-1])
+                          fallback_history=history[:-1], **turn_kwargs)
     except agent.AgentNotConfigured:
         return JsonResponse(
             {'error': 'El asistente no está disponible ahora mismo.'}, status=503
@@ -1250,16 +1403,132 @@ PLANS = [
      'features': ['Todo lo de Scale', 'Locales y canales ilimitados',
                   'Integraciones y flujos a la medida', 'Onboarding dedicado']},
 ]
+
+
+# Phase C: the packages (docs/precios/Propuesta-paquetes-DOMINIO.pdf). Sold
+# direct, so `public: False` keeps them off /empezar/ until they are published.
+# Each has three price steps (Entrada / Medio / Tope) selected by
+# Subscription.step; `monthly`/`annual`/`setup` at the top level mirror step 1
+# so every consumer of a PLANS entry keeps working (use plan_pricing() to get
+# the step the client actually pays). Annual = 10x monthly. Capacity is
+# measured in CONVERSATIONS per calendar month (America/Puerto_Rico).
+def _package(plan_id, name, tagline, setup, steps, features):
+    return {
+        'id': plan_id, 'name': name, 'public': False, 'tagline': tagline, 'setup': setup,
+        'monthly': steps[0]['monthly'], 'annual': steps[0]['annual'],
+        'steps': steps, 'features': features,
+    }
+
+
+def _step(monthly, conversations, wa_conversations=0, seats=0):
+    return {'monthly': monthly, 'annual': round(monthly * 10, 2),
+            'monthly_conversations': conversations,
+            'wa_conversations': wa_conversations, 'seats': seats}
+
+
+PACKAGES = [
+    _package('small', 'Chat Básico', 'Contesta preguntas y no pierde clientes fuera de horario', 199,
+             [_step(49.99, 150), _step(74.99, 300), _step(99.99, 450)],
+             ['Agente de IA en tu página web', 'Respuestas 24/7 y captura de leads',
+              'Dashboard privado', 'Instalación Express en 48 horas']),
+    _package('medium', 'Recepcionista', 'Atiende, agenda y toma recados', 499,
+             [_step(149, 500), _step(219, 1000), _step(299, 1500)],
+             ['Todo lo de Chat Básico', 'Citas y reservaciones automáticas',
+              'Recados y escalación a tu equipo', 'Afinamos tu agente cada mes']),
+    _package('large', 'Recepcionista + Equipo', 'Recepcionista para clientes y asistente para tu equipo', 999,
+             [_step(349, 1500, seats=5), _step(449, 3000, seats=10), _step(599, 4000, seats=15)],
+             ['Todo lo de Recepcionista', 'Asistente interno para empleados (con login)',
+              'Hasta 3 locales con su horario', 'Avisos por departamento o local']),
+    _package('premium', 'Premium WhatsApp', 'Tus clientes te escriben por WhatsApp', 1499,
+             [_step(699, 4000, 500, 15), _step(899, 4000, 1000, 15), _step(1199, 4000, 2000, 25)],
+             ['Todo lo de Recepcionista + Equipo', 'WhatsApp Business con número propio',
+              'Confirmaciones y recordatorios por WhatsApp', 'Hasta 25 asientos internos']),
+]
+PLANS.extend(PACKAGES)
 PLAN_BY_ID = {p['id']: p for p in PLANS}
+# What /empezar/ shows and accepts: the launch plans + Custom.
+PUBLIC_PLANS = [p for p in PLANS if p.get('public', True)]
+
+# Price of each overage block, in cents, charged at month end by
+# `manage.py bill_overage` (never by cutting the service). Only 'web_block'
+# applies to the current channels; the WhatsApp and seat hooks are ready.
+OVERAGE_PRICES = {
+    'web_block': (100, 1500),    # +100 web conversations: $15
+    'wa_block': (500, 14900),    # +500 WhatsApp conversations: $149
+    'seat': (1, 900),            # extra internal seat: $9/month
+}
+# Human copy of the same numbers (dashboard, emails, terms, pricing FAQ).
+OVERAGE_WEB_BLOCK, OVERAGE_WEB_PRICE = OVERAGE_PRICES['web_block'][0], '$15'
+# Messages the abuse ceiling allows per included conversation per day: the
+# daily cap of a package is 3x its average daily conversations, in messages.
+_MESSAGES_PER_CONVERSATION = 6
+
+
+def _package_daily_cap(step):
+    convs = step['monthly_conversations'] + step['wa_conversations']
+    return max(60, -(-convs * 3 * _MESSAGES_PER_CONVERSATION // 30))
+
+
+def _package_limits(plan_id, enable_bookings, channels, locations):
+    plan = PLAN_BY_ID[plan_id]
+    steps = []
+    for s in plan['steps']:
+        steps.append({'monthly_conversations': s['monthly_conversations'],
+                      'wa_conversations': s['wa_conversations'], 'seats': s['seats'],
+                      'daily_message_cap': _package_daily_cap(s)})
+    base = {'unit': 'conversations', 'enable_bookings': enable_bookings,
+            'channels': set(channels), 'locations': locations,
+            'overage': dict(OVERAGE_PRICES), 'steps': steps}
+    base.update(steps[0])   # step 1 at the top level, for the provisioning code
+    return base
+
 
 # What each paid tier unlocks on the tenant at provisioning time (webhook).
 # Kept next to PLANS so pricing copy and enforcement never drift apart.
+# unit='messages': the launch plans, measured by the daily cap only.
+# unit='conversations': the packages; `steps[i]` holds the capacity of step
+# i+1 and plan_limits(plan, step) resolves it. Client.entitlement_overrides
+# may override any of these keys per client (landing.entitlements).
 PLAN_LIMITS = {
-    'starter': {'daily_message_cap': 200, 'enable_bookings': False},
-    'pro': {'daily_message_cap': 500, 'enable_bookings': True},
-    'scale': {'daily_message_cap': 1500, 'enable_bookings': True},
-    'custom': {'daily_message_cap': 3000, 'enable_bookings': True},
+    'starter': {'daily_message_cap': 200, 'enable_bookings': False, 'unit': 'messages'},
+    'pro': {'daily_message_cap': 500, 'enable_bookings': True, 'unit': 'messages'},
+    'scale': {'daily_message_cap': 1500, 'enable_bookings': True, 'unit': 'messages'},
+    'custom': {'daily_message_cap': 3000, 'enable_bookings': True, 'unit': 'messages'},
+    'small': _package_limits('small', False, ('web',), 1),
+    'medium': _package_limits('medium', True, ('web',), 1),
+    'large': _package_limits('large', True, ('web', 'internal'), 3),
+    'premium': _package_limits('premium', True, ('web', 'internal', 'whatsapp'), 3),
 }
+
+
+def plan_limits(plan, step=1):
+    """The limits of `plan` at price `step` (1-based; clamped). Unknown plan
+    -> an empty 'messages' entry (no monthly capacity). Returns a fresh dict."""
+    base = PLAN_LIMITS.get(plan)
+    if base is None:
+        return {'unit': 'messages', 'enable_bookings': False, 'daily_message_cap': 0}
+    out = {k: (set(v) if isinstance(v, set) else dict(v) if isinstance(v, dict) else v)
+           for k, v in base.items() if k != 'steps'}
+    steps = base.get('steps') or []
+    if steps:
+        idx = min(max(int(step or 1), 1), len(steps)) - 1
+        out.update(steps[idx])
+        out['step'] = idx + 1
+    return out
+
+
+def plan_pricing(plan, step=1):
+    """A PLANS entry with monthly/annual resolved to `step` (packages) --
+    what the client actually pays. None for an unknown plan."""
+    entry = PLAN_BY_ID.get(plan)
+    if entry is None:
+        return None
+    out = {k: v for k, v in entry.items() if k != 'steps'}
+    steps = entry.get('steps') or []
+    if steps:
+        s = steps[min(max(int(step or 1), 1), len(steps)) - 1]
+        out.update({'monthly': s['monthly'], 'annual': s['annual'], 'step': steps.index(s) + 1})
+    return out
 
 
 def _plan_name(plan):
@@ -1275,7 +1544,7 @@ def _receipt(sub):
     says so. The setup fee is listed only when a Price id is configured for it,
     the same condition under which the checkout actually charged it.
     """
-    plan = PLAN_BY_ID.get(sub.plan)
+    plan = plan_pricing(sub.plan, sub.step)
     if not plan or plan.get('monthly') is None:
         return None
     recurring = plan['annual'] if sub.period == 'annual' else plan['monthly']
@@ -1629,13 +1898,13 @@ def get_started(request):
         if human.enabled() and not human.verify(
                 request.POST.get('h-captcha-response'), _client_ip(request)):
             return render(request, 'landing/get_started.html',
-                          {'plans': PLANS, 'form': request.POST,
+                          {'plans': PUBLIC_PLANS, 'form': request.POST,
                            'errors': {'human': human.FORM_ERROR}})
         if not name:
             errors['name'] = 'Requerido.'
         if not company:
             errors['company'] = 'Requerido.'
-        if plan not in PLAN_BY_ID:
+        if plan not in {p['id'] for p in PUBLIC_PLANS}:
             errors['plan'] = 'Escoge un plan para continuar.'
         # Email OR phone — a phone-only signup is fine, but a given phone must be valid.
         if email:
@@ -1655,7 +1924,7 @@ def get_started(request):
             errors['email'] = 'Déjanos un email o un teléfono para poder contactarte.'
         if errors:
             return render(request, 'landing/get_started.html',
-                          {'plans': PLANS, 'form': request.POST, 'errors': errors})
+                          {'plans': PUBLIC_PLANS, 'form': request.POST, 'errors': errors})
 
         submission = ContactSubmission(
             client=Client.objects.filter(slug='dominio').first(),
@@ -1734,7 +2003,7 @@ def get_started(request):
         return redirect(reverse('get_started') + '#done')
 
     return render(request, 'landing/get_started.html',
-                  {'plans': PLANS, 'form': {}, 'errors': {}})
+                  {'plans': PUBLIC_PLANS, 'form': {}, 'errors': {}})
 
 
 @csrf_exempt
@@ -2534,10 +2803,11 @@ def billing(request):
     if client is None:
         return _no_client_response(request)
     subscription = Subscription.objects.filter(client=client).first()
-    plan = PLAN_BY_ID.get(subscription.plan) if subscription else None
+    plan = plan_pricing(subscription.plan, subscription.step) if subscription else None
     return render(request, 'landing/dashboard_billing.html', {
         'active_tab': 'billing', 'active': 'billing',
         'client': client, 'subscription': subscription, 'plan': plan,
+        'allowance': entitlements.allowance_status(client),
         'plan_name': _plan_name(subscription.plan) if subscription else '',
         'portal_available': bool(
             subscription and payments.stripe_enabled() and subscription.stripe_customer_id

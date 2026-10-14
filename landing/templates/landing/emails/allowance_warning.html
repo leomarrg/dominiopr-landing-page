@@ -1,0 +1,23 @@
+{% extends "landing/emails/_base.html" %}
+{% block content %}
+<p style="margin:0 0 6px; color:#3bc0c7; font-size:12px; letter-spacing:2px; text-transform:uppercase;">Capacidad de tu plan · {{ month_label }}</p>
+{% if threshold >= 100 %}
+<h1 style="margin:0 0 16px; color:#ffffff; font-size:22px; font-weight:700;">{{ client.name }}, tu agente ya usó las {{ included }} conversaciones incluidas en tu plan este mes.</h1>
+{% else %}
+<h1 style="margin:0 0 16px; color:#ffffff; font-size:22px; font-weight:700;">{{ client.name }}, tu agente va por el {{ pct }}% de las conversaciones incluidas en tu plan.</h1>
+{% endif %}
+<p style="margin:0 0 14px;">Lleva <b style="color:#ffffff;">{{ used }}</b> de {{ included }} conversaciones ({{ pct }}%). A este ritmo cerraría el mes con unas <b style="color:#ffffff;">{{ projection }}</b>.</p>
+
+<p style="margin:22px 0 6px; color:#3bc0c7; font-size:12px; letter-spacing:2px; text-transform:uppercase;">Tu agente sigue atendiendo</p>
+<p style="margin:0 0 14px;">No cortamos el servicio. {% if threshold >= 100 %}Las conversaciones que entren de aquí al cierre del mes se cobran a fin de mes en bloques adicionales de {{ block_size }} conversaciones a <b style="color:#ffffff;">{{ block_price }}</b> por bloque, en tu misma factura de Stripe.{% else %}Si pasas lo incluido en tu plan, el agente sigue contestando y a fin de mes se cobran bloques adicionales de {{ block_size }} conversaciones a <b style="color:#ffffff;">{{ block_price }}</b> por bloque, en tu misma factura de Stripe.{% endif %}</p>
+<p style="margin:0 0 14px;">Si prefieres que lo incluido suba de forma permanente, responde a este correo y te pasamos al siguiente escalón de tu plan (sale más barato que varios bloques).</p>
+
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;">
+  <tr><td style="border-radius:8px; background:#3bc0c7;">
+    <a href="{{ dashboard_url }}" style="display:inline-block; padding:13px 26px; color:#0b0d12; font-family:'Helvetica Neue',Arial,sans-serif; font-weight:700; font-size:14px; text-decoration:none; border-radius:8px;">Ver mi uso</a>
+  </td></tr>
+</table>
+<p style="margin:0 0 14px; color:rgba(255,255,255,0.7); font-size:14px;">Tu plan y facturación: <a href="{{ billing_url }}" style="color:#3bc0c7; text-decoration:none;">{{ billing_url }}</a></p>
+
+<p style="margin:18px 0 0;">¿Dudas? Responde a este correo.</p>
+{% endblock %}

@@ -74,6 +74,10 @@
             <span class="ctl-meter{% if r.cap.pct >= 80 %} ctl-meter--hot{% endif %}"><span style="width:{{ r.cap.pct }}%"></span></span>{{ r.cap.pct }}%
             <br><span class="ctl-muted">{{ r.cap.used }}/{{ r.cap.cap }}</span>
             {% else %}<span class="ctl-muted">Sin tope</span>{% endif %}
+            {% if r.allowance %}
+            <br><span class="{% if r.allowance.reached %}ctl-badge ctl-badge--warn{% else %}ctl-muted{% endif %}" title="Conversaciones del mes vs. incluidas en el plan">Mes: {{ r.allowance.used }}/{{ r.allowance.included }} conv.</span>
+            {% if r.allowance.total_overage_cents %}<br><span class="ctl-badge ctl-badge--warn">Exceso {{ r.allowance.total_overage_price }}</span>{% endif %}
+            {% endif %}
         </td>
         <td class="num">{{ r.conversations|thousands }}</td>
         <td class="num">{{ r.leads|thousands }}</td>

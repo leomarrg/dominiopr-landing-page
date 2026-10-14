@@ -33,7 +33,7 @@ from . import agent, analytics, ingest, knowledge, publishing
 from . import usage as usage_ledger
 from .models import (
     AvailabilityRule, Booking, Client, ContactSubmission, Conversation,
-    KnowledgeSource, Membership, UsageEvent,
+    KnowledgeSource, Membership, StaffContact, UsageEvent,
 )
 from .views import (
     _audit, _client_ip, _member_client_ids, _rate_limited, _send_plain_email,
@@ -852,7 +852,76 @@ def users_list(request):
         'client_obj': client, 'members': members,
         'all_clients': clients_for(request.user),
         'role_choices': Membership.ROLE_CHOICES,
+        # Phase D: routing of the receptionist's messages.
+        'staff_contacts': client.staff_contacts.all(),
+        'contact_channels': StaffContact.CHANNEL_CHOICES,
     })
+
+
+@login_required
+@require_POST
+def staff_contact_add(request):
+    """Phase D: add a StaffContact (who gets the messages for a department or
+    by name). org_admin of the client only; the phone is normalized server-side."""
+    from .phone import normalize_phone
+    client = _knowledge_client(request)
+    if client is None:
+        messages.error(request, 'Solo un administrador puede gestionar contactos.')
+        return redirect('dashboard')
+    back = redirect(reverse('dash_users') + f'?client={client.slug}')
+    name = (request.POST.get('name') or '').strip()[:120]
+    department = (request.POST.get('department') or '').strip()[:80]
+    email = (request.POST.get('email') or '').strip().lower()[:254]
+    phone = normalize_phone(request.POST.get('phone') or '')
+    channel = request.POST.get('channel', 'email')
+    channel = channel if channel in dict(StaffContact.CHANNEL_CHOICES) else 'email'
+    if not name:
+        messages.error(request, 'Escribe el nombre del contacto.')
+        return back
+    if email:
+        try:
+            validate_email(email)
+        except ValidationError:
+            messages.error(request, 'Escribe un email válido.')
+            return back
+    if phone is None:
+        messages.error(request, 'Escribe un teléfono válido de 10 dígitos, ej. (787) 123-4567.')
+        return back
+    if not email and not phone:
+        messages.error(request, 'El contacto necesita un email o un teléfono.')
+        return back
+    if channel != 'email' and not phone:
+        messages.error(request, 'Para SMS o WhatsApp el contacto necesita un teléfono.')
+        return back
+    if client.staff_contacts.count() >= 50:
+        messages.error(request, 'Máximo 50 contactos por agente.')
+        return back
+    is_default = request.POST.get('is_default') == 'on'
+    with transaction.atomic():
+        if is_default:
+            client.staff_contacts.filter(is_default=True).update(is_default=False)
+        contact = StaffContact.objects.create(
+            client=client, name=name, department=department, email=email,
+            phone=phone or '', channel=channel, is_default=is_default,
+            order=client.staff_contacts.count())
+    _audit(request, 'contact.add', client=client, target=f'contact:{contact.pk}',
+           result=department or 'por nombre')
+    messages.success(request, 'Contacto guardado.')
+    return back
+
+
+@login_required
+@require_POST
+def staff_contact_delete(request, pk):
+    client = _knowledge_client(request)
+    if client is None:
+        messages.error(request, 'Solo un administrador puede gestionar contactos.')
+        return redirect('dashboard')
+    contact = get_object_or_404(StaffContact.objects.filter(client=client), pk=pk)
+    contact.delete()
+    _audit(request, 'contact.remove', client=client, target=f'contact:{pk}')
+    messages.success(request, 'Contacto eliminado.')
+    return redirect(reverse('dash_users') + f'?client={client.slug}')
 
 
 @login_required

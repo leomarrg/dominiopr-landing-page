@@ -42,20 +42,28 @@ def _send(to, body, from_):
         return False
 
 
-def notify_client(client, body):
+def send_to(phone, body, channel='sms'):
+    """Send `body` to one E.164 number over `channel` ('sms' | 'whatsapp').
+    WhatsApp falls back to SMS when it fails (template not approved, number
+    not on WA). Any other channel (e.g. 'email') is a no-op. Phase D uses it
+    for routed messages (StaffContact) and for phone-only booking texts."""
+    if not phone or channel not in ('sms', 'whatsapp'):
+        return False
+    if channel == 'whatsapp':
+        from_ = getattr(settings, 'TWILIO_FROM_WHATSAPP', '')
+        if _send(f'whatsapp:{phone}', body, from_):
+            return True
+    return _send(phone, body, getattr(settings, 'TWILIO_FROM_SMS', ''))
+
+
+def notify_client(client, body, phone=None, channel=None):
     """Send `body` to the client on their preferred extra channel (M-06).
-    Email always goes out separately; this only adds WhatsApp/SMS on top."""
+    Email always goes out separately; this only adds WhatsApp/SMS on top.
+    `phone`/`channel` override the client's defaults when the alert is
+    routed to a specific person (StaffContact); a routed contact without a
+    phone means no text, never a silent fallback to the owner's number."""
+    if phone is not None or channel is not None:
+        return send_to(phone or '', body, channel or 'sms')
     if client is None or not client.notify_phone:
         return False
-    if client.notify_channel == 'whatsapp':
-        from_ = getattr(settings, 'TWILIO_FROM_WHATSAPP', '')
-        sent = _send(f'whatsapp:{client.notify_phone}', body, from_)
-        if sent:
-            return True
-        # WhatsApp failed (template not approved, number not on WA) → try SMS.
-        return _send(client.notify_phone, body,
-                     getattr(settings, 'TWILIO_FROM_SMS', ''))
-    if client.notify_channel == 'sms':
-        return _send(client.notify_phone, body,
-                     getattr(settings, 'TWILIO_FROM_SMS', ''))
-    return False
+    return send_to(client.notify_phone, body, client.notify_channel)

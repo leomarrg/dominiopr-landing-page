@@ -2,7 +2,8 @@ from django.contrib import admin
 
 from .models import (
     AuditEvent, AvailabilityRule, Booking, Client, ContactSubmission,
-    Conversation, KnowledgeSource, LeadNote, Membership, Subscription, Survey, UsageEvent,
+    Conversation, KnowledgeSource, LeadNote, Membership, StaffContact, Subscription, Survey,
+    UsageEvent,
 )
 
 
@@ -34,12 +35,22 @@ class MembershipAdmin(admin.ModelAdmin):
 
 @admin.register(Booking)
 class BookingAdmin(admin.ModelAdmin):
-    list_display = ('start', 'name', 'email', 'service', 'status', 'client')
+    list_display = ('start', 'name', 'email', 'phone', 'service', 'status', 'client')
     list_filter = ('status', 'start', 'client')
     list_editable = ('status',)
-    search_fields = ('name', 'email')
+    search_fields = ('name', 'email', 'phone')
     date_hierarchy = 'start'
     list_select_related = ('client', 'lead')
+
+
+@admin.register(StaffContact)
+class StaffContactAdmin(admin.ModelAdmin):
+    """Phase D: who receives the receptionist's messages per department."""
+    list_display = ('client', 'name', 'department', 'channel', 'is_default', 'order')
+    list_filter = ('client', 'channel', 'is_default')
+    search_fields = ('name', 'department', 'client__name', 'client__slug')
+    list_select_related = ('client',)
+    autocomplete_fields = ('client',)
 
 
 @admin.register(ContactSubmission)
@@ -64,7 +75,7 @@ class ContactSubmissionAdmin(admin.ModelAdmin):
 
 @admin.register(Subscription)
 class SubscriptionAdmin(admin.ModelAdmin):
-    list_display = ('client', 'plan', 'period', 'method', 'status', 'current_period_end')
+    list_display = ('client', 'plan', 'step', 'period', 'method', 'status', 'current_period_end')
     list_filter = ('status', 'plan', 'method')
     search_fields = ('client__name', 'client__slug', 'stripe_subscription_id',
                      'stripe_customer_id', 'checkout_session_id')

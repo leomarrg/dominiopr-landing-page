@@ -67,6 +67,17 @@ class Client(models.Model):
                    'diagnósticos, medicamentos ni datos de seguro médico, y los avisos no '
                    'incluyen el texto del chat. Reduce los datos de salud que se recogen; '
                    'NO hace el servicio compatible con HIPAA.'))
+    # Phase D: which job the shared engine does for this business (agent.PROFILES).
+    # 'web' = service + lead capture (the original widget); 'receptionist' =
+    # answers, books and takes messages (take_message) instead of capturing leads.
+    AGENT_PROFILE_CHOICES = [
+        ('web', 'Web: servicio al cliente + leads'),
+        ('receptionist', 'Recepcionista: citas y recados'),
+    ]
+    agent_profile = models.CharField(
+        'Perfil del agente', max_length=16, choices=AGENT_PROFILE_CHOICES, default='web',
+        help_text=('Recepcionista: contesta con el horario del negocio, agenda citas y toma '
+                   'recados para el equipo (no captura leads ni escala a humano).'))
     is_active = models.BooleanField(default=True)
     # Set once the install-instructions email has been sent, so activating an
     # already-onboarded client doesn't re-send it.
@@ -90,6 +101,13 @@ class Client(models.Model):
     # M-10: how long this tenant's conversations are kept before purge.
     retention_months = models.PositiveSmallIntegerField(
         default=12, help_text='Months to keep chat conversations before automatic purge.')
+    # Phase C: per-client deviations from the plan table (custom deals). Only
+    # the keys landing.entitlements knows are honoured, e.g.
+    # {"monthly_conversations": 2000, "seats": 8}. Empty = the plan as sold.
+    entitlement_overrides = models.JSONField(
+        blank=True, default=dict,
+        help_text=('Ajustes por cliente sobre lo que incluye su plan (JSON): '
+                   'monthly_conversations, wa_conversations, seats, locations.'))
 
     # --- Self-serve provisioning (pay on Stripe -> tenant created by webhook) ---
     # DOMINIO installs the widget for the client (done-for-you). A client created
@@ -167,6 +185,8 @@ class Client(models.Model):
         # Appended only when on, so existing fingerprints don't change.
         if self.clinic_mode:
             basis += '\n--\nclinic'
+        if self.agent_profile and self.agent_profile != 'web':
+            basis += f'\n--\nprofile:{self.agent_profile}'
         return hashlib.sha1(basis.encode('utf-8')).hexdigest()[:12]
 
 
@@ -192,6 +212,8 @@ class ContactSubmission(models.Model):
         ('contact_form', 'Contact form'),
         ('chat', 'AI chat'),
         ('signup', 'Agent signup'),
+        # Phase D: a message the receptionist took for a person/department.
+        ('message', 'Chat message'),
     ]
     STATUS_CHOICES = [
         ('new', 'New'),
@@ -279,7 +301,10 @@ class Booking(models.Model):
         ContactSubmission, null=True, blank=True, on_delete=models.SET_NULL, related_name='bookings')
 
     name = models.CharField(max_length=120)
-    email = models.EmailField(db_index=True)
+    # A booking needs one way to reach the visitor: email OR phone (Phase D,
+    # phone-only bookings; enforced by the booking handler). Either may be blank.
+    email = models.EmailField(blank=True, db_index=True)
+    phone = models.CharField(max_length=30, blank=True)
     service = models.CharField(max_length=120, blank=True)
     notes = models.TextField(blank=True)
 
@@ -350,8 +375,13 @@ class Subscription(models.Model):
     """M-01: a client's paid subscription. Stripe drives the automatic path;
     ATH Móvil / manual payments are one-shot with an explicit period end that
     the reconcile job watches."""
+    # The first four are the launch plans (daily message cap). The packages
+    # (small..premium) are sold direct and measured in conversations per month,
+    # in three price steps each (see views.PLANS / PLAN_LIMITS and `step`).
     PLAN_CHOICES = [('starter', 'Starter'), ('pro', 'Pro'),
-                    ('scale', 'Scale'), ('custom', 'Custom')]
+                    ('scale', 'Scale'), ('custom', 'Custom'),
+                    ('small', 'Chat Básico'), ('medium', 'Recepcionista'),
+                    ('large', 'Recepcionista + Equipo'), ('premium', 'Premium WhatsApp')]
     PERIOD_CHOICES = [('monthly', 'Mensual'), ('annual', 'Anual')]
     METHOD_CHOICES = [('stripe', 'Stripe'), ('ath_movil', 'ATH Móvil'), ('manual', 'Manual')]
     STATUS_CHOICES = [
@@ -400,6 +430,11 @@ class Subscription(models.Model):
     monthly_price_cents = models.PositiveIntegerField(
         null=True, blank=True,
         help_text='Override del precio mensual (planes custom o descuentos)')
+    # Phase C: price step inside a package (1 = Entrada, 2 = Medio, 3 = Tope).
+    # Selects the price and the included capacity in views.PLANS/PLAN_LIMITS.
+    # Ignored by the launch plans, which have a single step.
+    step = models.PositiveSmallIntegerField(
+        default=1, help_text='Escalón del paquete: 1 Entrada, 2 Medio, 3 Tope.')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -713,6 +748,60 @@ class AvailabilityRule(models.Model):
     def __str__(self):
         days = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom']
         return f'{self.client.slug} · {days[self.weekday]} {self.open_time}-{self.close_time}'
+
+
+class StaffContact(models.Model):
+    """Phase D: who receives the receptionist's messages (take_message) for a
+    department or by name, and over which channel. No contacts = everything
+    goes to Client.notify_email / notify_phone, as before."""
+    CHANNEL_CHOICES = [('email', 'Email'), ('sms', 'Email + SMS'), ('whatsapp', 'Email + WhatsApp')]
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='staff_contacts')
+    name = models.CharField(max_length=120)
+    department = models.CharField(
+        max_length=80, blank=True,
+        help_text='Departamento que atiende (Ventas, Facturación...). En blanco = solo por nombre.')
+    phone = models.CharField(max_length=30, blank=True)
+    email = models.EmailField(blank=True)
+    channel = models.CharField(max_length=12, choices=CHANNEL_CHOICES, default='email')
+    # The contact that gets a message no department or person matched.
+    is_default = models.BooleanField(default=False)
+    order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['order', 'pk']
+
+    def __str__(self):
+        dept = f' ({self.department})' if self.department else ''
+        return f'{self.client.slug} · {self.name}{dept}'
+
+
+def route_contact(client, department=None, recipient=None):
+    """The StaffContact a message for `department`/`recipient` goes to, or
+    None when the client's own notify_email/notify_phone should be used.
+    Precedence: the person named > the department > the default contact.
+    Matching is case-insensitive and tolerant of 'Dra. Santos' vs 'Santos'."""
+    if client is None:
+        return None
+    contacts = list(client.staff_contacts.all())
+    if not contacts:
+        return None
+    recipient = (recipient or '').strip().lower()
+    department = (department or '').strip().lower()
+    if recipient:
+        for c in contacts:
+            name = c.name.strip().lower()
+            if name and (name in recipient or recipient in name):
+                return c
+    if department:
+        for c in contacts:
+            if c.department and c.department.strip().lower() == department:
+                return c
+    for c in contacts:
+        if c.is_default:
+            return c
+    return None
 
 
 class UsageEvent(models.Model):

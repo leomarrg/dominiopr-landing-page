@@ -154,7 +154,7 @@ def anonymize_lead(lead):
             first_question='', topic='', escalation_reason='', page_url='',
             widget_session=f'anon-{secrets.token_hex(12)}')
     Booking.objects.filter(pk__in=booking_ids).update(
-        lead=locked, name=ANON_NAME, email='', notes='',
+        lead=locked, name=ANON_NAME, email='', phone='', notes='',
         # No address left to remind: keep the reminder cron from mailing ''.
         reminder_sent=True)
     locked.notes.all().delete()

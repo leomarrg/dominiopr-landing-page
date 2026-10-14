@@ -120,6 +120,10 @@ urlpatterns = [
     path('dashboard/users/', platform_views.users_list, name='dash_users'),
     path('dashboard/users/invite/', platform_views.user_invite, name='user_invite'),
     path('dashboard/users/<int:pk>/remove/', platform_views.user_remove, name='user_remove'),
+    # Phase D: who receives the receptionist's messages (StaffContact), org_admin only
+    path('dashboard/contactos/add/', platform_views.staff_contact_add, name='staff_contact_add'),
+    path('dashboard/contactos/<int:pk>/delete/', platform_views.staff_contact_delete,
+         name='staff_contact_delete'),
     path('dashboard/audit/', platform_views.audit_list, name='audit'),
     path('dashboard/clients/', views.clients_list, name='clients_list'),
     path('dashboard/clients/new/', views.client_form, name='client_create'),

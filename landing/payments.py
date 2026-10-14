@@ -46,8 +46,10 @@ def setup_price_id_for(plan):
     return prices.get(f'{plan}:setup', '')
 
 
-def _request(method, path, data=None):
-    """Authenticated form-encoded request to the Stripe API."""
+def _request(method, path, data=None, headers=None):
+    """Authenticated form-encoded request to the Stripe API. `headers` adds
+    extra request headers (e.g. Idempotency-Key for writes that must never
+    be duplicated by a retry)."""
     key = getattr(settings, 'STRIPE_SECRET_KEY', '')
     if not key:
         raise StripeError('Stripe is not configured.')
@@ -56,6 +58,8 @@ def _request(method, path, data=None):
     req = urllib.request.Request(url, data=body, method=method)
     req.add_header('Authorization', f'Bearer {key}')
     req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+    for name, value in (headers or {}).items():
+        req.add_header(name, value)
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
             return json.loads(resp.read().decode('utf-8'))
@@ -179,6 +183,53 @@ def create_portal_session(customer_id, return_url):
         raise StripeError('No Stripe customer for this client.')
     return _request('POST', '/v1/billing_portal/sessions',
                     {'customer': customer_id, 'return_url': return_url})
+
+
+def create_invoice_item(customer_id, amount_cents, description, idempotency_key,
+                        subscription_id='', metadata=None):
+    """Phase C: one overage line for the customer's NEXT invoice.
+
+    With `subscription_id` the item rides on that subscription's next
+    renewal invoice; without it, it waits as a pending item on the customer
+    (see create_invoice to bill it right away). IVU rides on the line when a
+    tax rate is configured, same as the checkout. `idempotency_key` makes a
+    retried call return the same item instead of charging twice.
+    """
+    if not customer_id:
+        raise StripeError('No Stripe customer for this client.')
+    data = {
+        'customer': customer_id,
+        'amount': str(int(amount_cents)),
+        'currency': 'usd',
+        'description': str(description)[:500],
+    }
+    if subscription_id:
+        data['subscription'] = subscription_id
+    tax_rate = getattr(settings, 'STRIPE_TAX_RATE_ID', '')
+    if tax_rate:
+        data['tax_rates[0]'] = tax_rate
+    for k, v in (metadata or {}).items():
+        data[f'metadata[{str(k)[:40]}]'] = str(v)[:500]
+    return _request('POST', '/v1/invoiceitems', data,
+                    headers={'Idempotency-Key': str(idempotency_key)[:255]})
+
+
+def create_invoice(customer_id, idempotency_key, description=''):
+    """Phase C: collect the customer's pending invoice items now (annual
+    subscribers, whose next renewal invoice is months away). auto_advance
+    lets Stripe finalize and charge the saved card automatically."""
+    if not customer_id:
+        raise StripeError('No Stripe customer for this client.')
+    data = {
+        'customer': customer_id,
+        'auto_advance': 'true',
+        'collection_method': 'charge_automatically',
+        'pending_invoice_items_behavior': 'include',
+    }
+    if description:
+        data['description'] = str(description)[:500]
+    return _request('POST', '/v1/invoices', data,
+                    headers={'Idempotency-Key': str(idempotency_key)[:255]})
 
 
 def retrieve(path):

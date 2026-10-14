@@ -20,7 +20,7 @@ from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from . import analytics, tenant_export
+from . import analytics, entitlements, tenant_export
 from . import usage as usage_ledger
 from .models import AuditEvent, Client, UsageEvent
 from .platform_views import _csv_safe
@@ -155,11 +155,17 @@ def control_overview(request):
     knowledge = analytics.knowledge_stats(page_ids)
     roles = analytics.member_roles(page_ids)
     caps = analytics.today_cap_usage(page_clients)
+    # Phase C: monthly allowance (conversations plans) -- two grouped queries.
+    month_use = entitlements.month_usage_many(page_ids)
     for r in page.object_list:
         pk = r['client'].pk
         r['knowledge'] = knowledge.get(pk, {'active': 0, 'draft': 0, 'chars': 0})
         r['roles'] = roles.get(pk, {'org_admin': 0, 'agent': 0})
         r['cap'] = caps.get(pk)
+        ent = entitlements.entitlements(r['client'])
+        r['allowance'] = (
+            entitlements.allowance_status(r['client'], ent=ent, usage=month_use[pk])
+            if ent['unit'] == 'conversations' and ent.get('monthly_conversations') else None)
 
     return render(request, 'landing/dashboard_control.html', {
         'active_tab': 'control',
@@ -231,6 +237,9 @@ def control_client(request, slug):
                       else analytics.recent_first_questions(client.pk, n=20)),
         'knowledge': knowledge, 'members': members, 'audits': audits,
         'cap': analytics.today_cap_usage([client]).get(client.pk),
+        # Phase C: included / used / overage this month (any plan).
+        'allowance': entitlements.allowance_status(client),
+        'overrides': client.entitlement_overrides or {},
         'origins': client.origin_list(),
         'heartbeat': _heartbeat(client, now),
     })

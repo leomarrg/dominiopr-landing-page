@@ -19,6 +19,7 @@ from django.db.models import Avg, Count, Q, Sum
 from django.db.models.functions import Length, TruncDate, TruncMonth
 from django.utils import timezone
 
+from . import entitlements
 from . import usage as usage_ledger
 from .models import (
     AvailabilityRule, Booking, ChatMessage, ContactSubmission, Conversation,
@@ -84,8 +85,8 @@ def plan_monthly_revenue(subscription):
         return Decimal('0.00')
     if subscription.monthly_price_cents is not None:
         return (Decimal(subscription.monthly_price_cents) / 100).quantize(_CENT)
-    from .views import PLAN_BY_ID  # late import: views is heavy and may import us later
-    plan = PLAN_BY_ID.get(subscription.plan) or {}
+    from .views import plan_pricing  # late import: views is heavy and may import us later
+    plan = plan_pricing(subscription.plan, subscription.step) or {}
     if subscription.period == 'annual' and plan.get('annual') is not None:
         return (Decimal(plan['annual']) / 12).quantize(_CENT)
     if plan.get('monthly') is None:
@@ -403,12 +404,18 @@ def allowance(client, month_start, month_end):
     None when nothing is included (cap 0). 'tokens' is the month's total
     tokens, for the technical detail; no cost is ever returned."""
     used_row = usage_ledger.rollup_by_client(month_start, month_end, [client.pk]).get(client.pk, {})
-    used = used_row.get('messages', 0)
     days = _local_days(month_start, month_end)
     first_day = timezone.localtime(month_start, BUSINESS_TZ).date()
     today = timezone.localtime(timezone.now(), BUSINESS_TZ).date()
     elapsed = min(days, max(0, (today - first_day).days + 1))
-    included = included_messages(client, days)
+    # Phase C: packages are measured in conversations per month (with
+    # overage billing); the launch plans keep the daily-cap-in-messages view.
+    status = entitlements.allowance_status(client, month_start)
+    by_conversations = status['unit'] == 'conversations' and bool(status['included'])
+    if by_conversations:
+        used, included = status['used'], status['included']
+    else:
+        used, included = used_row.get('messages', 0), included_messages(client, days)
     projection = round(used / elapsed * days) if elapsed else 0
 
     def pct_of(n):
@@ -426,6 +433,11 @@ def allowance(client, month_start, month_end):
         'today': cap['used'], 'today_cap': cap['cap'], 'today_pct': cap['pct'],
         'today_warn': cap['pct'] is not None and cap['pct'] >= ALLOWANCE_WARN_PCT,
         'tokens': used_row.get('tokens', 0),
+        'unit': 'conversations' if by_conversations else 'messages',
+        'unit_label': 'conversaciones' if by_conversations else 'mensajes',
+        'messages': used_row.get('messages', 0),
+        # Overage detail (blocks, cents, WhatsApp, seats) for the plan card.
+        'overage': status if by_conversations else None,
     }
 
 

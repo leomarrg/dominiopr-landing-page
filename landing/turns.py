@@ -20,11 +20,74 @@ from django.db import transaction
 from django.db.models import F, Max
 from django.utils import timezone
 
-from . import agent
+from . import agent, entitlements
 from . import usage as usage_ledger
 from .models import ChatMessage, Conversation
 
 logger = logging.getLogger(__name__)
+
+# English day names for the HOURS NOW line (the rules are written in English;
+# the model says the day in the visitor's language).
+_DAY_NAMES = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
+_DAY_ABBR = ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')
+
+
+def _hours_summary(by_day):
+    """'Mon-Fri 09:00-17:00; Sat 10:00-14:00; Sun closed' from
+    {weekday: (open_time, close_time)}. Consecutive days with the same window
+    (or both closed) collapse into a range."""
+    groups = []  # [first_day, last_day, window]
+    for day in range(7):
+        window = by_day.get(day)
+        if groups and groups[-1][2] == window and groups[-1][1] == day - 1:
+            groups[-1][1] = day
+        else:
+            groups.append([day, day, window])
+    parts = []
+    for first, last, window in groups:
+        label = _DAY_ABBR[first] if first == last else f'{_DAY_ABBR[first]}-{_DAY_ABBR[last]}'
+        text = f'{window[0]:%H:%M}-{window[1]:%H:%M}' if window else 'closed'
+        parts.append(f'{label} {text}')
+    return '; '.join(parts)
+
+
+def hours_now_line(client, now=None):
+    """The receptionist's authoritative open/closed line (reglas-por-perfil B8):
+
+        HOURS NOW (authoritative): OPEN NOW, closes today 17:00 | hours: Mon-Fri
+        09:00-17:00; Sat 10:00-14:00; Sun closed (America/Puerto_Rico)
+        HOURS NOW (authoritative): CLOSED NOW, opens Monday 09:00 | hours: ...
+
+    Computed on the server in local (Puerto Rico) time from the client's
+    AvailabilityRules; "opens today|tomorrow|<Weekday>" is never left to the
+    model. '' when the client has no rules (the line is omitted). Half-open
+    windows: open at open_time, closed at close_time."""
+    if client is None:
+        return ''
+    rules = list(client.availability_rules.all())
+    if not rules:
+        return ''
+    by_day = {r.weekday: (r.open_time, r.close_time) for r in rules if r.open_time < r.close_time}
+    if not by_day:
+        return ''
+    local = timezone.localtime(now or timezone.now())
+    today, clock = local.weekday(), local.time()
+
+    window = by_day.get(today)
+    if window and window[0] <= clock < window[1]:
+        state = f'OPEN NOW, closes today {window[1]:%H:%M}'
+    elif window and clock < window[0]:
+        state = f'CLOSED NOW, opens today {window[0]:%H:%M}'
+    else:
+        state = 'CLOSED NOW'
+        for offset in range(1, 8):
+            nxt = by_day.get((today + offset) % 7)
+            if nxt:
+                when = 'tomorrow' if offset == 1 else _DAY_NAMES[(today + offset) % 7]
+                state = f'CLOSED NOW, opens {when} {nxt[0]:%H:%M}'
+                break
+    return (f'HOURS NOW (authoritative): {state} | hours: {_hours_summary(by_day)} '
+            f'({settings.TIME_ZONE})')
 
 # Bound of a single stored/sent message. Defined here (the core never imports
 # a transport); views re-exports it for the web endpoint's body checks.
@@ -113,6 +176,12 @@ def run_turn(client, conversation, user_text, *, channel, handlers,
         extra['profile'] = profile
     if channel in _AGENT_CHANNEL:
         extra['channel'] = _AGENT_CHANNEL[channel]
+    if profile == 'receptionist':
+        # The front desk never works out open/closed itself: the server states
+        # it (uncached block, next to the date). Omitted without hours rules.
+        hours = hours_now_line(client)
+        if hours:
+            extra['context_lines'] = [hours]
 
     history = build_history(conversation, user_text, fallback_history=fallback_history)
     try:
@@ -126,7 +195,10 @@ def run_turn(client, conversation, user_text, *, channel, handlers,
         raise
 
     if conversation is not None:
-        _persist(conversation, client, user_text, reply, usage, page_url)
+        first_turn = _persist(conversation, client, user_text, reply, usage, page_url)
+        # Phase C: 80% / 100% monthly-allowance warnings. Best-effort and
+        # only on a conversation's first turn; never blocks the reply.
+        entitlements.after_turn(client, conversation, first_turn)
 
     usage_ledger.record(kind, usage, client=client, conversation=conversation)
     return TurnResult(reply=reply, usage=usage, conversation=conversation)
@@ -158,5 +230,7 @@ def _persist(conversation, client, user_text, reply, usage, page_url):
             if page_url and not conversation.page_url:
                 updates['page_url'] = page_url[:500]
             Conversation.objects.filter(pk=conversation.pk).update(**updates)
+        return next_pos == 0
     except Exception:
         logger.exception('Failed to persist conversation %s', conversation.pk)
+        return False

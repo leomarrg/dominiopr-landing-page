@@ -11,7 +11,7 @@
             <tr>
                 <td><b>{{ b.start|date:"D d M · g:i A" }}</b><div class="dash-sub">{{ b.duration_minutes }} min · {{ b.client.name|default:"DOMINIO" }}</div></td>
                 <td>{{ b.name }}</td>
-                <td><a href="mailto:{{ b.email }}">{{ b.email }}</a></td>
+                <td>{% if b.email %}<a href="mailto:{{ b.email }}">{{ b.email }}</a>{% endif %}{% if b.phone %}{% if b.email %}<div class="dash-sub">{% endif %}<a href="tel:{{ b.phone }}">{{ b.phone }}</a>{% if b.email %}</div>{% endif %}{% endif %}{% if not b.email and not b.phone %}—{% endif %}</td>
                 <td>{{ b.service|default:"—" }}</td>
                 <td><span class="dash-pill dash-pill--{{ b.status }}">{{ b.get_status_display }}</span></td>
                 <td>

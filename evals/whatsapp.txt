@@ -1,0 +1,10 @@
+# Eval del canal WhatsApp (docs/agente/reglas-por-perfil.md, seccion C y B6).
+# Fixture: eval-recepcion con channel=whatsapp y SIN linea CHANNEL con numero del visitante
+# (el harness no la inyecta): sin markdown (**, #), sin links salvo que los pidan.
+# Correr:
+#   python manage.py agent_eval --fixture eval-recepcion --file evals/whatsapp.txt --profile receptionist --channel whatsapp --hours open --effort low --reps 2 --out evals/results/<fecha>-whatsapp-low.txt
+# Formato: turno1 >> turno2 | esperado | !prohibido | tool=nombre | notool=nombre | maxlen=N | onequestion
+
+Hola, ¿qué servicios tienen? | !** | !# | !http
+Mándame el link de tu página | http | !**
+Quiero dejar un mensaje para ventas >> Soy Paola Rivera | !** | notool=take_message

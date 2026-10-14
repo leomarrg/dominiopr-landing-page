@@ -63,7 +63,7 @@ class ClientForm(forms.ModelForm):
         fields = [
             'name', 'slug', 'system_prompt', 'greeting', 'notify_email',
             'allowed_origins', 'primary_color', 'surface_color', 'header_color',
-            'enable_bookings', 'clinic_mode', 'is_active',
+            'enable_bookings', 'clinic_mode', 'agent_profile', 'is_active',
             # Self-serve provisioning state (webhook sets pending; staff flips live)
             'setup_status', 'website_url', 'platform',
             # Phase 2 operation knobs (M-04/M-06/M-10/M-14)
@@ -88,6 +88,12 @@ class ClientForm(forms.ModelForm):
         self.fields['slug'].help_text = (
             'El ?key= público de tu snippet de instalación. Déjalo en blanco para '
             'generarlo automáticamente del nombre — se hace único por sí solo.')
+        # Phase D: optional in the POST so older callers (and tests) that do not
+        # send it keep working; a blank value means the original web profile.
+        self.fields['agent_profile'].required = False
+
+    def clean_agent_profile(self):
+        return self.cleaned_data.get('agent_profile') or 'web'
 
     def clean_slug(self):
         # Normalize whatever was typed (spaces, accents, casing). Blank is OK:

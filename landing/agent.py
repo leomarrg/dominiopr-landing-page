@@ -261,7 +261,7 @@ def build_rules(language='es', bookings=False, human=False, clinic=False,
     if whatsapp:
         parts.append(WHATSAPP_STYLE)
     if bookings:
-        parts.append(BOOKING_RULES)
+        parts.append(BOOKING_RULES_GENERAL)
     if clinic:
         parts.append(CLINIC_RULES)
     parts.append(_RULES_SECURITY_GENERAL)
@@ -375,22 +375,67 @@ BOOKING_TOOL = {
     'name': 'create_booking',
     'description': (
         "Reserve a specific time slot for the visitor. Call ONLY after you have their "
-        "name, email, and a specific date AND time they confirmed. Provide `start` in "
-        "ISO 8601 local time (e.g. 2026-06-10T15:00). If the tool says the slot is taken, "
-        "offer the visitor another time."
+        "name, a valid email OR a 10-digit phone, and a confirmed date AND time. Provide "
+        "`start` in ISO 8601 local time (e.g. 2026-06-10T15:00). If the tool says the slot "
+        "is taken, offer the visitor another time."
     ),
     'input_schema': {
         'type': 'object',
         'properties': {
             'name': {'type': 'string'},
-            'email': {'type': 'string'},
+            'email': {'type': 'string', 'description': "Visitor's email, if they have one"},
+            'phone': {'type': 'string', 'description': '10-digit phone, if they gave no email'},
             'start': {'type': 'string', 'description': 'ISO 8601 local time, e.g. 2026-06-10T15:00'},
             'service': {'type': 'string', 'description': 'What the booking is for, in the visitor\'s words'},
+            'location': {'type': 'string',
+                         'description': 'Business location, if the business has several'},
             'notes': {'type': 'string'},
         },
-        'required': ['name', 'email', 'start'],
+        # The handler rejects a booking with neither contact.
+        'required': ['name', 'start'],
     },
 }
+
+# Phase D: the receptionist's take_message tool (docs/agente/reglas-por-perfil.md
+# B7). The handler in views.py validates the phone, stores the message as a
+# ContactSubmission(source='message') and routes the alert (StaffContact).
+TAKE_MESSAGE_TOOL = {
+    'name': 'take_message',
+    'description': (
+        "Leave a message for a person or department of the business so they call the visitor back. "
+        "Call ONLY when you have the visitor's name, a complete 10-digit callback phone, "
+        "the department and what it is about. Summarize in your own words."
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'name': {'type': 'string', 'description': "Visitor's name"},
+            'callback_phone': {'type': 'string', 'description': '10-digit callback number'},
+            'department': {'type': 'string', 'description': "Department that should handle it, from the business information; 'General' if none fits"},
+            'recipient': {'type': 'string', 'description': 'Person the visitor asked for, if any'},
+            'urgency': {'type': 'string', 'enum': ['normal', 'urgent'], 'description': "'urgent' only if the visitor said so"},
+            'summary': {'type': 'string', 'description': '1-2 neutral sentences: what the visitor needs'},
+            'preferred_time': {'type': 'string', 'description': 'When they prefer the call, in their words, if given'},
+            'email': {'type': 'string', 'description': 'Email, if given'},
+            'location': {'type': 'string', 'description': 'Business location concerned, if the business has several'},
+        },
+        'required': ['name', 'callback_phone', 'department', 'urgency', 'summary'],
+    },
+}
+
+# Revised BOOKINGS text (B4) for the non-web profiles: a phone is a valid
+# contact and data already given is never re-asked. The web profile keeps
+# BOOKING_RULES below, byte for byte (tests_core snapshot).
+BOOKING_RULES_GENERAL = (
+    "\n\nBOOKINGS: This business takes appointments. Collect the visitor's name, a way to "
+    "reach them (a valid email, or if they have none, a complete 10-digit phone), and a "
+    "specific date and time. Ask only for what is missing. VALIDATE before booking: the "
+    "contact must look real, and the date/time must be a concrete FUTURE moment. Read it "
+    "back in plain words and get a yes before calling create_booking. If the tool says "
+    "the time is past, too soon, too far out, outside business hours or taken, do NOT "
+    "claim it was booked: apologize briefly and offer another specific time. Confirm only "
+    "after the tool succeeds."
+)
 
 BOOKING_RULES = (
     "\n\nBOOKINGS: This business takes reservations/appointments. When the visitor wants "
@@ -583,7 +628,7 @@ def _accumulate_usage(usage, response):
 
 
 def answer(history, business_prompt=None, handlers=None, language='es', clinic=False,
-           profile='web', channel='web'):
+           profile='web', channel='web', context_lines=()):
     """Return (reply, usage) for the conversation, for a given business.
 
     `business_prompt` is the Client's compiled knowledge (defaults to DOMINIO).
@@ -594,6 +639,10 @@ def answer(history, business_prompt=None, handlers=None, language='es', clinic=F
     `profile` picks the rule set (see PROFILES) and `channel` the delivery
     style (see CHANNELS); callers pass them only when not 'web', so existing
     call sites and mocks keep the old signature.
+    `context_lines` are per-request facts the model must not work out itself
+    (the receptionist's "HOURS NOW" line, later the WhatsApp CHANNEL line).
+    They go with the current date in the UNCACHED second system block, so
+    the cached prefix stays byte-stable.
     `usage` (see new_usage) holds the uncached input, output and cache read/write
     tokens accumulated across the tool loop, plus model, effort and api_calls
     (M-03 cost analytics). Raises AgentNotConfigured if no API key, or
@@ -616,6 +665,8 @@ def answer(history, business_prompt=None, handlers=None, language='es', clinic=F
         tools.append(BOOKING_TOOL)
     if 'request_human' in handlers:
         tools.append(HUMAN_TOOL)
+    if 'take_message' in handlers:
+        tools.append(TAKE_MESSAGE_TOOL)
     rules = build_rules(language=language,
                         bookings='create_booking' in handlers,
                         human='request_human' in handlers,
@@ -625,11 +676,15 @@ def answer(history, business_prompt=None, handlers=None, language='es', clinic=F
         'text': rules + BUSINESS_HEADER + (business_prompt or DOMINIO_BUSINESS),
         'cache_control': {'type': 'ephemeral'},
     }]
-    if 'create_booking' in handlers:
+    context_lines = [line for line in (context_lines or ()) if line]
+    if 'create_booking' in handlers or context_lines:
         # Without today's date the agent can't turn "el próximo martes" into a
         # booking and loops asking for the exact date. It goes in its own block
-        # AFTER the cache breakpoint so the cached prefix stays byte-stable.
-        system.append({'type': 'text', 'text': current_date_line(language)})
+        # AFTER the cache breakpoint so the cached prefix stays byte-stable;
+        # the context lines (HOURS NOW) ride along for the same reason.
+        system.append({'type': 'text',
+                       'text': current_date_line(language)
+                       + ''.join(f'\n\n{line}' for line in context_lines)})
     messages = list(history)
     tool_kwarg = {'tools': tools} if tools else {}
     effort_kwarg = _effort_kwargs(model, history)

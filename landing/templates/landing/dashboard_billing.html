@@ -40,7 +40,14 @@
     <div class="bill-meta">
         {% if subscription.current_period_end %}<span>Próxima renovación: {{ subscription.current_period_end|date:"M d, Y" }}</span>{% endif %}
         <span>Método de pago: {{ subscription.get_method_display }}</span>
+        {% if plan.step %}<span>Escalón {{ plan.step }}</span>{% endif %}
     </div>
+    {% if allowance.unit == 'conversations' and allowance.included %}
+    <div class="bill-meta" role="status">
+        <span>Este mes: <b>{{ allowance.used }}</b> de {{ allowance.included }} conversaciones ({{ allowance.pct }}%){% if allowance.overage_blocks %} · exceso hasta hoy: {{ allowance.overage_blocks }} bloque{{ allowance.overage_blocks|pluralize }} = {{ allowance.overage_price }}{% endif %}</span>
+    </div>
+    <p class="bill-manual">Tu plan incluye {{ allowance.included }} conversaciones al mes. Si recibes más, el agente sigue atendiendo y a fin de mes se cobran bloques adicionales de {{ allowance.block_size }} conversaciones a {{ allowance.block_price }} cada uno, en tu misma factura. El contador se reinicia el día 1 de cada mes.</p>
+    {% endif %}
 
     {% if portal_available %}
     <div class="bill-portal">

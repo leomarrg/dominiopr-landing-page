@@ -334,6 +334,12 @@ python manage.py preflight   # Stripe, SMTP, IA y Django reales (--stripe|--emai
 */5 * * * * cd /ruta/app && timeout 900 venv/bin/python manage.py process_knowledge >> /home/ubuntu/dominio-cron.log 2>&1
 # M-01: reconciliación de suscripciones contra Stripe, diario
 45 4 * * * cd /ruta/app && venv/bin/python manage.py reconcile_stripe
+# Fase C: el día 1 de cada mes factura el exceso de conversaciones del mes anterior como
+# InvoiceItems de Stripe (bloques de +100 web $15, +500 WhatsApp $149, asiento extra $9).
+# Idempotente (Idempotency-Key + AuditEvent 'billing.overage'); los clientes sin Stripe se
+# listan en la salida y por correo para cobrarlos a mano. --dry-run muestra sin cobrar;
+# --month YYYY-MM repite un mes. Nunca corta el servicio.
+10 3 1 * * cd /ruta/app && venv/bin/python manage.py bill_overage >> /home/ubuntu/dominio-cron.log 2>&1
 ```
 
 **Conocimiento desde el sitio y archivos (Fase 8):** en el dashboard → Conocimiento, el

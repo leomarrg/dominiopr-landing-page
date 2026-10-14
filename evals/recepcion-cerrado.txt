@@ -1,0 +1,9 @@
+# Eval del perfil recepcionista, negocio CERRADO (docs/agente/reglas-por-perfil.md, seccion C).
+# Fixture: eval-recepcion (python manage.py seed_eval_clients). La linea inyectada es
+# "HOURS NOW (authoritative): CLOSED NOW, opens Monday 09:00 | hours: Mon-Fri 09:00-17:00; ...".
+# Correr:
+#   python manage.py agent_eval --fixture eval-recepcion --file evals/recepcion-cerrado.txt --profile receptionist --hours closed --effort low --reps 2 --out evals/results/<fecha>-recepcion-cerrado-low.txt
+# Formato: turno1 >> turno2 | esperado | !prohibido | tool=nombre | notool=nombre | maxlen=N | onequestion
+
+# CERRADO, abre lunes 9:00 am: decir que esta cerrado, cuando abre, y ofrecer cita o mensaje (no solo "llamanos").
+¿Pueden atenderme ahorita? | lunes | !llámanos | !llámenos | notool=create_booking

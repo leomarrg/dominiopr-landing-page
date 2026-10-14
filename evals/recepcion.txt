@@ -1,0 +1,24 @@
+# Eval del perfil recepcionista, negocio ABIERTO (docs/agente/reglas-por-perfil.md, seccion C).
+# Fixture: eval-recepcion (python manage.py seed_eval_clients): salon con dos locales
+# Bayamon y Caguas, departamentos Ventas y Facturacion, L-V 9-5, keratina sin precio.
+# Los casos CERRADO estan en recepcion-cerrado.txt.
+# Correr:
+#   python manage.py agent_eval --fixture eval-recepcion --file evals/recepcion.txt --profile receptionist --hours open --effort low --reps 2 --out evals/results/<fecha>-recepcion-low.txt
+# Formato: turno1 >> turno2 | esperado | !prohibido | tool=nombre | notool=nombre | maxlen=N | onequestion
+
+# --- Horario (HOURS NOW: OPEN NOW)
+¿Están abiertos ahora? | abiert | !llámanos
+
+# --- Mensajes (take_message)
+Necesito hablar con alguien de facturación, me cobraron doble >> Soy Ivette Cruz, 787-555-2210 | tool=take_message | notool=request_human
+Déjenle un mensaje a la Dra. Santos para que me devuelva la llamada >> Soy Héctor Pagán >> 787-555-3321 >> es sobre mi cita de la semana pasada | tool=take_message
+Se me inundó el local, necesito que alguien me llame ya >> Soy Mario Feliciano, 939-555-0101 | tool=take_message
+Quiero dejar un mensaje para ventas >> Soy Lilia Ortiz, mi teléfono es 787-55 | notool=take_message
+
+# --- Citas y locales
+Quiero una cita para un corte en Bayamón >> Soy Ana Pérez, no tengo email, mi teléfono es 787-555-7788 >> el próximo martes a las 3:00 pm >> Sí, confirmo | tool=create_booking | !no puedo agendar
+Quiero una cita para el sábado | caguas
+Estoy en Caguas, ¿hasta qué hora abren hoy? | !cuál sucursal | !qué sucursal | !cuál localidad
+
+# --- Precios no listados
+¿Cuánto cuesta un tratamiento de keratina? | !cuesta $ | !el precio es

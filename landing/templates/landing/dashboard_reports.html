@@ -32,9 +32,18 @@
     <section class="ctl-card" aria-labelledby="rep-allowance">
         <h2 id="rep-allowance">Tu plan este mes</h2>
         {% if allowance.included %}
-        <p class="rep-big">Llevas <b>{{ allowance.used|thousands }}</b> de {{ allowance.included|thousands }} mensajes este mes <span class="{% if allowance.warn %}ctl-badge ctl-badge--warn{% else %}ctl-muted{% endif %}">{{ allowance.pct }}%</span></p>
-        <span class="ctl-hbar__track rep-progress" role="progressbar" aria-label="Mensajes usados este mes" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ allowance.bar_pct }}"><span class="ctl-hbar__fill{% if allowance.warn %} rep-fill--warn{% endif %}" style="width:{{ allowance.bar_pct }}%"></span></span>
-        <p class="ctl-muted">A este ritmo cerrarías el mes con unos <b>{{ allowance.projection|thousands }}</b> mensajes ({{ allowance.projection_pct }}% de lo incluido){% if allowance.projection_warn %} — <span class="ctl-badge ctl-badge--warn">te pasarías del plan</span>{% endif %}. Día {{ allowance.elapsed }} de {{ allowance.days }}.</p>
+        <p class="rep-big">Llevas <b>{{ allowance.used|thousands }}</b> de {{ allowance.included|thousands }} {{ allowance.unit_label }} este mes <span class="{% if allowance.warn %}ctl-badge ctl-badge--warn{% else %}ctl-muted{% endif %}">{{ allowance.pct }}%</span></p>
+        <span class="ctl-hbar__track rep-progress" role="progressbar" aria-label="{{ allowance.unit_label|capfirst }} usadas este mes" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ allowance.bar_pct }}"><span class="ctl-hbar__fill{% if allowance.warn %} rep-fill--warn{% endif %}" style="width:{{ allowance.bar_pct }}%"></span></span>
+        <p class="ctl-muted">A este ritmo cerrarías el mes con unos <b>{{ allowance.projection|thousands }}</b> {{ allowance.unit_label }} ({{ allowance.projection_pct }}% de lo incluido){% if allowance.projection_warn %} — <span class="ctl-badge ctl-badge--warn">te pasarías del plan</span>{% endif %}. Día {{ allowance.elapsed }} de {{ allowance.days }}.</p>
+        {% with ov=allowance.overage %}{% if ov %}
+        {% if ov.reached %}
+        <p class="rep-overage" role="status"><span class="ctl-badge ctl-badge--warn">Ya usaste lo incluido</span> Tu agente sigue atendiendo. Las {{ ov.overage_units|thousands }} conversaciones de más hasta hoy son <b>{{ ov.overage_blocks }}</b> bloque{{ ov.overage_blocks|pluralize }} adicional{{ ov.overage_blocks|pluralize:"es" }} de {{ ov.block_size }} ({{ ov.overage_price }}) que se cobran a fin de mes.</p>
+        {% elif ov.warn %}
+        <p class="rep-overage" role="status"><span class="ctl-badge ctl-badge--warn">{{ ov.pct }}% de tu plan</span> Te quedan {{ ov.remaining|thousands }} conversaciones incluidas este mes. Si las pasas, el agente sigue atendiendo y se cobra el exceso a fin de mes.</p>
+        {% endif %}
+        <p class="ctl-muted rep-disclaimer">Tu plan incluye {{ ov.included|thousands }} conversaciones al mes. Si recibes más, el agente sigue atendiendo y a fin de mes se cobran bloques adicionales de {{ ov.block_size }} conversaciones a {{ ov.block_price }} cada uno, en tu misma factura. El contador se reinicia el día 1 de cada mes.{% if ov.wa.included %} WhatsApp: {{ ov.wa.used|thousands }} de {{ ov.wa.included|thousands }} conversaciones (bloques de {{ ov.wa.block_size }} a {{ ov.wa.block_price }}).{% endif %}{% if ov.seats.included %} Asientos internos: {{ ov.seats.used }} de {{ ov.seats.included }} (extra {{ ov.seats.price }}/mes).{% endif %}</p>
+        <p class="ctl-muted">Mensajes este mes: <b>{{ allowance.messages|thousands }}</b>.</p>
+        {% endif %}{% endwith %}
         {% else %}
         <p class="rep-big">Llevas <b>{{ allowance.used|thousands }}</b> mensajes este mes.</p>
         {% endif %}

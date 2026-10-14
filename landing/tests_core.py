@@ -315,7 +315,9 @@ class ProfileRulesTests(SimpleTestCase):
         self.assertNotIn(lead_block, rec)
         self.assertNotIn(int_block, rec)
         self.assertTrue(rec.startswith(agent._INTRO_RECEPTION.strip()))
-        self.assertIn(agent.BOOKING_RULES.strip(), rec)
+        # Phase D: non-web profiles get the revised BOOKINGS text (phone allowed).
+        self.assertIn(agent.BOOKING_RULES_GENERAL.strip(), rec)
+        self.assertNotIn(agent.BOOKING_RULES.strip(), rec)
         self.assertIn(agent.CLINIC_RULES.strip(), rec)
         # The receptionist takes messages; request_human is a web-only tool.
         self.assertNotIn(agent.HUMAN_RULES.strip(), rec)
@@ -328,6 +330,7 @@ class ProfileRulesTests(SimpleTestCase):
         self.assertNotIn(agent.LANGUAGE_RULES['es'].strip(), internal)
         # No booking, no escalation for employees even if the flags are set.
         self.assertNotIn(agent.BOOKING_RULES.strip(), internal)
+        self.assertNotIn(agent.BOOKING_RULES_GENERAL.strip(), internal)
         self.assertNotIn(agent.HUMAN_RULES.strip(), internal)
         self.assertIn(agent.CLINIC_RULES.strip(), internal)
 
@@ -367,7 +370,9 @@ class ProfileRulesTests(SimpleTestCase):
                 self.assertLess(text.index(style), text.index(wa))
                 self.assertLess(text.index(wa), text.index('SECURITY:'))
                 if profile != 'internal':
-                    self.assertLess(text.index(wa), text.index(agent.BOOKING_RULES.strip()))
+                    booking = (agent.BOOKING_RULES if profile == 'web'
+                               else agent.BOOKING_RULES_GENERAL).strip()
+                    self.assertLess(text.index(wa), text.index(booking))
 
     def test_rules_are_byte_stable_per_configuration(self):
         seen = {}

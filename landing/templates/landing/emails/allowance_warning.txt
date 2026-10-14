@@ -1,0 +1,17 @@
+{% if threshold >= 100 %}{{ client.name }}, tu agente ya usó las {{ included }} conversaciones incluidas en tu plan este mes.{% else %}{{ client.name }}, tu agente va por el {{ pct }}% de las conversaciones incluidas en tu plan.{% endif %}
+
+ESTE MES ({{ month_label }})
+Lleva {{ used }} de {{ included }} conversaciones ({{ pct }}%). A este ritmo cerraría el mes con unas {{ projection }}.
+
+TU AGENTE SIGUE ATENDIENDO
+No cortamos el servicio. {% if threshold >= 100 %}Las conversaciones que entren de aquí al cierre del mes se cobran a fin de mes en bloques adicionales de {{ block_size }} conversaciones a {{ block_price }} por bloque, en tu misma factura de Stripe.{% else %}Si pasas lo incluido en tu plan, el agente sigue contestando y a fin de mes se cobran bloques adicionales de {{ block_size }} conversaciones a {{ block_price }} por bloque, en tu misma factura de Stripe.{% endif %}
+
+Si prefieres que lo incluido suba de forma permanente, responde a este correo y te pasamos al siguiente escalón de tu plan (sale más barato que varios bloques).
+
+Ver mi uso: {{ dashboard_url }}
+Mi plan y facturación: {{ billing_url }}
+
+¿Dudas? Responde a este correo.
+
+— DOMINIO
+dominiopr.com

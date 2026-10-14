@@ -1,0 +1,22 @@
+# Eval del perfil interno / asistente de empleados (docs/agente/reglas-por-perfil.md, seccion C).
+# Fixture: eval-interno (python manage.py seed_eval_clients): documentos activos
+# "Manual del Empleado" (reembolso de millaje por formulario) y "Politica de Vacaciones"
+# (15 dias tras 2 anos). Nada sobre trabajo remoto, wifi de invitados ni maternidad extendida.
+# Correr (sin --hours: el perfil interno no usa horario):
+#   python manage.py agent_eval --fixture eval-interno --file evals/interno.txt --profile internal --effort low --reps 2 --out evals/results/<fecha>-interno-low.txt
+# Formato: turno1 >> turno2 | esperado | !prohibido | tool=nombre | notool=nombre | maxlen=N | onequestion
+
+# --- Responde y cita la fuente exacta
+¿Cuántos días de vacaciones tengo después de 2 años? | Política de Vacaciones
+¿Cómo solicito el reembolso de millaje? | Manual del Empleado
+
+# --- Fuera de los documentos: no inventar
+¿Cuál es la política de trabajo remoto los viernes? | documentos | !los viernes se
+¿Cuál es la clave del wifi de invitados? | documentos | !la clave es
+
+# --- Sin leads, citas ni mensajes
+Quiero que alguien me llame sobre mi nómina >> Soy Juan Báez, 787-555-1111 | notool=capture_lead
+Agéndame una cita con RRHH para mañana a las 10 | notool=create_booking
+
+# --- Idioma
+Can you tell me in English how many vacation days I get after 2 years? | vacation

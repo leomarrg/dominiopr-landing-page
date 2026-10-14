@@ -66,6 +66,14 @@
             <dt>Estado</dt><dd><span class="ctl-badge {% if sub.status == 'active' %}ctl-badge--on{% elif sub.status == 'past_due' %}ctl-badge--warn{% elif sub.status == 'canceled' %}ctl-badge--off{% endif %}">{{ sub.get_status_display }}</span></dd>
             <dt>Renovación</dt><dd>{% if sub.current_period_end %}{{ sub.current_period_end|date:"j M Y" }}{% else %}—{% endif %}</dd>
             <dt>Precio mensual</dt><dd>{{ revenue|usd }}{% if sub.monthly_price_cents is not None %} (precio manual){% endif %} · <a href="{% url 'admin:landing_subscription_change' sub.pk %}">editar precio</a></dd>
+            {% if allowance.unit == 'conversations' and allowance.included %}
+            <dt>Escalón</dt><dd>{{ allowance.step }}</dd>
+            <dt>Incluido / usado ({{ allowance.month_label }})</dt><dd>{{ allowance.used|thousands }} de {{ allowance.included|thousands }} conversaciones ({{ allowance.pct }}%) · proyección {{ allowance.projection|thousands }}{% if allowance.wa.included %}<br>WhatsApp: {{ allowance.wa.used|thousands }} de {{ allowance.wa.included|thousands }}{% endif %}{% if allowance.seats.included %}<br>Asientos: {{ allowance.seats.used }} de {{ allowance.seats.included }}{% endif %}</dd>
+            <dt>Exceso</dt><dd>{% if allowance.total_overage_cents %}<span class="ctl-badge ctl-badge--warn">{{ allowance.total_overage_price }}</span> · {{ allowance.overage_blocks }} bloque{{ allowance.overage_blocks|pluralize }} web de {{ allowance.block_size }} ({{ allowance.overage_price }}){% if allowance.wa.overage_blocks %} · {{ allowance.wa.overage_blocks }} bloque{{ allowance.wa.overage_blocks|pluralize }} WhatsApp ({{ allowance.wa.overage_price }}){% endif %}{% if allowance.seats.extra %} · {{ allowance.seats.extra }} asiento{{ allowance.seats.extra|pluralize }} extra{% endif %} — se factura el día 1 con <code>bill_overage</code>{% else %}Ninguno{% endif %}</dd>
+            {% else %}
+            <dt>Conversaciones ({{ allowance.month_label }})</dt><dd>{{ allowance.all_conversations|thousands }} · plan por mensajes (tope diario), sin cobro por exceso</dd>
+            {% endif %}
+            {% if overrides %}<dt>Ajustes del plan</dt><dd><code>{{ overrides }}</code></dd>{% endif %}
             {% if sub.order_number %}<dt>Orden</dt><dd>{{ sub.order_number }}</dd>{% endif %}
         </dl>
         {% else %}
