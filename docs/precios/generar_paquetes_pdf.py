@@ -145,6 +145,46 @@ S.append(callout(
     'empleados y varios locales; <b>Premium ($699–$1,199)</b> añade WhatsApp Business con número propio.'))
 S.append(Spacer(1, 6))
 
+# ---- Glosario
+S.append(Paragraph('Glosario: qué significa cada término', H2))
+GLOSS = [
+    ('Rango', 'El precio dentro de un paquete según el tamaño del cliente, medido por cuántas conversaciones atiende '
+     'su agente al mes. Un negocio con poco tráfico paga la entrada; uno con más movimiento paga más, hasta el tope.'),
+    ('Conversación', 'Una persona hablando con el agente de corrido, desde su primer mensaje hasta que deja de '
+     'escribir. Ejemplo: Ana hace 5 preguntas y deja su email = 1 conversación. Si vuelve mañana = otra. Regla '
+     'propuesta: termina tras 30 minutos sin mensajes o al cambiar el día. (Hoy el sistema mide mensajes por día; '
+     'contar conversaciones por mes es parte del trabajo de "capacidad mensual", sección 9.)'),
+    ('Recepcionista', 'El agente hace de recepción por chat (web y, en Premium, WhatsApp): contesta, agenda citas, '
+     'toma recados para alguien del equipo, dice si está abierto o cerrado y pasa a una persona avisándole por SMS o '
+     'WhatsApp. No contesta llamadas de teléfono.'),
+    ('Asistente interno (con login)', 'Un chat privado dentro del dashboard de DOMINIO solo para los empleados del '
+     'cliente. Cada empleado entra con su usuario y contraseña y pregunta cosas como "¿cuál es la política de '
+     'devoluciones?"; el agente contesta con los manuales y políticas internas. El público nunca lo ve y el agente de '
+     'la página web nunca usa esos documentos.'),
+    ('Asientos internos', 'Cuántos empleados del cliente pueden tener cuenta para usar el asistente interno '
+     '(como licencias). Large incluye 5 a 15; Premium hasta 25; cada asiento extra $9/mes.'),
+    ('Número de WhatsApp', 'WhatsApp Business necesita un número que NO esté activo en la app normal de WhatsApp. '
+     'Opción recomendada: DOMINIO consigue un número nuevo por Twilio (~$1–2/mes, incluido). Opción 2: el cliente usa '
+     'su número de siempre, pero tiene que sacarlo de la app (ya no lo usa en el celular; todo pasa por el agente y el '
+     'dashboard). En los dos casos, Meta verifica el negocio con sus datos legales y aprueba el nombre que ven los '
+     'clientes.'),
+    ('Instalación', 'Pago único por el trabajo de DOMINIO para dejar el agente funcionando: leer el sitio y los '
+     'documentos, configurarlo, probarlo con preguntas reales y ponerlo en la página (y en WhatsApp en Premium).'),
+    ('Conectar un CRM', 'CRM = el sistema donde el negocio guarda a sus clientes (HubSpot, Zoho, Salesforce, '
+     'GoHighLevel…). Conectarlo hace que cada lead o cita que capta el agente entre solo a ese sistema. Es trabajo a '
+     'la medida: desde $750, con cotización.'),
+    ('Reentrenamiento completo', 'Cuando el negocio cambia mucho (servicios o precios nuevos, sitio rediseñado), '
+     'DOMINIO vuelve a escanear el sitio, recarga los documentos y prueba de nuevo las respuestas ($149). Medium en '
+     'adelante ya incluye la afinación mensual para cambios normales.'),
+    ('Instalación a la medida sin CMS', 'CMS = la plataforma con que se edita el sitio (WordPress, Wix, Shopify, '
+     'Squarespace), donde pegar el código del chat toma minutos. Si el sitio lo hizo un programador a mano o no hay '
+     'acceso fácil, hay que coordinar con su desarrollador o tocar el código: $99 adicionales.'),
+]
+rows = [['Término', 'Qué significa']]
+for term, text in GLOSS:
+    rows.append([f'<b>{term}</b>', text])
+S.append(table(rows, [1.6 * inch, 5.3 * inch]))
+
 # ---- 1. Cómo funcionan los rangos
 S.append(Paragraph('1. Cómo funcionan los rangos', H2))
 S += bullets([
