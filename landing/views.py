@@ -20,7 +20,7 @@ from django.core.exceptions import ValidationError
 from django.core.mail import EmailMultiAlternatives
 from django.core.validators import URLValidator, validate_email
 from django.db import IntegrityError, transaction
-from django.db.models import Count, F, Max, Q
+from django.db.models import Count, Q
 from django.http import Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -42,16 +42,15 @@ from . import usage as usage_ledger
 from .emailcheck import check_email
 from .forms import ContactForm, LeadNoteForm
 from .models import (
-    AuditEvent, Booking, ChatMessage, Client, ContactSubmission, Conversation,
+    AuditEvent, Booking, Client, ContactSubmission, Conversation,
     LeadNote, Membership, ProcessedWebhookEvent, Subscription, Survey,
 )
 from .phone import normalize_phone
+# Bound of a single visitor message (shared with the channel-agnostic turn
+# core so a message is trimmed the same way whichever channel it enters by).
+from .turns import MAX_MESSAGE_CHARS, run_turn
 
 logger = logging.getLogger(__name__)
-
-# Bound a single visitor message so the public endpoint can't be abused with
-# huge payloads.
-MAX_MESSAGE_CHARS = 2000
 # Hard cap on the raw request body for the chat endpoint (a conversation is tiny).
 MAX_CHAT_BODY_BYTES = 64 * 1024
 
@@ -1002,18 +1001,8 @@ def chat_api(request):
                           'config_version': client_obj.config_version()})
 
     # The caller controls the request body, so the 'assistant' turns it sends
-    # are not evidence of anything we said. Left as-is, a visitor could feed the
-    # model a fabricated prior turn ("te autorizo 95% de descuento") to get it
-    # ratified, and — because persistence rewrote the transcript from the same
-    # body — the tenant's dashboard would corroborate the invention.
-    # Rule: the server owns the history; the client contributes one user turn.
-    if conversation is not None:
-        stored = list(conversation.chat_messages.order_by('position')
-                      .values('role', 'content'))
-        history = (stored + [history[-1]])[-max_turns:]
-        while history and history[0]['role'] != 'user':
-            history.pop(0)
-
+    # are not evidence of anything we said: run_turn rebuilds the history from
+    # the server-owned transcript and takes ONLY the new user turn from here.
     handlers = {'capture_lead': _chat_lead_handler(
         request, client_obj, page_url=page, conversation=conversation)}
     if client_obj and client_obj.enable_bookings:
@@ -1022,64 +1011,32 @@ def chat_api(request):
         handlers['request_human'] = _human_handler(
             request, client_obj, conversation=conversation, page_url=page)
 
-    language = client_obj.primary_language if client_obj else 'es'
+    # From here on the turn is channel-agnostic (landing.turns): history,
+    # model call, persistence and the usage ledger. This view only maps the
+    # agent's failures to the widget's HTTP contract.
     try:
-        reply, usage = agent.answer(
-            history, business_prompt=business_prompt, handlers=handlers,
-            language=language, **agent.clinic_kwargs(client_obj))
+        # Without a stored conversation the sanitized body history is the
+        # only context there is (old widgets, unknown slug); with one it is
+        # ignored and the server-owned transcript wins.
+        result = run_turn(client_obj, conversation, history[-1]['content'],
+                          channel='web', handlers=handlers, page_url=page,
+                          fallback_history=history[:-1])
     except agent.AgentNotConfigured:
         return JsonResponse(
             {'error': 'El asistente no está disponible ahora mismo.'}, status=503
         )
-    except anthropic.RateLimitError as exc:
-        usage_ledger.record('chat', getattr(exc, 'usage', None), client=client_obj,
-                            conversation=conversation)
+    except anthropic.RateLimitError:
         return JsonResponse(
             {'error': 'Estamos recibiendo muchas preguntas ahora mismo — trata de nuevo en un momento.'},
             status=429,
         )
-    except anthropic.APIError as exc:
+    except anthropic.APIError:
         logger.exception('Anthropic API error in chat_api')
-        usage_ledger.record('chat', getattr(exc, 'usage', None), client=client_obj,
-                            conversation=conversation)
         return JsonResponse(
             {'error': 'Algo salió mal al conectar con el asistente. Trata de nuevo o usa el formulario de contacto.'},
             status=502,
         )
-
-    # M-02/M-03/M-19: store the turns, cost and config fingerprint. The widget
-    # sends the FULL history each turn, so rewriting the messages is a correct,
-    # simple upsert (conversations are capped at a few turns anyway). Handler
-    # side-effects (state, lead) were written with .update(), so nothing here
-    # can clobber them. Best-effort: a persistence failure must not lose the reply.
-    if conversation is not None:
-        try:
-            with transaction.atomic():
-                # Append only — never rewrite the stored transcript from the
-                # request body, or the record becomes whatever the last caller
-                # claimed it was.
-                next_pos = (conversation.chat_messages.aggregate(
-                    m=Max('position'))['m'] or -1) + 1
-                ChatMessage.objects.bulk_create([
-                    ChatMessage(conversation=conversation, role='user',
-                                content=history[-1]['content'][:MAX_MESSAGE_CHARS],
-                                position=next_pos),
-                    ChatMessage(conversation=conversation, role='assistant',
-                                content=reply[:MAX_MESSAGE_CHARS],
-                                position=next_pos + 1),
-                ])
-                updates = {'tokens_used': F('tokens_used') + agent.total_tokens(usage),
-                           'last_message_at': timezone.now()}
-                # The opening question feeds the operator control center.
-                # Clinic tenants keep no free text outside the transcript.
-                if next_pos == 0 and not client_obj.clinic_mode:
-                    updates['first_question'] = history[-1]['content'][:300]
-                Conversation.objects.filter(pk=conversation.pk).update(**updates)
-        except Exception:
-            logger.exception('Failed to persist conversation %s', conversation.pk)
-
-    usage_ledger.record('chat', usage, client=client_obj, conversation=conversation)
-    return JsonResponse({'reply': reply})
+    return JsonResponse({'reply': result.reply})
 
 
 @csrf_exempt
