@@ -383,23 +383,62 @@ S += bullets([
 S.append(CondPageBreak(3 * inch))
 S.append(Paragraph('8. Lo que cuesta dar cada escalón y el margen', H2))
 S.append(Paragraph(
-    'IA medida: ~$0.0015 por conversación (Haiku 5.5, effort low, con caché). WhatsApp para números de PR: Meta '
-    'cobra cada respuesta de servicio a ~$0.0113 después de las primeras 1,000 gratis al mes (desde el 1 de octubre '
-    'de 2026; PR se factura como "resto de Latinoamérica", no como EE. UU.), Twilio cobra $0.005 por mensaje entrante '
-    'o saliente, y cada recordatorio por plantilla ~$0.0113. Se supone un recordatorio por cada 3 conversaciones.',
-    BODY))
-rows = [['Paquete', 'Escalón', 'Precio', 'Costo IA', 'Costo WhatsApp', 'Costo total', 'Margen']]
+    '<b>IA:</b> ~$0.0015 por conversación medido (Haiku 5.5, effort low, con caché); el asistente interno ~$0.0005 '
+    'por pregunta (prompt más largo). <b>WhatsApp</b> (números de PR): Meta cobra cada respuesta de servicio a '
+    '~$0.0113 después de las primeras 1,000 gratis al mes (desde el 1 de octubre de 2026; PR se factura como "resto de '
+    'Latinoamérica", no como EE. UU.), Twilio cobra $0.005 por mensaje entrante o saliente y $1.15/mes por el número, '
+    'y cada recordatorio por plantilla ~$0.0113 (se supone uno por cada 3 conversaciones).', BODY))
+
+# Hosting: servidor y servicios compartidos por todos los clientes (AWS Lightsail, oct 2026).
+HOSTING_STAGES = [
+    # (etapa, clientes, detalle, costo mensual)
+    ('Arranque', '1–10', 'Lightsail 2 GB ($12) + backup S3 y snapshots (~$2) + dominio (~$1.67) + correo Resend '
+     'gratis (3,000/mes)', 16.0),
+    ('Crecimiento', '10–30', 'Lightsail 4 GB ($24) + backups (~$3) + dominio + correo Resend pago ($20)', 49.0),
+    ('Escala', '30–100', 'Lightsail 8 GB ($44) + base de datos Postgres gestionada ($15) + backups (~$5) + dominio '
+     '+ correo ($20)', 86.0),
+]
+S.append(Paragraph('<b>Hosting</b> (el servidor y los servicios que comparten todos los clientes):', BODY))
+rows = [['Etapa', 'Clientes', 'Qué incluye', 'Costo / mes', 'Por cliente']]
+for name, n, detail, monthly in HOSTING_STAGES:
+    lo, hi = (int(x) for x in n.split('–'))
+    rows.append([name, n, detail, f'${monthly:,.0f}', f'${monthly / hi:,.2f}–${monthly / lo:,.2f}'])
+S.append(table(rows, [0.85 * inch, 0.65 * inch, 3.4 * inch, 0.8 * inch, 1.2 * inch]))
+S.append(Paragraph('Hoy el sitio corre en un plan chico (512 MB–1 GB, $5–7). Con los primeros clientes conviene pasar '
+                   'al de 2 GB ($12): la extracción de PDFs y el chat en paralelo necesitan esa memoria. Precios de '
+                   'aws.amazon.com/lightsail/pricing, octubre 2026.', SMALL))
+
+HOSTING_PER_CLIENT = 16.0 / 10   # etapa Arranque con 10 clientes
+WA_NUMBER = 1.15                 # Twilio, número de EE. UU./PR al mes
+
+
+def stripe_fee(price):
+    return price * 0.029 + 0.30
+
+
+S.append(Spacer(1, 6))
+S.append(Paragraph(f'<b>Costo total y margen por escalón</b> (hosting a ${HOSTING_PER_CLIENT:.2f} por cliente, '
+                   'etapa Arranque con 10 clientes):', BODY))
+rows = [['Paquete', 'Escalón', 'Precio', 'IA', 'WhatsApp', 'Hosting', 'Stripe', 'Costo total', 'Margen']]
 for p in PACKAGES:
     for step in p['steps']:
         ai, wa = cost_of(step)
-        total = ai + wa
+        if wa:
+            wa += WA_NUMBER
+        host = HOSTING_PER_CLIENT
+        fee = stripe_fee(step[1])
+        total = ai + wa + host + fee
         rows.append([p['size'], step[0], usd(step[1]), f'${ai:,.2f}', f'${wa:,.2f}' if wa else '—',
-                     f'${total:,.2f}', f'{(step[1] - total) / step[1] * 100:.0f}%'])
-S.append(table(rows, [0.85 * inch, 0.75 * inch, 0.85 * inch, 0.9 * inch, 1.1 * inch, 1.0 * inch, 0.85 * inch]))
-S.append(Paragraph('El margen no descuenta servidor (~$10–20/mes entre todos los clientes), comisión de Stripe '
-                   '(2.9% + $0.30) ni el tiempo de soporte y afinación, que es el costo real del servicio. En WhatsApp '
-                   'la tarifa de Meta para PR es ~3.3 veces la de EE. UU.: por eso Premium incluye un volumen definido '
-                   'y vende bloques extra.', SMALL))
+                     f'${host:,.2f}', f'${fee:,.2f}', f'${total:,.2f}', f'{(step[1] - total) / step[1] * 100:.0f}%'])
+S.append(table(rows, [0.75 * inch, 0.65 * inch, 0.7 * inch, 0.6 * inch, 0.8 * inch, 0.7 * inch, 0.65 * inch,
+                      0.85 * inch, 0.7 * inch]))
+S += bullets([
+    '<b>Lo que más pesa en Small es la comisión de Stripe</b> (~$1.75 de $49.99), no la IA ni el servidor.',
+    '<b>Con solo 3 clientes</b> el hosting por cliente sube a ~$5.33, y aun así el margen de Small queda en ~85%.',
+    '<b>Lo que no está en la tabla:</b> tu tiempo de instalación, soporte y afinación, que es el costo real del '
+    'servicio. En WhatsApp la tarifa de Meta para PR es ~3.3 veces la de EE. UU.; por eso Premium incluye un volumen '
+    'definido y vende bloques extra.',
+])
 
 # ---- 6. Disponibilidad
 S.append(Paragraph('9. Qué existe hoy y qué hay que construir', H2))
