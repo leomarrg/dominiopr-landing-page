@@ -135,7 +135,7 @@ def footer(canvas, doc):
 
 
 S = [Paragraph('Paquetes DOMINIO Chat 24/7', H1),
-     Paragraph('Propuesta de precios por rangos · 13 de octubre de 2026 · Borrador para aprobación', SUB)]
+     Paragraph('Documento interno de decisión · actualizado el 14 de octubre de 2026 · Borrador', SUB)]
 
 S.append(callout(
     'Cuatro paquetes, cada uno con un <b>precio de entrada</b> y un <b>tope</b>. El precio sube por escalones según '
@@ -252,12 +252,96 @@ S.append(table(rows, [0.75 * inch, 1.0 * inch, 0.65 * inch, 0.8 * inch, 3.7 * in
 S += bullets([
     '<b>Opcionales:</b> migrar contactos o conectar un CRM (desde $750, cotización); reentrenamiento completo del '
     'conocimiento ($149); instalación en sitios a la medida sin CMS ($99).',
-    '<b>Promoción sugerida</b>: instalación a mitad de precio con plan anual (el anual paga la instalación).',
 ])
 
-# ---- 5. Costos y márgenes
+# ---- 5. Ejemplos por tipo de negocio
 S.append(CondPageBreak(3 * inch))
-S.append(Paragraph('5. Lo que cuesta dar cada escalón y el margen', H2))
+S.append(Paragraph('5. Ejemplos por tipo de negocio', H2))
+S.append(Paragraph(
+    'Se vende a todo tipo de negocio. Estos son los cuatro grupos de arranque, con el paquete que normalmente les toca '
+    'y lo que el agente hace por ellos en la práctica. Sirven como guion para las demos y para los ejemplos del sitio.',
+    BODY))
+NICHES = [
+    ('Cualquier negocio (general)', 'Small', 'Contesta horario, ubicación, precios y preguntas frecuentes a cualquier '
+     'hora; capta el nombre y el contacto de quien quiere más información y te avisa por email.'),
+    ('Servicios profesionales (abogados, CPAs, bienes raíces, seguros, contratistas)', 'Medium; Large si hay equipo',
+     'Califica el caso (tipo de asunto, urgencia, presupuesto), agenda la consulta inicial y toma recados para el '
+     'licenciado o el agente. En Large, el asistente interno contesta al equipo los procedimientos de la oficina '
+     '(documentos requeridos, cómo abrir un expediente, políticas de cobro).'),
+    ('Salud (dentistas, dermatólogos, terapistas, veterinarios)', 'Medium con modo clínica; Premium para recordatorios '
+     'por WhatsApp', 'Agenda limpiezas, consultas y seguimientos; contesta qué planes médicos aceptan y cómo prepararse; '
+     'nunca pide ni repite síntomas o diagnósticos y manda emergencias al 911. WhatsApp solo con aceptación escrita '
+     '(Meta no firma acuerdos HIPAA).'),
+    ('Belleza y bienestar (salones, barberías, spas, gimnasios)', 'Small o Medium; Premium si los clientes reservan '
+     'por WhatsApp', 'Contesta precios y duración de cada servicio, agenda citas y manda recordatorios; fuera de horario '
+     'sigue reservando. Agenda por estilista o por sala necesita la función de locales/agendas (Large).'),
+    ('Comercio y restaurantes (tiendas, restaurantes, food trucks, delivery)', 'Small; Medium para reservaciones; '
+     'Large para cadenas', 'Contesta menú, horario, delivery, eventos y disponibilidad; toma reservaciones o encargos '
+     'para recoger; en cadenas, cada local con su horario. El asistente interno sirve para entrenar empleados nuevos.'),
+]
+rows = [['Tipo de negocio', 'Paquete típico', 'Qué hace el agente']]
+for n in NICHES:
+    rows.append(list(n))
+S.append(table(rows, [1.9 * inch, 1.45 * inch, 3.55 * inch]))
+
+# ---- 6. Condiciones comerciales
+S.append(CondPageBreak(2.5 * inch))
+S.append(Paragraph('6. Condiciones comerciales', H2))
+S.append(Paragraph(
+    'Dos formas de contratar, a elección del cliente, y una oferta de lanzamiento para los primeros clientes. El '
+    'compromiso mínimo se paga con una instalación más barata: así el cliente que se queda paga menos y DOMINIO '
+    'recupera el trabajo inicial.', BODY))
+rows = [['Paquete', 'Mes a mes (sin contrato)', 'Compromiso de 3 meses (25% menos)', 'Compromiso de 6 meses (50% menos)']]
+for p in PACKAGES:
+    full = p['setup'][1]
+    rows.append([f'{p["size"]} — {p["name"]}', f'Instalación {usd(full)}', f'Instalación {usd(round(full * 0.75))}',
+                 f'Instalación {usd(round(full * 0.5))}'])
+S.append(table(rows, [1.7 * inch, 1.6 * inch, 1.8 * inch, 1.8 * inch]))
+S += bullets([
+    '<b>Mes a mes:</b> cancela cuando quiera desde Facturación; el servicio sigue hasta el final del período pagado. '
+    'Es lo que el sitio promete hoy y se mantiene.',
+    '<b>Compromiso de 3 o 6 meses:</b> si cancela antes, paga la diferencia de la instalación (lo que se descontó). '
+    'Stripe no tiene "mínimo de meses" nativo: se maneja con un cupón en la instalación y la cláusula en los términos.',
+    '<b>Anual:</b> 10 meses de precio (2 gratis). Combinable con la instalación de 6 meses.',
+    '<b>Lanzamiento — "Clientes fundadores" (primeros 10):</b> precio del escalón congelado por 12 meses y 20% de '
+    'descuento los primeros 3 meses (el cupón LANZAMIENTO ya existe en el comando de Stripe). El sitio ya menciona un '
+    'precio garantizado para los primeros 10 clientes, así que es coherente.',
+    '<b>Para no regalar margen:</b> el descuento de fundador y el de compromiso aplican a cosas distintas '
+    '(mensualidad vs instalación), así que se pueden combinar sin vender por debajo del costo.',
+])
+
+# ---- 7. Convivencia con los planes actuales
+S.append(CondPageBreak(2.5 * inch))
+S.append(Paragraph('7. Convivencia con los planes actuales', H2))
+S.append(Paragraph(
+    'Por un tiempo siguen publicados Starter ($149), Pro ($299) y Scale ($499) mientras los paquetes nuevos se '
+    'ofrecen en ventas directas. Así se comparan:', BODY))
+rows = [['Plan actual', 'Qué incluye hoy', 'Paquete nuevo más cercano', 'Ojo']]
+COEXIST = [
+    ('Starter $149/mes · $500 instalación', 'Chat web, leads, dashboard; 200 mensajes/día; sin citas',
+     'Small ($49.99–99.99) o Medium entrada ($149, con citas y recados)',
+     'Medium al mismo precio da más: si conviven, vender Medium en directo y no empujar Starter.'),
+    ('Pro $299/mes · $1,000', 'Citas, calificación de leads, marca, afinación; 500 mensajes/día',
+     'Medium tope ($299)', 'Equivalentes; Medium suma recados y horario cuando se construyan.'),
+    ('Scale $499/mes · $2,500', 'Promete WhatsApp, 3 locales, CRM y calendario', 'Large ($349–599) / Premium',
+     'Promete funciones que NO existen: quitarlas o marcarlas "próximamente" ya, aunque convivan.'),
+]
+for r in COEXIST:
+    rows.append(list(r))
+S.append(table(rows, [1.4 * inch, 1.75 * inch, 1.6 * inch, 2.15 * inch]))
+S += bullets([
+    '<b>Clientes actuales:</b> se quedan con su plan y su precio (Stripe no se lo cambia); si quieren, se pasan al '
+    'paquete nuevo sin costo de instalación.',
+    '<b>Técnico:</b> los paquetes nuevos necesitan precios nuevos en Stripe y la capacidad mensual por paquete '
+    '(4–6 días de trabajo, sección 9). Mientras tanto se pueden vender a mano con el precio manual de la suscripción '
+    '(campo que ya existe en el centro de control).',
+    '<b>Fecha de cambio:</b> recomendable fijar una fecha (por ejemplo, cuando Medium esté completo) para retirar los '
+    'planes viejos del sitio y no tener dos listas de precios a la vez por mucho tiempo.',
+])
+
+# ---- 8. Costos y márgenes
+S.append(CondPageBreak(3 * inch))
+S.append(Paragraph('8. Lo que cuesta dar cada escalón y el margen', H2))
 S.append(Paragraph(
     'IA medida: ~$0.0015 por conversación (Haiku 5.5, effort low, con caché). WhatsApp para números de PR: Meta '
     'cobra cada respuesta de servicio a ~$0.0113 después de las primeras 1,000 gratis al mes (desde el 1 de octubre '
@@ -278,7 +362,7 @@ S.append(Paragraph('El margen no descuenta servidor (~$10–20/mes entre todos l
                    'y vende bloques extra.', SMALL))
 
 # ---- 6. Disponibilidad
-S.append(Paragraph('6. Qué existe hoy y qué hay que construir', H2))
+S.append(Paragraph('9. Qué existe hoy y qué hay que construir', H2))
 S.append(Paragraph(
     'Revisión del código del 13 de octubre de 2026. <b>Importante:</b> el plan Scale publicado hoy promete '
     '"WhatsApp y multicanal", "hasta 3 locales" y "CRM y calendario", y ninguno existe todavía. Hay que quitarlo o '
@@ -314,7 +398,7 @@ S += bullets([
 
 # ---- 7. Mercado
 S.append(CondPageBreak(3 * inch))
-S.append(Paragraph('7. Comparación con el mercado (precios de 2026)', H2))
+S.append(Paragraph('10. Comparación con el mercado (precios de 2026)', H2))
 rows = [['Competidor', 'Tipo', 'Precio', 'Qué incluye / nota']]
 MARKET = [
     ('Tidio + Lyro', 'Chatbot web, hazlo tú', '$29 + desde $39/mes', '50 conversaciones de IA en el add-on; ~$0.50–0.70 '
@@ -339,12 +423,14 @@ S += bullets([
     'solo precio, algo que WATI o Respond.io no dan.',
 ])
 
-# ---- 8. Decisiones
-S.append(Paragraph('8. Decisiones para aprobar', H2))
+# ---- 11. Decisiones
+S.append(Paragraph('11. Decisiones pendientes', H2))
 S += bullets([
     '<b>Precios:</b> ¿los rangos y escalones de la sección 3 tal cual, o ajustar alguno?',
-    '<b>Plan actual:</b> estos paquetes reemplazan Starter ($149), Pro ($299) y Scale ($499). Recomendado: mantener '
-    'los ids internos (starter/pro/scale/custom) y cambiar nombres y precios, para no migrar Stripe ni datos.',
+    '<b>Convivencia:</b> decidido que conviven un tiempo (sección 7). Falta fijar la fecha de cambio y, ya, corregir '
+    'las promesas de Scale en el sitio.',
+    '<b>Condiciones:</b> decidido mes a mes + compromiso de 3/6 meses + clientes fundadores (sección 6). Falta '
+    'redactar la cláusula del compromiso en los términos y crear los cupones de instalación en Stripe.',
     '<b>Lanzamiento escalonado:</b> publicar Small y Medium primero; Large y Premium como "próximamente" con lista de '
     'espera hasta que estén construidos.',
     '<b>IVU:</b> confirmar con un CPA si aplica 11.5% o 4%.',
