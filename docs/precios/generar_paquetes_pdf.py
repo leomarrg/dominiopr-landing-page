@@ -192,8 +192,10 @@ S += bullets([
     'para el cliente y es lo que de verdad consume capacidad. Un mensaje suelto no cuenta como conversación nueva.',
     '<b>Tres escalones por paquete</b>: Entrada, Medio y Tope. El dashboard del cliente ya muestra su uso contra lo '
     'incluido y la proyección al cierre del mes, así que ve venir el cambio de escalón.',
-    '<b>Al acercarse al tope</b> se le avisa (80%) y se le ofrece subir de paquete; no se corta el servicio de golpe '
-    '(margen de 20% sobre el tope; el tope diario sigue protegiendo contra abuso).',
+    '<b>Al pasar lo incluido no se corta el servicio: se cobra el exceso.</b> Aviso al 80% y al 100% (email y '
+    'dashboard); a fin de mes se facturan bloques adicionales por Stripe: +100 conversaciones web $15, +500 de '
+    'WhatsApp $149, asiento interno extra $9. El cliente lo acepta al contratar y lo ve en su dashboard, en el '
+    'checkout y en los términos. El tope diario sigue protegiendo contra abuso.',
     '<b>Anual</b>: 10 meses de precio (2 gratis), sobre el escalón contratado.',
     '<b>Precios sin IVU</b>. El IVU de servicios digitales es 11.5%; un servicio gestionado podría ir al 4% '
     '(servicio profesional designado): <b>confirmar con un CPA</b> antes de publicar.',
@@ -340,6 +342,10 @@ S.append(table(rows, [1.7 * inch, 1.6 * inch, 1.8 * inch, 1.8 * inch]))
 S += bullets([
     '<b>Mes a mes:</b> cancela cuando quiera desde Facturación; el servicio sigue hasta el final del período pagado. '
     'Es lo que el sitio promete hoy y se mantiene.',
+    '<b>Aviso de exceso (obligatorio en checkout, dashboard y términos):</b> "Tu plan incluye X conversaciones al '
+    'mes. Si tu negocio recibe más, el agente sigue atendiendo y a fin de mes se cobran bloques adicionales de 100 '
+    'conversaciones a $15 cada uno (WhatsApp: 500 por $149). Te avisamos al llegar al 80% y al 100%, y puedes subir '
+    'de plan en cualquier momento para que te salga más barato."',
     '<b>Compromiso de 3 o 6 meses:</b> si cancela antes, paga la diferencia de la instalación (lo que se descontó). '
     'Stripe no tiene "mínimo de meses" nativo: se maneja con un cupón en la instalación y la cláusula en los términos.',
     '<b>Anual:</b> 10 meses de precio (2 gratis). Combinable con la instalación de 6 meses.',
