@@ -514,9 +514,13 @@ staff_required = user_passes_test(lambda u: u.is_staff, login_url='login')
 
 
 def _member_client_ids(user):
-    """Client ids this user is a member of (a user can manage several agents)."""
+    """Client ids this user may operate on in the dashboard (a user can
+    manage several agents). Phase E: an 'employee' membership grants only
+    the internal assistant page, so it is NOT a dashboard scope — an employee
+    of A who is also an admin of B must never see A's leads or transcripts."""
     return list(
-        Membership.objects.filter(user=user).values_list('client_id', flat=True))
+        Membership.objects.filter(user=user, role__in=Membership.DASHBOARD_ROLES)
+        .values_list('client_id', flat=True))
 
 
 def leads_for(user):
@@ -967,6 +971,30 @@ def _take_message_handler(request, client_obj=None, conversation=None, page_url=
     return handle
 
 
+def _new_conversation_capped(request, client_obj):
+    """True when this IP already opened today's allowance of NEW
+    conversations on `client_obj` (DOMINIO_NEW_CONVERSATIONS_PER_IP_DAY,
+    default 5); otherwise counts this one. Fixed daily window in the shared
+    cache, same scheme as the per-visitor message cap."""
+    cap = int(getattr(settings, 'DOMINIO_NEW_CONVERSATIONS_PER_IP_DAY', 15) or 0)
+    if cap <= 0:
+        return False
+    today = timezone.now().strftime('%Y%m%d')
+    key = f'chat:newconv:{client_obj.slug}:{_client_ip(request) or "unknown"}:{today}'
+    opened = cache.get(key, 0)
+    if opened >= cap:
+        logger.warning('New-conversation cap reached on %s', client_obj.slug)
+        return True
+    if opened == 0:
+        cache.set(key, 1, 60 * 60 * 26)
+    else:
+        try:
+            cache.incr(key)
+        except ValueError:
+            cache.set(key, 1, 60 * 60 * 26)
+    return False
+
+
 @csrf_exempt
 @_cors_enabled
 @_rate_limited('chat', limit=12, window=60)
@@ -1139,10 +1167,23 @@ def chat_api(request):
     if client_obj is not None and isinstance(session, str):
         session = ''.join(c for c in session if c.isalnum() or c in '-_')[:64]
         if len(session) >= 8:
-            conversation, _created = Conversation.objects.get_or_create(
-                client=client_obj, widget_session=session,
-                defaults={'page_url': page,
-                          'config_version': client_obj.config_version()})
+            conversation = Conversation.objects.filter(
+                client=client_obj, widget_session=session).first()
+            if conversation is None:
+                # A conversation is the tenant's BILLABLE unit (Phase C). The
+                # session id is minted by the caller, so without this one IP
+                # could open hundreds of "conversations" a day and inflate a
+                # client's month. Existing sessions never hit this check.
+                if _new_conversation_capped(request, client_obj):
+                    resp = JsonResponse(
+                        {'error': 'Demasiadas solicitudes. Baja un poco la velocidad.'},
+                        status=429)
+                    resp['Retry-After'] = str(60 * 60)
+                    return resp
+                conversation, _created = Conversation.objects.get_or_create(
+                    client=client_obj, widget_session=session,
+                    defaults={'page_url': page,
+                              'config_version': client_obj.config_version()})
 
     # The caller controls the request body, so the 'assistant' turns it sends
     # are not evidence of anything we said: run_turn rebuilds the history from
@@ -2224,6 +2265,10 @@ def _handle_stripe_event(request, event_type, obj):
                         limits = PLAN_LIMITS.get(new_plan, PLAN_LIMITS['starter'])
                         updates['plan'] = new_plan
                         updates['period'] = new_period
+                        # .update() skips auto_now: bill_overage uses
+                        # updated_at to send a mid-month plan change to
+                        # manual review instead of charging it blindly.
+                        updates['updated_at'] = timezone.now()
                         Client.objects.filter(pk=sub.client_id).update(
                             daily_message_cap=limits['daily_message_cap'],
                             enable_bookings=limits['enable_bookings'])

@@ -1,0 +1,111 @@
+{% extends 'landing/dashboard_base.html' %}
+{% block title %}Asistente interno{% endblock %}
+{% block content %}
+<h1 class="dash-h1">Asistente interno — {{ client_obj.name }}</h1>
+
+{% if client_options|length > 1 %}
+<form class="dash-inline-form" method="get" action="{% url 'asistente' %}">
+    <label for="as-client">Negocio:</label>
+    <select id="as-client" name="client" onchange="this.form.submit()">
+        {% for slug, name in client_options %}
+        <option value="{{ slug }}" {% if slug == client_obj.slug %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+    </select>
+</form>
+{% endif %}
+
+{% if not enabled %}
+<div class="dash-card">
+    <h2>No disponible</h2>
+    <p class="dash-muted">{{ no_internal_message }} Habla con el administrador de {{ client_obj.name }} para ampliar el plan.</p>
+</div>
+{% else %}
+<div class="dash-card">
+    <p class="dash-muted" id="as-notice">Este asistente responde solo con los documentos internos de {{ client_obj.name }}. No captura clientes ni agenda citas; cada respuesta indica su fuente ("Fuente: …"). No compartas datos personales de clientes o compañeros.</p>
+    <div class="dash-chat" id="as-chat" role="log" aria-live="polite" aria-label="Conversación con el asistente interno">
+        {% for m in msgs %}
+        <div class="dash-chat__b dash-chat__b--{{ m.role }}">{{ m.content }}</div>
+        {% empty %}
+        <div class="dash-chat__b dash-chat__b--assistant" id="as-empty">Hola. Pregúntame sobre los procedimientos, políticas y manuales de {{ client_obj.name }}.</div>
+        {% endfor %}
+    </div>
+    <form id="as-form" class="dash-inline-form" style="margin-top:12px" data-api="{% url 'asistente_api' %}" data-client="{{ client_obj.slug }}" data-csrf="{{ csrf_token }}">
+        <label for="as-input" class="dash-muted" style="width:100%">Tu pregunta</label>
+        <textarea id="as-input" name="message" rows="2" maxlength="{{ max_chars }}" required placeholder="Ej. ¿Cómo pido vacaciones?" style="flex:1;min-width:260px"></textarea>
+        <button type="submit" id="as-send" class="save-btn save-btn--sm">Enviar</button>
+    </form>
+    <p class="dash-sub" id="as-status" role="status" aria-live="polite" style="margin-top:6px"></p>
+    <p class="dash-sub">La conversación de hoy queda guardada; mañana empieza una nueva. El administrador del negocio puede revisarla.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if enabled %}
+<script>
+(function () {
+    var form = document.getElementById('as-form');
+    if (!form) { return; }
+    var chat = document.getElementById('as-chat');
+    var input = document.getElementById('as-input');
+    var send = document.getElementById('as-send');
+    var status = document.getElementById('as-status');
+    var busy = false;
+
+    function bubble(role, text) {
+        var empty = document.getElementById('as-empty');
+        if (empty) { empty.remove(); }
+        var div = document.createElement('div');
+        div.className = 'dash-chat__b dash-chat__b--' + role;
+        div.textContent = text;
+        chat.appendChild(div);
+        div.scrollIntoView({ block: 'end' });
+        return div;
+    }
+
+    form.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        if (busy) { return; }
+        var text = (input.value || '').trim();
+        if (!text) { return; }
+        busy = true;
+        send.disabled = true;
+        status.textContent = 'Buscando en los documentos…';
+        bubble('user', text);
+        input.value = '';
+        fetch(form.dataset.api, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': form.dataset.csrf },
+            body: JSON.stringify({ message: text, client: form.dataset.client })
+        }).then(function (r) {
+            // A non-JSON body is a redirect to an HTML page (session expired,
+            // password change required), not a network failure.
+            return r.json().then(function (data) { return { ok: r.ok, data: data }; },
+                                 function () { return { ok: false, data: { error: 'Tu sesión cambió. Recarga la página.' } }; });
+        }).then(function (res) {
+            if (res.ok && res.data.reply) {
+                bubble('assistant', res.data.reply);
+                status.textContent = '';
+            } else {
+                status.textContent = (res.data && res.data.error) || 'No se pudo responder. Intenta de nuevo.';
+            }
+        }).catch(function () {
+            status.textContent = 'Sin conexión. Intenta de nuevo.';
+        }).finally(function () {
+            busy = false;
+            send.disabled = false;
+            input.focus();
+        });
+    });
+
+    input.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter' && !ev.shiftKey) {
+            ev.preventDefault();
+            form.requestSubmit ? form.requestSubmit() : send.click();
+        }
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -79,6 +79,26 @@
         {% else %}
         <p class="ctl-muted">Sin suscripción (cliente creado a mano o el agente de DOMINIO).</p>
         {% endif %}
+        <details class="ctl-plan" style="margin-top:14px">
+            <summary style="cursor:pointer;font-weight:600">{% if sub %}Cambiar plan o facturación{% else %}Asignar plan{% endif %}</summary>
+            <form method="post" action="{% url 'control_plan' c.slug %}" class="ctl-plan-form" style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px 12px;font-size:0.85rem">
+                {% csrf_token %}
+                <label style="grid-column:span 2">Plan<br><select name="plan" style="width:100%">{% for id, name in plan_choices %}<option value="{{ id }}" {% if sub and sub.plan == id %}selected{% endif %}>{{ name }} ({{ id }})</option>{% endfor %}</select></label>
+                <label>Escalón<br><select name="step">{% for n in '123' %}<option value="{{ n }}" {% if sub and sub.step|stringformat:"s" == n %}selected{% endif %}>{{ n }}</option>{% endfor %}</select></label>
+                <label>Período<br><select name="period">{% for id, name in period_choices %}<option value="{{ id }}" {% if sub and sub.period == id %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
+                <label>Método<br><select name="method">{% for id, name in method_choices %}<option value="{{ id }}" {% if sub and sub.method == id %}selected{% elif not sub and id == 'manual' %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
+                <label>Estado<br><select name="status">{% for id, name in status_choices %}<option value="{{ id }}" {% if sub and sub.status == id %}selected{% elif not sub and id == 'active' %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
+                <label>Precio manual (USD/mes)<br><input type="number" name="monthly_price" step="0.01" min="0" placeholder="tabla de precios" value="{% if sub and sub.monthly_price_cents is not None %}{{ manual_price }}{% endif %}"></label>
+                <label>Vence (ATH/manual)<br><input type="date" name="current_period_end" value="{% if sub and sub.current_period_end %}{{ sub.current_period_end|date:'Y-m-d' }}{% endif %}"></label>
+                <label style="grid-column:1/-1">Nota (auditoría)<br><input type="text" name="note" maxlength="200" placeholder="p. ej. precio de fundador, 3 meses" style="width:100%"></label>
+                <div style="grid-column:1/-1"><button class="save-btn save-btn--sm" type="submit">Guardar plan</button>
+                <span class="ctl-muted" style="margin-left:8px">Al cambiar plan o escalón se recalculan el tope diario y las citas. Un cambio a mitad de mes manda el exceso de ese mes a revisión manual.</span></div>
+            </form>
+            <table class="dash-table" style="margin-top:10px;font-size:0.8rem">
+                <thead><tr><th>Plan</th><th>Escalón</th><th>Mensual</th><th>Incluye</th><th>Tope diario</th></tr></thead>
+                <tbody>{% for p in plan_options %}{% for st in p.steps %}<tr>{% if forloop.first %}<td rowspan="{{ p.steps|length }}">{{ p.name }} <code>{{ p.id }}</code></td>{% endif %}<td>{{ st.n }}</td><td>{% if st.monthly %}${{ st.monthly }}{% else %}—{% endif %}</td><td>{% if st.conversations %}{{ st.conversations|thousands }} conv/mes{% if st.wa %} · {{ st.wa|thousands }} WhatsApp{% endif %}{% if st.seats %} · {{ st.seats }} asientos{% endif %}{% else %}por mensajes/día{% endif %}</td><td>{{ st.daily_cap|thousands }}</td></tr>{% endfor %}{% endfor %}</tbody>
+            </table>
+        </details>
         <h2 style="margin-top:18px;">Usuarios</h2>
         {% if members %}
         <ul class="ctl-list">

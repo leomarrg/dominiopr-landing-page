@@ -634,3 +634,95 @@ class FirstQuestionTests(TestCase):
         clinic.refresh_from_db()
         self.assertEqual(normal.first_question, '¿Abren sábados?')
         self.assertEqual(clinic.first_question, '')
+
+
+# ------------------------------------------------------------------
+# Plan y facturación (control center form, no Django admin)
+# ------------------------------------------------------------------
+
+class PlanFormTests(_StaffMixin, TestCase):
+    def _post(self, slug, **data):
+        payload = {'plan': 'medium', 'step': 2, 'period': 'monthly', 'method': 'manual',
+                   'status': 'active'}
+        payload.update(data)
+        return self.http.post(reverse('control_plan', args=[slug]), payload, follow=True)
+
+    def test_non_staff_cannot_assign(self):
+        c = make_client('acme')
+        User = get_user_model()
+        tenant = User.objects.create_user('t@acme.com', password=PW)
+        http = HttpClient()
+        http.force_login(tenant)
+        resp = http.post(reverse('control_plan', args=['acme']), {'plan': 'medium'})
+        self.assertIn(resp.status_code, (302, 403))
+        self.assertFalse(Subscription.objects.filter(client=c).exists())
+
+    def test_creates_subscription_and_recalculates_caps(self):
+        from .views import plan_limits
+        c = make_client('acme', daily_message_cap=5, enable_bookings=False)
+        resp = self._post('acme', note='fundador')
+        self.assertEqual(resp.status_code, 200)
+        sub = Subscription.objects.get(client=c)
+        self.assertEqual((sub.plan, sub.step, sub.method, sub.status),
+                         ('medium', 2, 'manual', 'active'))
+        self.assertIsNone(sub.monthly_price_cents)
+        c.refresh_from_db()
+        limits = plan_limits('medium', 2)
+        self.assertEqual(c.daily_message_cap, limits['daily_message_cap'])
+        self.assertTrue(c.enable_bookings)
+        ev = AuditEvent.objects.filter(client=c, action='control.plan').get()
+        self.assertEqual(ev.target, 'medium:2:monthly:active')
+        self.assertIn('fundador', ev.result)
+        self.assertContains(resp, 'Plan guardado')
+        self.assertContains(resp, 'Recepcionista')
+
+    def test_manual_price_and_period_end(self):
+        c = make_client('acme')
+        make_sub(c, plan='small', step=1)
+        resp = self._post('acme', plan='small', step=1, monthly_price='39.99',
+                          current_period_end='2026-12-31')
+        sub = Subscription.objects.get(client=c)
+        self.assertEqual(sub.monthly_price_cents, 3999)
+        from . import entitlements
+        self.assertEqual(timezone.localtime(sub.current_period_end, entitlements.BUSINESS_TZ)
+                         .date().isoformat(), '2026-12-31')
+        self.assertContains(resp, 'Plan guardado')
+        # Same plan and step: caps are left alone, no mid-month warning.
+        self.assertNotContains(resp, 'Cambio a mitad de mes:')
+
+    def test_step_clamped_for_launch_plans(self):
+        c = make_client('acme')
+        self._post('acme', plan='pro', step=3)
+        sub = Subscription.objects.get(client=c)
+        self.assertEqual(sub.step, 1)
+        c.refresh_from_db()
+        self.assertEqual(c.daily_message_cap, 500)
+
+    def test_mid_month_change_warns_and_bumps_updated_at(self):
+        from datetime import date
+        from . import control_views
+        c = make_client('acme')
+        sub = make_sub(c, plan='medium', step=1)
+        Subscription.objects.filter(pk=sub.pk).update(
+            updated_at=timezone.now() - timedelta(days=40))
+        with patch.object(control_views, '_business_today', return_value=date(2026, 10, 15)):
+            resp = self._post('acme', plan='medium', step=3)
+        self.assertContains(resp, 'Cambio a mitad de mes:')
+        sub.refresh_from_db()
+        self.assertEqual(sub.step, 3)
+        self.assertGreater(sub.updated_at, timezone.now() - timedelta(minutes=5))
+
+    def test_invalid_input_is_rejected(self):
+        c = make_client('acme')
+        resp = self._post('acme', plan='platinum')
+        self.assertContains(resp, 'No se guardó el plan')
+        self.assertFalse(Subscription.objects.filter(client=c).exists())
+
+    def test_detail_page_shows_form_and_price_table(self):
+        c = make_client('acme')
+        make_sub(c, plan='large', step=2)
+        resp = self.http.get(reverse('control_client', args=['acme']))
+        self.assertContains(resp, 'Cambiar plan o facturación')
+        self.assertContains(resp, reverse('control_plan', args=['acme']))
+        self.assertContains(resp, 'Premium WhatsApp')
+        self.assertContains(resp, 'conv/mes')

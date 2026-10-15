@@ -152,10 +152,25 @@ class Client(models.Model):
         return self.widget_token
 
     def compiled_prompt(self, include_draft_pk=None):
-        """The agent's business knowledge: the manual system_prompt plus every
-        ACTIVE knowledge source (M-15), in position order. Deterministic so the
-        result stays prompt-cache friendly. `include_draft_pk` lets the test
-        console preview one draft source before activating it."""
+        """The PUBLIC agent's business knowledge: the manual system_prompt plus
+        every ACTIVE knowledge source (M-15) whose audience is public or both,
+        in position order. Deterministic so the result stays prompt-cache
+        friendly. `include_draft_pk` lets the test console preview one draft
+        source before activating it.
+
+        Phase E leak guard: a source marked 'internal' NEVER reaches this
+        prompt, not even as the previewed draft (the audience filter is applied
+        last, after the draft substitution)."""
+        return self._compiled(KnowledgeSource.PUBLIC_AUDIENCES, include_draft_pk)
+
+    def compiled_internal_prompt(self, include_draft_pk=None):
+        """The INTERNAL assistant's knowledge (Phase E): the business header
+        (system_prompt) plus every active source whose audience is internal or
+        both. Public-only sources are left out: the employees' assistant answers
+        from the internal documents, not from the marketing copy."""
+        return self._compiled(KnowledgeSource.INTERNAL_AUDIENCES, include_draft_pk)
+
+    def _compiled(self, audiences, include_draft_pk=None):
         parts = [self.system_prompt.strip()] if self.system_prompt.strip() else []
         sources = self.knowledge_sources.filter(status='active')
         try:
@@ -170,6 +185,7 @@ class Client(models.Model):
             hidden = draft.lineage_ids() - {draft.pk}
             sources = self.knowledge_sources.filter(
                 (models.Q(status='active') & ~models.Q(pk__in=hidden)) | models.Q(pk=draft.pk))
+        sources = sources.filter(audience__in=audiences)
         for src in sources.order_by('position', 'pk'):
             text = src.compiled_text()
             if text:
@@ -352,7 +368,14 @@ class Membership(models.Model):
     must_change_password = models.BooleanField(default=False)
     # M-17: what this member may do inside their organization. org_admin manages
     # knowledge, users and settings; agent only works leads and conversations.
-    ROLE_CHOICES = [('org_admin', 'Administrador'), ('agent', 'Agente')]
+    # Phase E: employee only talks to the internal assistant (and changes their
+    # own password); never leads, conversations, bookings, reports or settings.
+    ROLE_CHOICES = [('org_admin', 'Administrador'), ('agent', 'Agente'),
+                    ('employee', 'Empleado')]
+    # Roles that may open the internal assistant page (Phase E).
+    INTERNAL_ROLES = ('employee', 'agent', 'org_admin')
+    # Roles that see the dashboard (leads, conversations, reports...).
+    DASHBOARD_ROLES = ('org_admin', 'agent')
     role = models.CharField(max_length=12, choices=ROLE_CHOICES, default='org_admin')
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -529,6 +552,11 @@ class Conversation(models.Model):
 
     class Meta:
         ordering = ['-last_message_at']
+        indexes = [
+            # Phase C: month usage / allowance / bill_overage filter by tenant
+            # and the month the conversation started.
+            models.Index(fields=['client', 'started_at'], name='conv_client_started_idx'),
+        ]
         constraints = [
             # Web: one row per widget session. Other channels leave the session
             # blank, so the uniqueness only applies to the web channel.
@@ -578,6 +606,16 @@ class KnowledgeSource(models.Model):
     # the ingest pipeline (landing.ingest + process_knowledge).
     MANUAL_KINDS = ('text', 'faq', 'url')
     INGEST_KINDS = ('site', 'file')
+    # Phase E: which assistant a source feeds. 'internal' NEVER reaches the
+    # public widget (Client.compiled_prompt); 'public' never reaches the
+    # employees' assistant (Client.compiled_internal_prompt).
+    AUDIENCE_CHOICES = [
+        ('public', 'Público (widget del sitio)'),
+        ('internal', 'Solo equipo interno'),
+        ('both', 'Ambos'),
+    ]
+    PUBLIC_AUDIENCES = ('public', 'both')
+    INTERNAL_AUDIENCES = ('internal', 'both')
     STATUS_CHOICES = [
         ('pending', 'En cola'), ('processing', 'Procesando'),
         ('draft', 'Borrador'), ('active', 'Activa'),
@@ -592,6 +630,11 @@ class KnowledgeSource(models.Model):
         blank=True, help_text='Texto o FAQ. Para URL se llena automáticamente al procesar.')
     status = models.CharField(max_length=10, choices=STATUS_CHOICES,
                               default='draft', db_index=True)
+    audience = models.CharField(
+        'Audiencia', max_length=8, choices=AUDIENCE_CHOICES, default='public',
+        help_text=('Público: solo el agente del sitio web. Solo equipo interno: solo el '
+                   'asistente interno de los empleados (nunca llega al widget). '
+                   'Ambos: los dos.'))
     error = models.CharField(max_length=300, blank=True)
     review_by = models.DateField(
         null=True, blank=True, help_text='Fecha en que este contenido debe revisarse.')
@@ -715,6 +758,15 @@ class AuditEvent(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        constraints = [
+            # Phase C: the 80% / 100% allowance warnings ('allowance.80',
+            # 'allowance.wa.100', ...) are recorded once per client and month
+            # (target 'YYYY-MM'); two first turns racing past the cache can
+            # not both email the client. Other actions are unaffected.
+            models.UniqueConstraint(fields=['client', 'action', 'target'],
+                                    condition=models.Q(action__startswith='allowance.'),
+                                    name='uniq_allowance_audit_per_month'),
+        ]
 
     def __str__(self):
         return f'{self.action} · {self.target} · {self.created_at:%Y-%m-%d %H:%M}'

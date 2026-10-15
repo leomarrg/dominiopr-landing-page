@@ -125,6 +125,9 @@ urlpatterns = [
     path('dashboard/contactos/<int:pk>/delete/', platform_views.staff_contact_delete,
          name='staff_contact_delete'),
     path('dashboard/audit/', platform_views.audit_list, name='audit'),
+    # Phase E: the employees' internal assistant (session + CSRF, no tools).
+    path('dashboard/asistente/', platform_views.assistant_page, name='asistente'),
+    path('dashboard/asistente/api/', platform_views.assistant_api, name='asistente_api'),
     path('dashboard/clients/', views.clients_list, name='clients_list'),
     path('dashboard/clients/new/', views.client_form, name='client_create'),
     path('dashboard/clients/<int:pk>/', views.client_form, name='client_edit'),
@@ -136,6 +139,7 @@ urlpatterns = [
     path('dashboard/control/', control_views.control_overview, name='control'),
     path('dashboard/control/export.csv', control_views.control_export, name='control_export'),
     path('dashboard/control/<slug:slug>/', control_views.control_client, name='control_client'),
+    path('dashboard/control/<slug:slug>/plan/', control_views.control_plan, name='control_plan'),
     path('dashboard/control/<slug:slug>/export/', control_views.control_export_tenant,
          name='control_export_tenant'),
 

@@ -1,10 +1,10 @@
-{% if threshold >= 100 %}{{ client.name }}, tu agente ya usó las {{ included }} conversaciones incluidas en tu plan este mes.{% else %}{{ client.name }}, tu agente va por el {{ pct }}% de las conversaciones incluidas en tu plan.{% endif %}
+{% autoescape off %}{% if threshold >= 100 %}{{ client.name }}, tu agente ya usó las {{ included }} {{ bucket_label }} incluidas en tu plan este mes.{% else %}{{ client.name }}, tu agente va por el {{ pct }}% de las {{ bucket_label }} incluidas en tu plan.{% endif %}
 
 ESTE MES ({{ month_label }})
-Lleva {{ used }} de {{ included }} conversaciones ({{ pct }}%). A este ritmo cerraría el mes con unas {{ projection }}.
+Lleva {{ used }} de {{ included }} {{ bucket_label }} ({{ pct }}%). A este ritmo cerraría el mes con unas {{ projection }}.
 
 TU AGENTE SIGUE ATENDIENDO
-No cortamos el servicio. {% if threshold >= 100 %}Las conversaciones que entren de aquí al cierre del mes se cobran a fin de mes en bloques adicionales de {{ block_size }} conversaciones a {{ block_price }} por bloque, en tu misma factura de Stripe.{% else %}Si pasas lo incluido en tu plan, el agente sigue contestando y a fin de mes se cobran bloques adicionales de {{ block_size }} conversaciones a {{ block_price }} por bloque, en tu misma factura de Stripe.{% endif %}
+No cortamos el servicio. {% if threshold >= 100 %}Las {{ bucket_label }} que entren de aquí al cierre del mes se cobran a fin de mes en bloques adicionales de {{ block_size }} {{ bucket_label }} a {{ block_price }} + IVU por bloque, en tu próxima factura (los planes anuales reciben una factura aparte).{% else %}Si pasas lo incluido en tu plan, el agente sigue contestando y a fin de mes se cobran bloques adicionales de {{ block_size }} {{ bucket_label }} a {{ block_price }} + IVU por bloque, en tu próxima factura (los planes anuales reciben una factura aparte).{% endif %}
 
 Si prefieres que lo incluido suba de forma permanente, responde a este correo y te pasamos al siguiente escalón de tu plan (sale más barato que varios bloques).
 
@@ -14,4 +14,4 @@ Mi plan y facturación: {{ billing_url }}
 ¿Dudas? Responde a este correo.
 
 — DOMINIO
-dominiopr.com
+dominiopr.com{% endautoescape %}

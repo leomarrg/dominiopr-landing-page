@@ -145,8 +145,12 @@ class Command(BaseCommand):
         dry_run = options['dry_run']
         cutoff = timezone.now() - timedelta(minutes=IDLE_MINUTES)
         has_user_turn = ChatMessage.objects.filter(conversation=OuterRef('pk'), role='user')
+        # Phase E: the employees' chats with the internal assistant are never
+        # tagged: their topics must not reach the reports (the agent role
+        # reads them) and each skipped row is one model call saved.
         candidates = list(
             Conversation.objects.filter(tagged_at__isnull=True, last_message_at__lt=cutoff)
+            .exclude(channel='internal')
             .filter(Exists(has_user_turn))
             .select_related('client').order_by('last_message_at', 'pk')[:limit])
 

@@ -846,17 +846,22 @@ def enqueue_site_scan(client, url):
         raise ValueError('Ya hay un escaneo de tu sitio en curso. Espera a que termine.')
 
 
-def enqueue_file(client, uploaded_file):
+def enqueue_file(client, uploaded_file, audience='public'):
     """Extract the text now (bounded, in memory) and queue it for the model.
-    The file object is only read; nothing is written to disk or media."""
+    The file object is only read; nothing is written to disk or media.
+    `audience` (Phase E): an employee manual is uploaded straight as
+    'internal' so it never passes through the public widget's prompt."""
     queued = client.knowledge_sources.filter(status__in=('pending', 'processing')).count()
     if queued >= MAX_QUEUED_PER_CLIENT:
         raise ValueError(f'Ya tienes {queued} fuentes en cola. Espera a que se procesen.')
+    if audience not in dict(KnowledgeSource.AUDIENCE_CHOICES):
+        audience = 'public'
     text = extract_text_from_file(uploaded_file)
     name = sanitize_filename(getattr(uploaded_file, 'name', ''))
     return KnowledgeSource.objects.create(
         client=client, kind='file', status='pending', title=name[:160],
-        origin=f'archivo: {name}'[:500], content=text, progress='En cola…')
+        origin=f'archivo: {name}'[:500], content=text, progress='En cola…',
+        audience=audience)
 
 
 def has_stale(now=None):

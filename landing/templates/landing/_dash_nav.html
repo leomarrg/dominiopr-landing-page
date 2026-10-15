@@ -6,6 +6,7 @@
             <img src="{% static 'landing/images/brand/logo-wordmark.png' %}" alt="DOMINIO">
         </a>
         <nav class="dash-nav" aria-label="Secciones">
+            {% if not IS_EMPLOYEE_ONLY %}
             <a href="{% url 'dashboard' %}"
                class="dash-nav__link {% if active == 'leads' %}is-active{% endif %}"
                {% if active == 'leads' %}aria-current="page"{% endif %}>Leads</a>
@@ -20,6 +21,12 @@
             <a href="{% url 'reports' %}"
                class="dash-nav__link {% if active == 'reports' %}is-active{% endif %}"
                {% if active == 'reports' %}aria-current="page"{% endif %}>Reportes</a>
+            {% endif %}
+            {% if HAS_INTERNAL %}
+            <a href="{% url 'asistente' %}"
+               class="dash-nav__link {% if active == 'asistente' %}is-active{% endif %}"
+               {% if active == 'asistente' %}aria-current="page"{% endif %}>Asistente</a>
+            {% endif %}
             {% if IS_ORG_ADMIN %}
             <a href="{% url 'knowledge' %}"
                class="dash-nav__link {% if active == 'knowledge' %}is-active{% endif %}"

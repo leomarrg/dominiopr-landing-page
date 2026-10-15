@@ -39,9 +39,34 @@ def dash_roles(request):
             return False
         if user.is_staff:
             return True
-        return user.memberships.filter(client__enable_bookings=True).exists()
+        return user.memberships.filter(client__enable_bookings=True).exclude(
+            role='employee').exists()
+
+    def _is_employee_only():
+        """Phase E: every membership is 'employee' (and not staff): the nav
+        shows only the assistant."""
+        user = getattr(request, 'user', None)
+        if user is None or not user.is_authenticated or user.is_staff:
+            return False
+        roles = set(user.memberships.values_list('role', flat=True))
+        return bool(roles) and roles == {'employee'}
+
+    def _has_internal():
+        """Phase E: some membership's plan includes the internal assistant
+        (the page itself re-checks the entitlement)."""
+        from . import entitlements  # lazy: this module loads before the apps
+        user = getattr(request, 'user', None)
+        if user is None or not user.is_authenticated:
+            return False
+        if user.is_staff:
+            return True
+        clients = [m.client for m in user.memberships.select_related('client__subscription')]
+        return any('internal' in entitlements.entitlements(c).get('channels', ())
+                   for c in clients)
 
     return {
         'IS_ORG_ADMIN': SimpleLazyObject(_is_org_admin),
         'HAS_BOOKINGS': SimpleLazyObject(_has_bookings),
+        'IS_EMPLOYEE_ONLY': SimpleLazyObject(_is_employee_only),
+        'HAS_INTERNAL': SimpleLazyObject(_has_internal),
     }

@@ -15,6 +15,12 @@ EXEMPT_URL_NAMES = frozenset({
 
 GATE_MESSAGE = 'Crea una nueva contraseña para terminar de configurar tu cuenta.'
 
+# Phase E: the only /dashboard/ routes an employee-only account may open.
+# Everything else (leads, conversations, bookings, reports, knowledge, users,
+# exports, billing...) sends them back to the assistant.
+EMPLOYEE_URL_NAMES = EXEMPT_URL_NAMES | frozenset({'asistente', 'asistente_api'})
+EMPLOYEE_MESSAGE = 'Tu cuenta solo tiene acceso al asistente interno.'
+
 
 class TempPasswordGateMiddleware:
     """Auto-provisioned accounts sign in with a temporary password. Until it
@@ -45,6 +51,38 @@ class TempPasswordGateMiddleware:
             return None
         messages.info(request, GATE_MESSAGE)
         return redirect('password_change')
+
+
+class EmployeeScopeMiddleware:
+    """Phase E: an account whose memberships are ALL 'employee' (no staff
+    flag, no org_admin/agent role anywhere) only gets the internal assistant
+    and the password routes. The per-view scoping already hides data from
+    such a user (landing.views._member_client_ids ignores employee rows), so
+    this is the user-facing gate on top: one `exists()` query per request,
+    only for authenticated non-staff users on a non-exempt dashboard path.
+    A mixed account (employee of A, agent of B) is not gated: it sees B's
+    dashboard and A's assistant, nothing of A's data."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        return self.get_response(request)
+
+    def process_view(self, request, view_func, view_args, view_kwargs):
+        if not request.path.startswith(DASHBOARD_PREFIX):
+            return None
+        user = getattr(request, 'user', None)
+        if user is None or not user.is_authenticated or user.is_staff:
+            return None
+        match = getattr(request, 'resolver_match', None)
+        if match is not None and match.url_name in EMPLOYEE_URL_NAMES:
+            return None
+        roles = set(Membership.objects.filter(user=user).values_list('role', flat=True))
+        if roles != {'employee'}:
+            return None
+        messages.info(request, EMPLOYEE_MESSAGE)
+        return redirect('asistente')
 
 
 class ContentSecurityPolicyMiddleware:

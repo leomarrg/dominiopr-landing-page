@@ -144,9 +144,14 @@ def build_history(conversation, user_text, max_turns=None, fallback_history=None
     return history
 
 
+# Phase E: stands in for the internal knowledge when the business has not
+# loaded any yet (see run_turn); the callers normally short-circuit before.
+NO_INTERNAL_DOCS_PROMPT = '(Este negocio no ha cargado documentos internos todavía.)'
+
+
 def run_turn(client, conversation, user_text, *, channel, handlers,
              language=None, page_url='', clinic=None, profile=None,
-             fallback_history=None):
+             fallback_history=None, business_prompt=None):
     """Run one turn for `client` on `channel` and return a TurnResult.
 
     `conversation` may be None (nothing is persisted, the ledger still records
@@ -154,6 +159,8 @@ def run_turn(client, conversation, user_text, *, channel, handlers,
     tool callbacks the transport built (they carry the request-specific
     context). `clinic` None = Client.clinic_mode; `profile` None = 'web'.
     `page_url` fills Conversation.page_url when the row has none yet.
+    `business_prompt` None = Client.compiled_prompt() (the public knowledge);
+    the internal assistant passes Client.compiled_internal_prompt().
 
     Steps: history from the stored transcript -> agent.answer -> one
     transaction appending the two ChatMessage rows and bumping the
@@ -167,7 +174,13 @@ def run_turn(client, conversation, user_text, *, channel, handlers,
         raise ValueError('run_turn needs a non-empty user_text')
     if language is None:
         language = client.primary_language if client is not None else 'es'
-    business_prompt = client.compiled_prompt() if client is not None else None
+    if business_prompt is None:
+        business_prompt = client.compiled_prompt() if client is not None else None
+    if profile == 'internal' and not (business_prompt or '').strip():
+        # agent.answer falls back to DOMINIO_BUSINESS for an empty prompt. The
+        # employees' assistant must never answer with DOMINIO's sales copy, so
+        # a business without internal documents gets an explicit marker.
+        business_prompt = NO_INTERNAL_DOCS_PROMPT
 
     # Only non-default kwargs are passed: existing test doubles for
     # agent.answer have the old fixed signature.

@@ -94,6 +94,8 @@ MIDDLEWARE = [
     # Auto-provisioned accounts must replace their temp password before any
     # /dashboard/ page (needs auth + messages above).
     'landing.middleware.TempPasswordGateMiddleware',
+    # Phase E: employee-only accounts get the internal assistant and nothing else.
+    'landing.middleware.EmployeeScopeMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     # CSP: blocks injected third-party scripts and off-site exfiltration.
     'landing.middleware.ContentSecurityPolicyMiddleware',
@@ -403,6 +405,10 @@ ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
 # defense per-IP rate limits can't provide: it caps the worst-case daily API
 # spend even under a distributed/botnet attack. Tune to your budget.
 DOMINIO_AGENT_DAILY_CAP = int(os.environ.get('DOMINIO_AGENT_DAILY_CAP', '2000'))
+# New chat conversations one IP may start per tenant per day (0 = off). Each
+# new Conversation is the billable unit of the packages, so this caps what a
+# bot with the public widget key can inflate; 15 leaves room for an office NAT.
+DOMINIO_NEW_CONVERSATIONS_PER_IP_DAY = int(os.environ.get('DOMINIO_NEW_CONVERSATIONS_PER_IP_DAY', '15'))
 # The public /api/demo/ endpoint needs its OWN budget. Sharing the tenants'
 # counter meant an anonymous visitor could exhaust it and take every paying
 # client's agent offline for the rest of the day, on DOMINIO's token bill.

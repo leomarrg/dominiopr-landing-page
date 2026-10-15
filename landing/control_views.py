@@ -9,22 +9,25 @@ import tempfile
 from datetime import timedelta
 from decimal import Decimal
 
+from django import forms
 from django.conf import settings
+from django.contrib import messages
+from django.db import transaction
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db.models import Count, Q, Sum
 from django.db.models.functions import TruncMonth
 from django.http import FileResponse, HttpResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from . import analytics, entitlements, tenant_export
 from . import usage as usage_ledger
-from .models import AuditEvent, Client, UsageEvent
+from .models import AuditEvent, Client, Subscription, UsageEvent
 from .platform_views import _csv_safe
-from .views import _audit, staff_required
+from .views import PLAN_BY_ID, _audit, plan_limits, staff_required
 
 PAGE_SIZE = 50
 _CENT = Decimal('0.01')
@@ -242,6 +245,13 @@ def control_client(request, slug):
         'overrides': client.entitlement_overrides or {},
         'origins': client.origin_list(),
         'heartbeat': _heartbeat(client, now),
+        'plan_options': plan_options(),
+        'manual_price': ((Decimal(sub.monthly_price_cents) / 100).quantize(_CENT)
+                         if sub is not None and sub.monthly_price_cents is not None else ''),
+        'plan_choices': Subscription.PLAN_CHOICES,
+        'period_choices': Subscription.PERIOD_CHOICES,
+        'method_choices': Subscription.METHOD_CHOICES,
+        'status_choices': Subscription.STATUS_CHOICES,
     })
 
 
@@ -307,3 +317,110 @@ def control_export_tenant(request, slug):
            result=' '.join(f'{k}={v}' for k, v in counts.items())[:200])
     return FileResponse(tmp, as_attachment=True, filename=tenant_export.filename_for(client),
                         content_type='application/zip')
+
+
+# ------------------------------------------------------------------
+# Plan y facturación: assign or change a client's plan without the admin
+# ------------------------------------------------------------------
+
+class ControlPlanForm(forms.Form):
+    plan = forms.ChoiceField(choices=Subscription.PLAN_CHOICES)
+    step = forms.IntegerField(min_value=1, max_value=3, initial=1)
+    period = forms.ChoiceField(choices=Subscription.PERIOD_CHOICES)
+    method = forms.ChoiceField(choices=Subscription.METHOD_CHOICES)
+    status = forms.ChoiceField(choices=Subscription.STATUS_CHOICES)
+    # Blank = price table. A number = negotiated price (founder discount, custom).
+    monthly_price = forms.DecimalField(required=False, min_value=0, max_digits=8,
+                                       decimal_places=2)
+    current_period_end = forms.DateField(required=False)
+    note = forms.CharField(required=False, max_length=200)
+
+    def clean(self):
+        data = super().clean()
+        plan = data.get('plan')
+        if plan:
+            # Launch plans have one step; packages three. Clamp, never reject.
+            n = len((PLAN_BY_ID.get(plan) or {}).get('steps') or []) or 1
+            data['step'] = min(max(int(data.get('step') or 1), 1), n)
+        return data
+
+
+def plan_options():
+    """[{id, name, unit, steps:[{n, monthly, conversations, wa, seats, daily_cap}]}]
+    for the plan picker: every plan in PLAN_CHOICES with what each step
+    costs and includes."""
+    out = []
+    for plan_id, label in Subscription.PLAN_CHOICES:
+        entry = PLAN_BY_ID.get(plan_id) or {}
+        steps = entry.get('steps') or [{'monthly': entry.get('monthly')}]
+        rows = []
+        for i, st in enumerate(steps, start=1):
+            rows.append({'n': i, 'monthly': st.get('monthly'),
+                         'conversations': st.get('monthly_conversations'),
+                         'wa': st.get('wa_conversations') or 0, 'seats': st.get('seats') or 0,
+                         'daily_cap': plan_limits(plan_id, i).get('daily_message_cap')})
+        out.append({'id': plan_id, 'name': label, 'unit': plan_limits(plan_id).get('unit'),
+                    'steps': rows})
+    return out
+
+
+def _business_today():
+    return timezone.localtime(timezone.now(), entitlements.BUSINESS_TZ).date()
+
+
+@login_required
+@staff_required
+@require_POST
+def control_plan(request, slug):
+    """Assign or change a client's plan from the control center. Mirrors what
+    the Stripe webhook does on a plan change: the Subscription row plus the
+    Client's daily cap / bookings from plan_limits(plan, step), with
+    updated_at bumped so bill_overage sends this month's overage to manual
+    review instead of charging a half-month blindly."""
+    client = get_object_or_404(Client, slug=slug)
+    form = ControlPlanForm(request.POST)
+    if not form.is_valid():
+        errs = '; '.join(f'{f}: {", ".join(e)}' for f, e in form.errors.items())
+        messages.error(request, f'No se guardó el plan: {errs}')
+        return redirect('control_client', slug=slug)
+    d = form.cleaned_data
+    price = d.get('monthly_price')
+    price_cents = int((price * 100).to_integral_value()) if price is not None else None
+    end = d.get('current_period_end')
+    end_dt = (timezone.datetime(end.year, end.month, end.day, 23, 59,
+                                tzinfo=entitlements.BUSINESS_TZ) if end else None)
+    with transaction.atomic():
+        sub = Subscription.objects.filter(client=client).first()
+        created = sub is None
+        before = (sub.plan, sub.step, sub.period, sub.status) if sub else None
+        if created:
+            sub = Subscription(client=client, plan=d['plan'])
+        plan_changed = created or (sub.plan, sub.step) != (d['plan'], d['step'])
+        sub.plan = d['plan']
+        sub.step = d['step']
+        sub.period = d['period']
+        sub.method = d['method']
+        sub.status = d['status']
+        sub.monthly_price_cents = price_cents
+        if end_dt is not None or created:
+            sub.current_period_end = end_dt
+        sub.save()  # auto_now: updated_at = now (bill_overage reads it)
+        limits = plan_limits(sub.plan, sub.step)
+        if plan_changed:
+            Client.objects.filter(pk=client.pk).update(
+                daily_message_cap=limits['daily_message_cap'],
+                enable_bookings=limits['enable_bookings'])
+    _audit(request, 'control.plan', client=client,
+           target=f"{sub.plan}:{sub.step}:{sub.period}:{sub.status}",
+           result=(f"antes={before} precio={price_cents} nota={d.get('note', '')}")[:200])
+    label = dict(Subscription.PLAN_CHOICES).get(sub.plan, sub.plan)
+    msg = (f'Plan guardado: {label}, escalón {sub.step}, '
+           f'{sub.get_period_display().lower()}, {sub.get_status_display().lower()}.')
+    if plan_changed:
+        msg += (f" Tope diario recalculado a {limits['daily_message_cap']:,} mensajes; "
+                f"citas {'activadas' if limits['enable_bookings'] else 'desactivadas'}.")
+    messages.success(request, msg)
+    if plan_changed and not created and _business_today().day > 1:
+        messages.warning(request, 'Cambio a mitad de mes: el cobro por exceso de este mes '
+                                  'irá a revisión manual (bill_overage no lo cobra solo).')
+    return redirect('control_client', slug=slug)

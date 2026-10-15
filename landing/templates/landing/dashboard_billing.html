@@ -46,7 +46,7 @@
     <div class="bill-meta" role="status">
         <span>Este mes: <b>{{ allowance.used }}</b> de {{ allowance.included }} conversaciones ({{ allowance.pct }}%){% if allowance.overage_blocks %} · exceso hasta hoy: {{ allowance.overage_blocks }} bloque{{ allowance.overage_blocks|pluralize }} = {{ allowance.overage_price }}{% endif %}</span>
     </div>
-    <p class="bill-manual">Tu plan incluye {{ allowance.included }} conversaciones al mes. Si recibes más, el agente sigue atendiendo y a fin de mes se cobran bloques adicionales de {{ allowance.block_size }} conversaciones a {{ allowance.block_price }} cada uno, en tu misma factura. El contador se reinicia el día 1 de cada mes.</p>
+    <p class="bill-manual">Tu plan incluye {{ allowance.included }} conversaciones al mes. Si recibes más, el agente sigue atendiendo y a fin de mes se cobran bloques adicionales de {{ allowance.block_size }} conversaciones a {{ allowance.block_price }} + IVU cada uno, en tu próxima factura (los planes anuales reciben una factura aparte). El contador se reinicia el día 1 de cada mes.</p>
     {% endif %}
 
     {% if portal_available %}

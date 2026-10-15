@@ -3,6 +3,7 @@
 {% block content %}
 <h1 class="dash-h1">Conversación — {{ conv.client.name }}</h1>
 <p class="dash-muted">
+    {% if conv.channel == 'internal' %}<span class="dash-pill dash-pill--closed_resolved">Interno</span> · Empleado: {% if conv.user %}{{ conv.user.get_full_name|default:conv.user.username }}{% else %}(cuenta eliminada){% endif %} · {% endif %}
     <span class="dash-pill dash-pill--{{ conv.state }}">{{ conv.get_state_display }}</span>
     · Inició {{ conv.started_at|date:"M d, Y g:i A" }}
     · Última actividad {{ conv.last_message_at|date:"M d, Y g:i A" }}

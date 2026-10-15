@@ -186,17 +186,21 @@ def create_portal_session(customer_id, return_url):
 
 
 def create_invoice_item(customer_id, amount_cents, description, idempotency_key,
-                        subscription_id='', metadata=None):
+                        subscription_id='', invoice_id='', metadata=None):
     """Phase C: one overage line for the customer's NEXT invoice.
 
     With `subscription_id` the item rides on that subscription's next
-    renewal invoice; without it, it waits as a pending item on the customer
-    (see create_invoice to bill it right away). IVU rides on the line when a
-    tax rate is configured, same as the checkout. `idempotency_key` makes a
-    retried call return the same item instead of charging twice.
+    renewal invoice; with `invoice_id` it lands on that DRAFT invoice
+    (annual subscribers: create_invoice first, then the items, then
+    finalize_invoice); with neither it waits as a pending item on the
+    customer. IVU rides on the line when a tax rate is configured, same as
+    the checkout. `idempotency_key` makes a retried call return the same
+    item instead of charging twice.
     """
     if not customer_id:
         raise StripeError('No Stripe customer for this client.')
+    if subscription_id and invoice_id:
+        raise StripeError('An invoice item targets a subscription OR an invoice, not both.')
     data = {
         'customer': customer_id,
         'amount': str(int(amount_cents)),
@@ -205,6 +209,8 @@ def create_invoice_item(customer_id, amount_cents, description, idempotency_key,
     }
     if subscription_id:
         data['subscription'] = subscription_id
+    if invoice_id:
+        data['invoice'] = invoice_id
     tax_rate = getattr(settings, 'STRIPE_TAX_RATE_ID', '')
     if tax_rate:
         data['tax_rates[0]'] = tax_rate
@@ -214,22 +220,50 @@ def create_invoice_item(customer_id, amount_cents, description, idempotency_key,
                     headers={'Idempotency-Key': str(idempotency_key)[:255]})
 
 
+def list_invoice_items(customer_id, pending=False, invoice_id='', limit=100):
+    """Phase C: the customer's invoice items, newest first. `pending=True`
+    = not yet attached to any invoice (what a monthly overage item is until
+    the renewal picks it up); `invoice_id` = the lines of one draft invoice.
+    bill_overage uses this to find an item that was posted but whose local
+    record was lost (crash between the POST and the AuditEvent)."""
+    if not customer_id:
+        raise StripeError('No Stripe customer for this client.')
+    query = {'customer': customer_id, 'limit': str(int(limit))}
+    if pending:
+        query['pending'] = 'true'
+    if invoice_id:
+        query['invoice'] = invoice_id
+    return _request('GET', '/v1/invoiceitems?' + urllib.parse.urlencode(query))
+
+
 def create_invoice(customer_id, idempotency_key, description=''):
-    """Phase C: collect the customer's pending invoice items now (annual
-    subscribers, whose next renewal invoice is months away). auto_advance
-    lets Stripe finalize and charge the saved card automatically."""
+    """Phase C: an EMPTY draft invoice for the annual subscribers (their
+    next renewal invoice is months away). The overage items are then
+    created straight onto it (create_invoice_item invoice_id=...) and
+    finalize_invoice sends it; pending items the customer may have for
+    other reasons are left alone. auto_advance lets Stripe retry the saved
+    card by itself once finalized."""
     if not customer_id:
         raise StripeError('No Stripe customer for this client.')
     data = {
         'customer': customer_id,
         'auto_advance': 'true',
         'collection_method': 'charge_automatically',
-        'pending_invoice_items_behavior': 'include',
+        'pending_invoice_items_behavior': 'exclude',
     }
     if description:
         data['description'] = str(description)[:500]
     return _request('POST', '/v1/invoices', data,
                     headers={'Idempotency-Key': str(idempotency_key)[:255]})
+
+
+def finalize_invoice(invoice_id, idempotency_key):
+    """Phase C: finalize a draft invoice so Stripe charges it. Idempotent
+    through the key: a rerun after a crash returns the same result."""
+    if not invoice_id:
+        raise StripeError('No invoice to finalize.')
+    return _request('POST', f'/v1/invoices/{urllib.parse.quote(str(invoice_id), safe="")}/finalize',
+                    {}, headers={'Idempotency-Key': str(idempotency_key)[:255]})
 
 
 def retrieve(path):

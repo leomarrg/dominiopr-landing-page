@@ -28,7 +28,9 @@
             {% for c in conversations %}
             <tr>
                 <td><a href="{% url 'conversation_detail' c.pk %}"><b>{{ c.client.name }}</b></a>
-                    <div class="dash-sub">{{ c.widget_session|truncatechars:12 }}</div></td>
+                    {% if c.channel == 'internal' %}<span class="dash-pill dash-pill--closed_resolved">Interno</span>
+                    <div class="dash-sub">{% if c.user %}{{ c.user.get_full_name|default:c.user.username }}{% else %}empleado{% endif %}</div>
+                    {% else %}<div class="dash-sub">{{ c.widget_session|truncatechars:12 }}</div>{% endif %}</td>
                 <td><span class="dash-pill dash-pill--{{ c.state }}">{{ c.get_state_display }}</span>
                     {% if c.escalation_reason %}<div class="dash-sub">{{ c.escalation_reason|truncatechars:60 }}</div>{% endif %}</td>
                 <td>{{ c.n_messages }}</td>

@@ -68,6 +68,10 @@
                             <input type="hidden" name="pk" value="{{ s.pk }}">
                             <input type="hidden" name="kind" value="{{ s.kind }}">
                             <input type="text" name="title" value="{{ s.title }}" maxlength="160" required aria-label="Título" style="width:100%;margin-bottom:6px;padding:6px 8px;border:1px solid #ccd;border-radius:8px;font:inherit">
+                            <label class="dash-sub" style="display:block;margin-bottom:6px">Audiencia:
+                                <select name="audience" aria-label="Audiencia">
+                                    {% for val, label in audience_choices %}<option value="{{ val }}" {% if val == s.audience %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                                </select></label>
                             {% if s.kind == 'url' %}<input type="url" name="origin" value="{{ s.origin }}" maxlength="500" aria-label="URL" style="width:100%;margin-bottom:6px;padding:6px 8px;border:1px solid #ccd;border-radius:8px;font:inherit">
                             {% else %}<textarea name="content" rows="5" aria-label="Contenido" style="width:100%;padding:6px 8px;border:1px solid #ccd;border-radius:8px;font:inherit">{{ s.content }}</textarea>{% endif %}
                             <button type="submit" class="save-btn save-btn--sm">Guardar cambios en borrador</button>
@@ -87,7 +91,8 @@
                         </ul>
                     </details>
                     {% endif %}</td>
-                <td>{{ s.get_kind_display }}</td>
+                <td>{{ s.get_kind_display }}
+                    <div><span class="dash-pill kn-audience kn-audience--{{ s.audience }} {% if s.audience == 'internal' %}dash-pill--closed_resolved{% elif s.audience == 'both' %}dash-pill--processing{% else %}dash-pill--archived{% endif %}">{{ s.get_audience_display }}</span></div></td>
                 <td><span class="dash-pill dash-pill--{{ s.status }}">{{ s.get_status_display }}</span></td>
                 <td class="dash-sub">{{ s.updated_at|date:"M d, g:i A" }}</td>
                 <td>
@@ -102,6 +107,9 @@
                         {% elif s.status == 'error' and s.kind == 'site' or s.status == 'error' and s.kind == 'file' and s.content %}
                         <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="reprocess"><button class="save-btn save-btn--sm">Reintentar</button></form>
                         {% endif %}
+                        {% if not s.in_progress %}{% if s.status != 'active' or can_publish %}
+                        <form method="post" action="{% url 'knowledge_action' s.pk %}" class="kn-audience-form">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="audience"><select name="audience" aria-label="Cambiar audiencia">{% for val, label in audience_choices %}<option value="{{ val }}" {% if val == s.audience %}selected{% endif %}>{{ label }}</option>{% endfor %}</select> <button class="save-btn save-btn--sm">Audiencia</button></form>
+                        {% endif %}{% endif %}
                         {% if s.status == 'processing' %}
                         {% elif s.status == 'active' %}{% if can_publish %}
                         <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="archive"><button class="save-btn save-btn--sm">Archivar</button></form>
@@ -136,6 +144,10 @@
         <input type="hidden" name="client" value="{{ client_obj.slug }}">
         <label for="kn-file">Documento:</label>
         <input type="file" id="kn-file" name="file" accept=".pdf,.docx,.txt,.md,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/csv" required>
+        <label for="kn-file-audience" class="dash-muted">Audiencia:</label>
+        <select name="audience" id="kn-file-audience">
+            {% for val, label in audience_choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
+        </select>
         <button type="submit" class="save-btn save-btn--sm">Subir archivo</button>
     </form>
     <p class="dash-sub" style="margin-top:6px">PDF, Word (.docx), TXT, MD o CSV, máximo {{ upload_max_mb }} MB. Solo se guarda el texto (y luego su resumen); el archivo no se almacena.</p>
@@ -151,7 +163,12 @@
                 {% for val, label in kind_choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
             </select>
             <input type="text" name="title" placeholder="Título (p. ej. Precios 2026)" maxlength="160" required style="flex:1;min-width:220px">
+            <label for="kn-audience" class="dash-muted">Audiencia:</label>
+            <select name="audience" id="kn-audience">
+                {% for val, label in audience_choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
+            </select>
         </div>
+        <p class="dash-sub" style="margin:0 0 8px">"Solo equipo interno" nunca llega al agente del sitio web: es para el asistente interno de tus empleados (manuales, políticas, procedimientos).{% if not has_internal %} Tu plan actual no incluye el asistente interno; esas fuentes se guardan pero no se usan.{% endif %}</p>
         <input type="url" name="origin" placeholder="https://… (solo para tipo URL)" maxlength="500" style="width:100%;margin-bottom:8px;padding:8px 10px;border:1px solid #ccd;border-radius:8px;font:inherit">
         <textarea name="content" rows="6" placeholder="Contenido (texto libre, o pares P: pregunta / R: respuesta). Para URL se llena solo al procesar." style="width:100%;padding:8px 10px;border:1px solid #ccd;border-radius:8px;font:inherit"></textarea>
         <div style="margin-top:8px"><button type="submit" class="save-btn">Guardar y procesar</button></div>
@@ -169,6 +186,10 @@
             {% for s in sources %}{% if s.status == 'draft' %}
             <option value="{{ s.pk }}" {% if tested_draft == s.pk|stringformat:'s' %}selected{% endif %}>{% if s.replaces %}Borrador en lugar de la versión activa: {{ s.title }}{% else %}+ borrador: {{ s.title }}{% endif %}</option>
             {% endif %}{% endfor %}
+        </select>
+        <select name="as" aria-label="Probar como">
+            <option value="web" {% if tested_as != 'internal' %}selected{% endif %}>Como visitante (web)</option>
+            <option value="internal" {% if tested_as == 'internal' %}selected{% endif %}>Como empleado (asistente interno)</option>
         </select>
         <button type="submit" class="save-btn save-btn--sm">Probar</button>
     </form>

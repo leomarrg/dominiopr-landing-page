@@ -94,8 +94,8 @@ class ConversationAdmin(admin.ModelAdmin):
 
 @admin.register(KnowledgeSource)
 class KnowledgeSourceAdmin(admin.ModelAdmin):
-    list_display = ('client', 'title', 'kind', 'status', 'review_by', 'updated_at')
-    list_filter = ('status', 'kind', 'client')
+    list_display = ('client', 'title', 'kind', 'audience', 'status', 'review_by', 'updated_at')
+    list_filter = ('status', 'kind', 'audience', 'client')
     search_fields = ('title', 'origin', 'content')
     raw_id_fields = ('replaces',)  # a select would list every tenant's sources
 

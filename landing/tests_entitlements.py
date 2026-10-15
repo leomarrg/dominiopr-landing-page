@@ -4,8 +4,10 @@ No model provider and no Stripe endpoint is ever called: agent.answer is a
 double and payments._request is mocked.
 """
 import itertools
+import json
 from datetime import date, datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 from io import StringIO
 from unittest.mock import patch
 
@@ -42,15 +44,27 @@ def make_client(slug, **kw):
         notify_email=f'owner@{slug}.com', **kw)
 
 
-def make_sub(client, plan='medium', step=1, status='active', **kw):
-    return Subscription.objects.create(client=client, plan=plan, step=step, status=status, **kw)
+def make_sub(client, plan='medium', step=1, status='active', updated_at=None, **kw):
+    """updated_at defaults to BEFORE the months the tests bill (a plan or
+    step change inside the billed month routes the client to manual review)."""
+    sub = Subscription.objects.create(client=client, plan=plan, step=step, status=status, **kw)
+    Subscription.objects.filter(pk=sub.pk).update(updated_at=updated_at or pr(2026, 9, 1))
+    sub.refresh_from_db()
+    return sub
 
 
 def fresh(client):
     return Client.objects.select_related('subscription').get(pk=client.pk)
 
 
-def make_conv(client, when=None, channel='web'):
+def _reply(conversations):
+    """One assistant turn per conversation: what makes it a billable unit."""
+    ChatMessage.objects.bulk_create([
+        ChatMessage(conversation=c, role='assistant', content='Claro.', position=1)
+        for c in conversations])
+
+
+def make_conv(client, when=None, channel='web', answered=True):
     i = next(_ids)
     if channel == 'web':
         conv = Conversation.objects.create(client=client, widget_session=f'{client.slug}-s-{i}')
@@ -59,11 +73,14 @@ def make_conv(client, when=None, channel='web'):
                                            external_id=f'{channel}-{i}')
     if when is not None:  # started_at is auto_now_add
         Conversation.objects.filter(pk=conv.pk).update(started_at=when)
+    if answered:
+        _reply([conv])
     return conv
 
 
-def convs(client, n, when, channel='web'):
-    """n conversations started at `when` (bulk)."""
+def convs(client, n, when, channel='web', answered=True):
+    """n conversations started at `when` (bulk), each with an assistant
+    reply unless answered=False (opened but never answered: not billable)."""
     rows = []
     for _ in range(n):
         i = next(_ids)
@@ -73,6 +90,9 @@ def convs(client, n, when, channel='web'):
             rows.append(Conversation(client=client, channel=channel, external_id=f'{channel}-{i}'))
     created = Conversation.objects.bulk_create(rows)
     Conversation.objects.filter(pk__in=[c.pk for c in created]).update(started_at=when)
+    if answered:
+        _reply(created)
+    return created
 
 
 def fake_answer(reply='Claro.'):
@@ -183,7 +203,7 @@ class EntitlementTests(TestCase):
     def test_package_step_merged_with_overrides(self):
         c = make_client('deal', entitlement_overrides={
             'monthly_conversations': 1200, 'seats': 3, 'bogus': 1, 'locations': 'x',
-            'channels': ['web', 'whatsapp', 'fax']})
+            'channels': ['web', 'whatsapp', 'fax'], 'wa_conversations': 100})
         make_sub(c, plan='medium', step=2)
         ent = entitlements.entitlements(fresh(c))
         self.assertEqual(ent['plan'], 'medium')
@@ -425,7 +445,7 @@ class ThresholdTests(TestCase):
         self.assertEqual(len(mail.outbox), 0)
 
     def test_run_turn_hooks_the_check_on_the_first_turn_only(self):
-        conv = make_conv(self.c)
+        conv = make_conv(self.c, answered=False)
         with patch.object(agent, 'answer', side_effect=fake_answer()), \
                 patch.object(entitlements, 'check_thresholds', return_value=[]) as check:
             turns.run_turn(self.c, conv, 'hola', channel='web', handlers={})
@@ -434,7 +454,7 @@ class ThresholdTests(TestCase):
         self.assertEqual(ChatMessage.objects.filter(conversation=conv).count(), 4)
 
     def test_a_failing_check_never_blocks_the_reply(self):
-        conv = make_conv(self.c)
+        conv = make_conv(self.c, answered=False)
         with patch.object(agent, 'answer', side_effect=fake_answer('Dime.')), \
                 patch.object(entitlements, 'check_thresholds', side_effect=RuntimeError('boom')):
             result = turns.run_turn(self.c, conv, 'hola', channel='web', handlers={})
@@ -443,7 +463,7 @@ class ThresholdTests(TestCase):
 
     def test_crossing_through_a_real_turn_sends_the_warning(self):
         convs(self.c, 119, pr(2026, 10, 3))
-        conv = make_conv(self.c, when=pr(2026, 10, 10, 14))   # the 120th: 80%
+        conv = make_conv(self.c, when=pr(2026, 10, 10, 14), answered=False)   # the 120th: 80%
         with patch.object(agent, 'answer', side_effect=fake_answer()), \
                 patch('django.utils.timezone.now', return_value=NOW):
             turns.run_turn(self.c, conv, 'hola', channel='web', handlers={})
@@ -498,8 +518,19 @@ class BillOverageTests(TestCase):
     def posts(req):
         return [c for c in req.call_args_list if c.args[0] == 'POST']
 
+    @staticmethod
+    def stripe(method, path, data=None, headers=None):
+        """A Stripe double: ids by object type, empty listings."""
+        if method == 'GET':
+            return {'object': 'list', 'data': []}
+        if path == '/v1/invoices':
+            return {'id': 'in_x', 'status': 'draft'}
+        if path.endswith('/finalize'):
+            return {'id': path.split('/')[3], 'status': 'open'}
+        return {'id': 'ii_1'}
+
     def test_posts_invoice_items_with_idempotency_and_records_them(self):
-        with patch.object(payments, '_request', return_value={'id': 'ii_1'}) as req:
+        with patch.object(payments, '_request', side_effect=self.stripe) as req:
             out, err = self.run_cmd('--month', '2026-10')
         posts = self.posts(req)
         by_path = {}
@@ -511,6 +542,7 @@ class BillOverageTests(TestCase):
         self.assertEqual(monthly.args[2]['amount'], '4500')
         self.assertEqual(monthly.args[2]['currency'], 'usd')
         self.assertEqual(monthly.args[2]['subscription'], 'sub_m')
+        self.assertNotIn('invoice', monthly.args[2])
         self.assertEqual(monthly.args[2]['description'],
                          'DOMINIO — 300 conversaciones adicionales (mes 2026-10)')
         self.assertEqual(monthly.args[2]['metadata[client]'], 'mensual')
@@ -518,39 +550,56 @@ class BillOverageTests(TestCase):
         self.assertEqual(monthly.args[2]['metadata[kind]'], 'web_block')
         self.assertEqual(monthly.kwargs['headers'],
                          {'Idempotency-Key': f'overage:{self.stripe_m.pk}:2026-10:web_block'})
+        # Annual: the draft invoice exists BEFORE its item, the item is
+        # created straight onto it, and the invoice is finalized last.
         annual = next(c for c in items if c.args[2]['customer'] == 'cus_a')
         self.assertEqual(annual.args[2]['amount'], '1500')
-        self.assertNotIn('subscription', annual.args[2])     # collected by its own invoice
+        self.assertNotIn('subscription', annual.args[2])
+        self.assertEqual(annual.args[2]['invoice'], 'in_x')
         invoices = by_path['/v1/invoices']
         self.assertEqual(len(invoices), 1)
         self.assertEqual(invoices[0].args[2]['customer'], 'cus_a')
-        self.assertEqual(invoices[0].args[2]['pending_invoice_items_behavior'], 'include')
+        self.assertEqual(invoices[0].args[2]['pending_invoice_items_behavior'], 'exclude')
+        self.assertEqual(invoices[0].args[2]['auto_advance'], 'true')
+        self.assertEqual(invoices[0].args[2]['collection_method'], 'charge_automatically')
         self.assertEqual(invoices[0].kwargs['headers']['Idempotency-Key'],
                          f'overage-invoice:{self.annual.pk}:2026-10')
-        self.assertEqual(len(posts), 3)
+        finalize = by_path['/v1/invoices/in_x/finalize']
+        self.assertEqual(len(finalize), 1)
+        self.assertEqual(finalize[0].kwargs['headers']['Idempotency-Key'],
+                         f'overage-finalize:{self.annual.pk}:2026-10')
+        self.assertLess(posts.index(invoices[0]), posts.index(annual))
+        self.assertLess(posts.index(annual), posts.index(finalize[0]))
+        self.assertEqual(len(posts), 4)
+        self.assertEqual([c for c in req.call_args_list if c.args[0] == 'GET'], [])
 
         self.assertEqual(AuditEvent.objects.filter(
             client=self.stripe_m, action='billing.overage', target='2026-10:web_block').count(), 1)
         self.assertIn('3 x web_block = 4500 cents', AuditEvent.objects.get(
             client=self.stripe_m, action='billing.overage').result)
         self.assertTrue(AuditEvent.objects.filter(
-            client=self.annual, action='billing.overage_invoice', target='2026-10').exists())
+            client=self.stripe_m, action='billing.overage_pending', target='2026-10:web_block').exists())
+        self.assertEqual(AuditEvent.objects.get(
+            client=self.annual, action='billing.overage_invoice', target='2026-10').result, 'in_x')
+        self.assertEqual(AuditEvent.objects.get(
+            client=self.annual, action='billing.overage_finalized', target='2026-10').result, 'in_x')
         self.assertFalse(AuditEvent.objects.filter(
             client__in=[self.manual, self.under, self.old, self.canceled]).exists())
 
         self.assertIn('COBRAR A MANO (2', out)
         self.assertIn('manual (Manual, active): DOMINIO — 100 conversaciones adicionales (mes 2026-10) = $15', out)
         self.assertIn('ido (Stripe, canceled)', out)
+        self.assertIn('sin Stripe activo', out)
         self.assertIn('2 cargo(s) creados ($60)', out)
         self.assertEqual(err, '')
         ops = [m for m in mail.outbox if m.to == ['ops@dominiopr.com']]
         self.assertEqual(len(ops), 1)
         self.assertIn('manual', ops[0].body)
 
-        # Second run for the same month: nothing is posted again.
-        with patch.object(payments, '_request', return_value={'id': 'ii_2'}) as req2:
+        # Second run for the same month: nothing is posted (or even asked) again.
+        with patch.object(payments, '_request', side_effect=self.stripe) as req2:
             out2, _ = self.run_cmd('--month', '2026-10')
-        self.assertEqual(self.posts(req2), [])
+        req2.assert_not_called()
         self.assertIn('ya facturado', out2)
         self.assertIn('0 cargo(s) creados', out2)
         self.assertEqual(AuditEvent.objects.filter(action='billing.overage').count(), 2)
@@ -576,13 +625,376 @@ class BillOverageTests(TestCase):
             with self.assertRaises(CommandError):
                 self.run_cmd('--month', '2026-10')
         self.assertFalse(AuditEvent.objects.filter(action='billing.overage').exists())
-        with patch.object(payments, '_request', return_value={'id': 'ii_1'}) as req:
+        # The monthly item got its pending marker before the failed POST, so
+        # the retry first asks Stripe whether the item exists (it does not).
+        self.assertTrue(AuditEvent.objects.filter(
+            client=self.stripe_m, action='billing.overage_pending').exists())
+        with patch.object(payments, '_request', side_effect=self.stripe) as req:
             self.run_cmd('--month', '2026-10')
-        self.assertEqual(len(self.posts(req)), 3)
+        gets = [c for c in req.call_args_list if c.args[0] == 'GET']
+        self.assertEqual(len(gets), 1)
+        self.assertIn('customer=cus_m', gets[0].args[1])
+        self.assertIn('pending=true', gets[0].args[1])
+        self.assertEqual(len(self.posts(req)), 4)     # item + (invoice, item, finalize)
+        self.assertEqual(AuditEvent.objects.filter(action='billing.overage').count(), 2)
 
     def test_bad_month_argument(self):
         with self.assertRaises(CommandError):
             call_command('bill_overage', '--month', 'octubre')
+
+    def test_an_open_month_is_refused_unless_dry_run_or_force(self):
+        with patch.object(payments, '_request', side_effect=self.stripe) as req:
+            with self.assertRaisesMessage(CommandError, 'Ese mes no ha cerrado'):
+                self.run_cmd('--month', '2026-11')          # RUN_AT is Nov 1: still open
+            with self.assertRaisesMessage(CommandError, 'Ese mes no ha cerrado'):
+                self.run_cmd('--month', '2027-03')          # the future
+            req.assert_not_called()
+            out, _ = self.run_cmd('--month', '2026-11', '--dry-run')
+            self.assertIn('[dry-run] Exceso de 2026-11', out)
+            req.assert_not_called()
+            convs(self.stripe_m, 151, pr(2026, 11, 1, 1))  # 150 included: 1 block, open month
+            out, _ = self.run_cmd('--month', '2026-11', '--force')
+        self.assertIn('1 cargo(s) creados ($15)', out)
+        self.assertEqual(len(self.posts(req)), 1)
+
+
+# ------------------------------------------------------------------
+# Billing audit follow-up (H1, M1, M3, M5, M6, L1, L4, L5, L7)
+# ------------------------------------------------------------------
+
+@override_settings(CONTACT_NOTIFY_EMAIL='ops@dominiopr.com', STRIPE_SECRET_KEY='sk_test_x',
+                   STRIPE_TAX_RATE_ID='')
+class BillingHardeningTests(TestCase):
+    RUN_AT = pr(2026, 11, 1, 3, 10)
+
+    def setUp(self):
+        cache.clear()
+        self.c = make_client('duro')
+        make_sub(self.c, plan='small', method='stripe', stripe_customer_id='cus_d',
+                 stripe_subscription_id='sub_d')              # 150 included, $49.99
+        self.c = fresh(self.c)
+
+    def run_cmd(self, *args):
+        out, err = StringIO(), StringIO()
+        with patch('django.utils.timezone.now', return_value=self.RUN_AT):
+            call_command('bill_overage', *args, stdout=out, stderr=err)
+        return out.getvalue(), err.getvalue()
+
+    @staticmethod
+    def posts(req):
+        return [c for c in req.call_args_list if c.args[0] == 'POST']
+
+    # H1 (1): only answered conversations are units ------------------
+
+    def test_unanswered_conversations_are_not_units(self):
+        convs(self.c, 200, pr(2026, 10, 3), answered=False)
+        convs(self.c, 3, pr(2026, 10, 3), channel='whatsapp', answered=False)
+        usage = entitlements.month_usage(self.c, date(2026, 10, 1))
+        self.assertEqual((usage['conversations'], usage['web'], usage['whatsapp']), (0, 0, 0))
+        with patch.object(payments, '_request') as req:
+            out, _ = self.run_cmd('--month', '2026-10', '--dry-run')
+        req.assert_not_called()
+        self.assertNotIn('duro', out)
+        self.assertIn('0 cargo(s) creados', out)
+        # One reply turns the row into a unit; a user-only turn does not.
+        rows = convs(self.c, 2, pr(2026, 10, 4), answered=False)
+        ChatMessage.objects.create(conversation=rows[0], role='user', content='hola', position=0)
+        ChatMessage.objects.create(conversation=rows[1], role='user', content='hola', position=0)
+        ChatMessage.objects.create(conversation=rows[1], role='assistant', content='Hola.', position=1)
+        self.assertEqual(entitlements.month_usage(self.c, date(2026, 10, 1))['web'], 1)
+
+    # H1 (2): absurd amounts go to manual review ---------------------
+
+    def test_usage_far_above_the_plan_is_reviewed_not_charged(self):
+        convs(self.c, 1500, pr(2026, 10, 3))          # 10x included: 14 blocks = $210 > 3x $49.99
+        with patch.object(payments, '_request', return_value={'id': 'ii_1'}) as req:
+            out, _ = self.run_cmd('--month', '2026-10')
+        req.assert_not_called()
+        self.assertIn('COBRAR A MANO (1', out)
+        self.assertIn('duro (Stripe, active): DOMINIO — 1400 conversaciones adicionales (mes 2026-10) = $210', out)
+        self.assertIn('supera 3x la mensualidad', out)
+        self.assertIn('uso web 1500 supera 3x lo incluido (150)', out)
+        self.assertFalse(AuditEvent.objects.filter(action__startswith='billing.').exists())
+        ops = [m for m in mail.outbox if m.to == ['ops@dominiopr.com']]
+        self.assertEqual(len(ops), 1)
+        self.assertIn('tráfico sospechoso', ops[0].body)
+        self.assertIn('duro', ops[0].body)
+
+    def test_usage_just_over_three_times_included_is_reviewed_even_if_cheap(self):
+        self.c.entitlement_overrides = {'overage': {'web_block': [1000, 100]}}
+        self.c.save()
+        convs(self.c, 451, pr(2026, 10, 3))           # 3x150 + 1; overage only $1
+        with patch.object(payments, '_request', return_value={'id': 'ii_1'}) as req:
+            out, _ = self.run_cmd('--month', '2026-10')
+        req.assert_not_called()
+        self.assertIn('uso web 451 supera 3x lo incluido (150)', out)
+        # Three times exactly, with a normal price, is charged.
+        Conversation.objects.filter(client=self.c).delete()
+        self.c.entitlement_overrides = {}
+        self.c.save()
+        convs(self.c, 450, pr(2026, 10, 3))           # 3 blocks = $45 < 3x $49.99
+        with patch.object(payments, '_request', return_value={'id': 'ii_1'}) as req:
+            out, _ = self.run_cmd('--month', '2026-10')
+        self.assertEqual(len(self.posts(req)), 1)
+        self.assertIn('1 cargo(s) creados ($45)', out)
+
+    # M1: crash between the POST and the record ----------------------
+
+    def test_crash_after_post_is_recovered_from_stripe_without_posting_again(self):
+        convs(self.c, 251, pr(2026, 10, 3))           # 2 blocks = $30
+        real_create = AuditEvent.objects.create
+
+        def create_or_die(**kw):
+            if kw.get('action') == 'billing.overage':
+                raise RuntimeError('db gone')
+            return real_create(**kw)
+
+        with patch.object(payments, '_request', return_value={'id': 'ii_lost'}) as req, \
+                patch.object(AuditEvent.objects, 'create', side_effect=create_or_die):
+            with self.assertRaises(RuntimeError):
+                self.run_cmd('--month', '2026-10')
+        self.assertEqual(len(self.posts(req)), 1)     # Stripe has the item...
+        self.assertTrue(AuditEvent.objects.filter(action='billing.overage_pending',
+                                                  target='2026-10:web_block').exists())
+        self.assertFalse(AuditEvent.objects.filter(action='billing.overage').exists())
+
+        def stripe(method, path, data=None, headers=None):
+            if method == 'GET':
+                self.assertIn('/v1/invoiceitems?', path)
+                self.assertIn('customer=cus_d', path)
+                self.assertIn('pending=true', path)
+                return {'object': 'list', 'data': [
+                    {'id': 'ii_other', 'metadata': {'month': '2026-09', 'kind': 'web_block'}},
+                    {'id': 'ii_lost', 'metadata': {'month': '2026-10', 'kind': 'web_block'}},
+                ]}
+            raise AssertionError(f'unexpected {method} {path}')
+
+        with patch.object(payments, '_request', side_effect=stripe) as req2:
+            out, err = self.run_cmd('--month', '2026-10')
+        self.assertEqual(self.posts(req2), [])
+        self.assertEqual(len(req2.call_args_list), 1)
+        self.assertIn('ya estaba en Stripe (ii_lost)', out)
+        self.assertEqual(err, '')
+        rec = AuditEvent.objects.get(client=self.c, action='billing.overage',
+                                     target='2026-10:web_block')
+        self.assertIn('ii_lost', rec.result)
+        # Third run: nothing at all.
+        with patch.object(payments, '_request', side_effect=stripe) as req3:
+            self.run_cmd('--month', '2026-10')
+        req3.assert_not_called()
+
+    def test_pending_without_the_item_in_stripe_posts_it(self):
+        convs(self.c, 151, pr(2026, 10, 3))
+        AuditEvent.objects.create(client=self.c, action='billing.overage_pending',
+                                  target='2026-10:web_block', result='1 x web_block')
+
+        def stripe(method, path, data=None, headers=None):
+            if method == 'GET':
+                return {'object': 'list', 'data': [
+                    {'id': 'ii_wa', 'metadata': {'month': '2026-10', 'kind': 'wa_block'}}]}
+            return {'id': 'ii_new'}
+
+        with patch.object(payments, '_request', side_effect=stripe) as req:
+            out, _ = self.run_cmd('--month', '2026-10')
+        self.assertEqual(len(self.posts(req)), 1)
+        self.assertIn('1 cargo(s) creados ($15)', out)
+        self.assertEqual(AuditEvent.objects.filter(action='billing.overage_pending').count(), 1)
+
+    # M3: plan or step changed in the billed month -------------------
+
+    def test_plan_changed_in_the_month_is_reviewed_not_charged(self):
+        convs(self.c, 151, pr(2026, 10, 3))
+        Subscription.objects.filter(client=self.c).update(updated_at=pr(2026, 10, 20))
+        with patch.object(payments, '_request', return_value={'id': 'ii_1'}) as req:
+            out, _ = self.run_cmd('--month', '2026-10')
+        req.assert_not_called()
+        self.assertIn('plan o escalón modificado el 2026-10-20', out)
+        self.assertFalse(AuditEvent.objects.filter(action__startswith='billing.').exists())
+        # A change the month BEFORE is fine.
+        Subscription.objects.filter(client=self.c).update(updated_at=pr(2026, 9, 29))
+        with patch.object(payments, '_request', return_value={'id': 'ii_1'}) as req:
+            self.run_cmd('--month', '2026-10')
+        self.assertEqual(len(self.posts(req)), 1)
+
+    # M5: WhatsApp bucket thresholds ---------------------------------
+
+    def test_whatsapp_bucket_fires_its_own_thresholds(self):
+        wa = make_client('wasap', name='Wasap Clínica')
+        make_sub(wa, plan='premium')             # 4000 web + 500 WhatsApp
+        wa = fresh(wa)
+        convs(wa, 400, pr(2026, 10, 3), channel='whatsapp')   # 80% WA, 0% web
+        with patch('django.utils.timezone.now', return_value=NOW):
+            self.assertEqual(entitlements.check_thresholds(wa), [('wa', 80)])
+        self.assertTrue(AuditEvent.objects.filter(client=wa, action='allowance.wa.80',
+                                                  target='2026-10').exists())
+        self.assertFalse(AuditEvent.objects.filter(action='allowance.80').exists())
+        to_client = next(m for m in mail.outbox if m.to == ['owner@wasap.com'])
+        self.assertIn('conversaciones de WhatsApp', to_client.subject)
+        self.assertIn('400 de 500 conversaciones de WhatsApp', to_client.body)
+        self.assertIn('bloques adicionales de 500 conversaciones de WhatsApp a $149 + IVU', to_client.body)
+        self.assertIn('una factura aparte', to_client.body)
+        to_ops = next(m for m in mail.outbox if m.to == ['ops@dominiopr.com'])
+        self.assertIn('conversaciones de WhatsApp', to_ops.subject)
+        self.assertEqual(len(mail.outbox), 2)
+        # Same month: nothing more; cache cleared: the AuditEvent still dedupes.
+        cache.clear()
+        with patch('django.utils.timezone.now', return_value=NOW):
+            self.assertEqual(entitlements.check_thresholds(wa), [])
+        self.assertEqual(len(mail.outbox), 2)
+        # Both buckets at 100% in one go: four emails, both actions recorded.
+        convs(wa, 100, pr(2026, 10, 5), channel='whatsapp')
+        convs(wa, 4000, pr(2026, 10, 5))
+        with patch('django.utils.timezone.now', return_value=NOW):
+            self.assertEqual(entitlements.check_thresholds(wa), [80, 100, ('wa', 100)])
+        self.assertEqual(sorted(AuditEvent.objects.filter(client=wa).values_list('action', flat=True)),
+                         ['allowance.100', 'allowance.80', 'allowance.wa.100', 'allowance.wa.80'])
+        self.assertEqual(len(mail.outbox), 8)
+
+    def test_whatsapp_thresholds_never_fire_where_the_channel_is_not_sold(self):
+        convs(self.c, 400, pr(2026, 10, 3), channel='whatsapp')   # small: no WhatsApp
+        with patch('django.utils.timezone.now', return_value=NOW):
+            self.assertEqual(entitlements.check_thresholds(self.c), [])
+        self.assertEqual(mail.outbox, [])
+
+    def test_allowance_audit_record_is_unique_per_client_month(self):
+        AuditEvent.objects.create(client=self.c, action='allowance.80', target='2026-10')
+        self.assertFalse(entitlements._record_threshold(self.c, 'allowance.80', '2026-10', 'x'))
+        self.assertEqual(AuditEvent.objects.filter(action='allowance.80').count(), 1)
+        self.assertTrue(entitlements._record_threshold(self.c, 'allowance.80', '2026-11', 'x'))
+        # Non-allowance actions keep repeating freely.
+        AuditEvent.objects.create(client=self.c, action='billing.overage', target='2026-10:web_block')
+        AuditEvent.objects.create(client=self.c, action='billing.overage', target='2026-10:web_block')
+
+    # M6: internal conversations are never in the web bucket ---------
+
+    def test_internal_conversations_are_reported_but_not_billed(self):
+        big = make_client('equipo')
+        make_sub(big, plan='large', method='stripe', stripe_customer_id='cus_e',
+                 stripe_subscription_id='sub_e')                # 1500 web, internal sold
+        big = fresh(big)
+        convs(big, 1500, pr(2026, 10, 3))
+        convs(big, 900, pr(2026, 10, 3), channel='internal')
+        with patch('django.utils.timezone.now', return_value=NOW):
+            status = entitlements.allowance_status(big)
+        self.assertEqual((status['used'], status['internal'], status['all_conversations']),
+                         (1500, 900, 2400))
+        self.assertEqual(status['overage_blocks'], 0)
+        self.assertFalse(status['billable'])
+        with patch.object(payments, '_request', return_value={'id': 'ii_1'}) as req:
+            out, _ = self.run_cmd('--month', '2026-10')
+        req.assert_not_called()
+        self.assertIn('0 cargo(s) creados', out)
+
+    # L1: the plain-text email is not HTML-escaped --------------------
+
+    def test_text_email_keeps_apostrophes(self):
+        self.c.name = "D'Angelo & Hijos"
+        self.c.save()
+        convs(self.c, 120, pr(2026, 10, 3))
+        with patch('django.utils.timezone.now', return_value=NOW):
+            entitlements.check_thresholds(fresh(self.c))
+        to_client = next(m for m in mail.outbox if m.to == ['owner@duro.com'])
+        self.assertIn("D'Angelo & Hijos, tu agente", to_client.body)
+        self.assertNotIn('&#x27;', to_client.body)
+        self.assertIn('$15 + IVU', to_client.body)
+        self.assertIn('en tu próxima factura (los planes anuales reciben una factura aparte)',
+                      to_client.body)
+        self.assertIn('D&#x27;Angelo', to_client.alternatives[0][0])   # HTML stays escaped
+
+    # L4: override clamps --------------------------------------------
+
+    def test_override_clamps(self):
+        self.c.entitlement_overrides = {
+            'monthly_conversations': 10 ** 12,
+            'overage': {'web_block': [100, 1]},            # a $0.01 block: ignored
+            'channels': ['web', 'whatsapp'],                # WhatsApp without capacity: ignored
+        }
+        self.c.save()
+        ent = entitlements.entitlements(self.c)
+        self.assertEqual(ent['monthly_conversations'], 10 ** 7)
+        self.assertEqual(ent['overage']['web_block'], (100, 1500))
+        self.assertEqual(ent['channels'], {'web'})
+        self.c.entitlement_overrides = {'channels': ['web', 'whatsapp'], 'wa_conversations': 200,
+                                        'overage': {'web_block': [0, 1500]}}
+        self.c.save()
+        ent = entitlements.entitlements(self.c)
+        self.assertEqual(ent['channels'], {'web', 'whatsapp'})
+        self.assertEqual(ent['wa_conversations'], 200)
+        self.assertEqual(ent['overage']['web_block'], (100, 1500))   # 0-size block: ignored
+
+    # L5: disabled logins are not seats -------------------------------
+
+    def test_inactive_users_do_not_take_a_seat(self):
+        member(self.c, 'a@duro.com', role='employee')
+        gone = member(self.c, 'b@duro.com', role='employee')
+        gone.is_active = False
+        gone.save()
+        self.assertEqual(entitlements.month_usage(self.c, date(2026, 10, 1))['seats_used'], 1)
+
+    # L7: month bounds are Puerto Rico regardless of settings ----------
+
+    @override_settings(TIME_ZONE='UTC')
+    def test_month_bounds_are_puerto_rico_even_when_the_default_tz_is_not(self):
+        start, end = entitlements.month_bounds(date(2026, 10, 5))
+        self.assertEqual(start, pr(2026, 10, 1, 0, 0))
+        self.assertEqual(end, pr(2026, 11, 1, 0, 0))
+        self.assertNotEqual(start, usage_ledger.month_bounds(date(2026, 10, 5))[0])
+        # 03:30 UTC on Nov 1 is still Oct 31 in Puerto Rico.
+        start, _ = entitlements.month_bounds(datetime(2026, 11, 1, 3, 30, tzinfo=ZoneInfo('UTC')))
+        self.assertEqual(start, pr(2026, 10, 1, 0, 0))
+        with patch('django.utils.timezone.now',
+                   return_value=datetime(2026, 11, 1, 3, 30, tzinfo=ZoneInfo('UTC'))):
+            self.assertEqual(entitlements.month_bounds()[0], pr(2026, 10, 1, 0, 0))
+
+
+# ------------------------------------------------------------------
+# H1 (3): new conversations per IP and day on the widget endpoint
+# ------------------------------------------------------------------
+
+@override_settings(ANTHROPIC_API_KEY='test-key', DOMINIO_NEW_CONVERSATIONS_PER_IP_DAY=5)
+class NewConversationCapTests(TestCase):
+    TOKEN = 'cap-widget-token-abcdefghijklmnop'
+
+    def setUp(self):
+        cache.clear()
+        self.c = make_client('tope', widget_token=self.TOKEN, daily_message_cap=300)
+        make_sub(self.c, plan='small')
+
+    def post(self, session, text='hola'):
+        return HttpClient().post(
+            reverse('chat_api'),
+            data=json.dumps({'client': 'tope', 'token': self.TOKEN, 'session': session,
+                             'messages': [{'role': 'user', 'content': text}]}),
+            content_type='application/json')
+
+    def test_sixth_new_session_from_one_ip_is_refused_but_old_sessions_go_on(self):
+        with patch.object(agent, 'answer', side_effect=fake_answer()):
+            for i in range(5):
+                self.assertEqual(self.post(f'session-{i}-xxxxxxxx').status_code, 200)
+            resp = self.post('session-6-xxxxxxxx')
+            self.assertEqual(resp.status_code, 429)
+            self.assertEqual(resp.json(), {'error': 'Demasiadas solicitudes. Baja un poco la velocidad.'})
+            self.assertIn('Retry-After', resp)
+            self.assertFalse(Conversation.objects.filter(widget_session='session-6-xxxxxxxx').exists())
+            # An existing session keeps talking.
+            self.assertEqual(self.post('session-0-xxxxxxxx', 'otra').status_code, 200)
+            self.assertEqual(self.post('session-4-xxxxxxxx', 'otra').status_code, 200)
+        self.assertEqual(Conversation.objects.filter(client=self.c).count(), 5)
+        self.assertEqual(ChatMessage.objects.filter(
+            conversation__widget_session='session-0-xxxxxxxx').count(), 4)
+
+    def test_cap_is_per_ip(self):
+        with patch.object(agent, 'answer', side_effect=fake_answer()):
+            for i in range(5):
+                self.post(f'session-{i}-xxxxxxxx')
+            self.assertEqual(self.post('session-6-xxxxxxxx').status_code, 429)
+            resp = HttpClient().post(
+                reverse('chat_api'),
+                data=json.dumps({'client': 'tope', 'token': self.TOKEN,
+                                 'session': 'session-7-xxxxxxxx',
+                                 'messages': [{'role': 'user', 'content': 'hola'}]}),
+                content_type='application/json', REMOTE_ADDR='203.0.113.9')
+            self.assertEqual(resp.status_code, 200)
 
 
 # ------------------------------------------------------------------

@@ -236,7 +236,7 @@ S.append(table([
     ['Servidor AWS Lightsail', '$5–12', 'Según DEPLOYMENT.md; subir de plan si falta RAM'],
     ['Correo transaccional', '$0', 'Gmail SMTP o Resend gratis (3,000/mes)'],
     ['Dominio dominiopr.com', '~$1.70', '~$20 al año'],
-    ['Avisos Twilio (WhatsApp/SMS)', '$1–5', 'Centavos por aviso; máx. 40 por cliente al día. Verificar tarifa'],
+    ['Avisos SMS (Twilio) y WhatsApp (Cloud API de Meta, directo)', '$1–5', 'Centavos por aviso; máx. 40 por cliente al día. WhatsApp sin intermediario desde el 14 oct 2026'],
     ['Backup externo (S3)', '< $1', 'Aún no activo; recomendado'],
     ['Stripe', '2.9% + $0.30 por cobro', 'Tarifa estándar EE. UU.; verificar'],
 ], [2.2 * inch, 1.5 * inch, 3.2 * inch]))

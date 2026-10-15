@@ -21,18 +21,17 @@ OUT = sys.argv[1]
 AI_PER_CONV = 0.0015       # web/WhatsApp: 6 mensajes, 7 llamadas, Haiku 5.5 low (medido)
 AI_PER_INTERNAL_MSG = 0.0005  # asistente interno: prompt más largo (manuales), caché
 WA_REPLIES_PER_CONV = 6    # respuestas del agente por conversación de WhatsApp
-WA_MSGS_PER_CONV = 12      # entrantes + salientes (Twilio cobra ambos)
+WA_MSGS_PER_CONV = 12      # entrantes + salientes (referencia; Meta no cobra los entrantes)
 WA_META_SERVICE = 0.0113   # USD por respuesta de servicio, PR = "Rest of Latin America" (desde 1 oct 2026)
 WA_FREE_SERVICE = 1000     # respuestas de servicio gratis por número al mes
-WA_TWILIO = 0.005          # USD por mensaje (entrante y saliente)
+WA_TWILIO = 0.0            # sin intermediario: la Cloud API de Meta se usa directo (decisión 14 oct 2026)
 WA_UTILITY = 0.0113        # plantilla de utilidad (recordatorio fuera de la ventana de 24 h)
 
 
 def wa_cost(convs, reminders=0):
     replies = convs * WA_REPLIES_PER_CONV
     meta = max(0, replies - WA_FREE_SERVICE) * WA_META_SERVICE + reminders * WA_UTILITY
-    twilio = (convs * WA_MSGS_PER_CONV + reminders) * WA_TWILIO
-    return meta + twilio
+    return meta  # sin BSP: Meta factura directo a la cuenta de DOMINIO
 
 
 # ---------------------------------------------------------------- paquetes
@@ -164,10 +163,11 @@ GLOSS = [
     ('Asientos internos', 'Cuántos empleados del cliente pueden tener cuenta para usar el asistente interno '
      '(como licencias). Large incluye 5 a 15; Premium hasta 25; cada asiento extra $9/mes.'),
     ('Número de WhatsApp', 'WhatsApp Business necesita un número que NO esté activo en la app normal de WhatsApp. '
-     'Opción recomendada: DOMINIO consigue un número nuevo por Twilio (~$1–2/mes, incluido). Opción 2: el cliente usa '
-     'su número de siempre, pero tiene que sacarlo de la app (ya no lo usa en el celular; todo pasa por el agente y el '
-     'dashboard). En los dos casos, Meta verifica el negocio con sus datos legales y aprueba el nombre que ven los '
-     'clientes.'),
+     'Se conecta directo a la Cloud API de Meta (sin Twilio ni otro intermediario). Opción recomendada: el teléfono '
+     'fijo del negocio, que no tiene WhatsApp (Meta verifica por llamada; costo $0). Opción 2: el cliente usa su '
+     'celular de siempre, pero tiene que sacarlo de la app (todo pasa por el agente y el dashboard). Opción 3: un '
+     'número VoIP nuevo (~$1–2/mes). En todos los casos Meta verifica el negocio con sus datos legales y aprueba el '
+     'nombre que ven los clientes.'),
     ('Instalación', 'Pago único por el trabajo de DOMINIO para dejar el agente funcionando: leer el sitio y los '
      'documentos, configurarlo, probarlo con preguntas reales y ponerlo en la página (y en WhatsApp en Premium).'),
     ('Conectar un CRM', 'CRM = el sistema donde el negocio guarda a sus clientes (HubSpot, Zoho, Salesforce, '
@@ -390,10 +390,12 @@ S.append(CondPageBreak(3 * inch))
 S.append(Paragraph('8. Lo que cuesta dar cada escalón y el margen', H2))
 S.append(Paragraph(
     '<b>IA:</b> ~$0.0015 por conversación medido (Haiku 5.5, effort low, con caché); el asistente interno ~$0.0005 '
-    'por pregunta (prompt más largo). <b>WhatsApp</b> (números de PR): Meta cobra cada respuesta de servicio a '
-    '~$0.0113 después de las primeras 1,000 gratis al mes (desde el 1 de octubre de 2026; PR se factura como "resto de '
-    'Latinoamérica", no como EE. UU.), Twilio cobra $0.005 por mensaje entrante o saliente y $1.15/mes por el número, '
-    'y cada recordatorio por plantilla ~$0.0113 (se supone uno por cada 3 conversaciones).', BODY))
+    'por pregunta (prompt más largo). <b>WhatsApp</b> (números de PR, directo con la Cloud API de Meta, sin '
+    'intermediario): los mensajes que envía el cliente son gratis; Meta cobra cada respuesta de servicio a ~$0.0113 '
+    'después de las primeras 1,000 gratis al mes (desde el 1 de octubre de 2026; PR se factura como "resto de '
+    'Latinoamérica", no como EE. UU.) y cada recordatorio por plantilla fuera de la ventana de 24 h ~$0.0113 (se '
+    'supone uno por cada 3 conversaciones). Al no usar Twilio se ahorran ~$0.005 por mensaje y $1.15/mes por '
+    'número: en Premium escalón 3 son ~$120/mes menos de costo.', BODY))
 
 # Hosting: servidor y servicios compartidos por todos los clientes (AWS Lightsail, oct 2026).
 HOSTING_STAGES = [
@@ -415,7 +417,7 @@ S.append(Paragraph('Hoy el sitio corre en un plan chico (512 MB–1 GB, $5–7).
                    'aws.amazon.com/lightsail/pricing, octubre 2026.', SMALL))
 
 HOSTING_PER_CLIENT = 16.0 / 10   # etapa Arranque con 10 clientes
-WA_NUMBER = 1.15                 # Twilio, número de EE. UU./PR al mes
+WA_NUMBER = 0.0                  # número: el fijo del negocio ($0) o un VoIP (~$1–2/mes, lo paga el cliente)
 
 
 def stripe_fee(price):
@@ -463,8 +465,7 @@ AVAIL = [
     ('Capacidad mensual por paquete, aviso al 80% y escalones', 'Todos', 'Construir', '4–6 días'),
     ('Asistente interno con login, asientos y conocimiento interno separado', 'L', 'Construir', '5–8 días'),
     ('Varios locales (agenda y horario por local) y avisos por departamento', 'L', 'Construir', '6–8 días'),
-    ('WhatsApp Business (Twilio): entrada, respuestas, plantillas, costos', 'P', 'Construir', '10–15 días + 1–3 '
-     'semanas de Meta'),
+    ('WhatsApp Business (Cloud API de Meta, sin intermediario): webhook, respuestas, plantillas, costos', 'P', 'Construir', '10–15 días + 1–3 semanas de Meta'),
     ('Sincronizar Google/Outlook Calendar, CRM', 'Enterprise', 'Cotizar', '1–2 semanas por integración'),
     ('Voz / llamadas telefónicas', '—', 'Fuera de alcance', 'Requiere proveedor de voz; no recomendado ahora'),
 ]
@@ -519,12 +520,13 @@ S += bullets([
     '<b>Lanzamiento escalonado:</b> publicar Small y Medium primero; Large y Premium como "próximamente" con lista de '
     'espera hasta que estén construidos.',
     '<b>IVU:</b> confirmar con un CPA si aplica 11.5% o 4%.',
-    '<b>WhatsApp:</b> empezar con Twilio (ya está integrado para avisos) y abrir la verificación de Meta del primer '
-    'cliente Premium cuanto antes.',
+    '<b>WhatsApp:</b> conexión directa con la Cloud API de Meta (decidido el 14 de octubre de 2026; Twilio queda '
+    'solo para SMS de citas tomadas por teléfono). Abrir la verificación de Meta Business de DOMINIO y del primer '
+    'cliente Premium cuanto antes: es el paso lento (1–3 semanas).',
 ])
 S.append(Spacer(1, 6))
-S.append(Paragraph('Fuentes: tarifas de WhatsApp (developers.facebook.com, twilio.com/en-us/whatsapp/pricing y guías '
-                   'de proveedores sobre el cambio del 1 de octubre de 2026), precios de competidores en sitios de '
+S.append(Paragraph('Fuentes: tarifas de WhatsApp (developers.facebook.com/docs/whatsapp/pricing, tarjeta vigente desde '
+                   'el 1 de julio de 2026 y guías de proveedores sobre el cambio del 1 de octubre de 2026), precios de competidores en sitios de '
                    'reseñas de mayo a octubre de 2026 (verificar antes de citarlos públicamente), estudio PR Digital '
                    'Trends 2026 (WhatsApp 55.8%). Costos de IA medidos en la base de DOMINIO.', SMALL))
 

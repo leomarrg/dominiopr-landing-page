@@ -41,13 +41,16 @@
         {% elif ov.warn %}
         <p class="rep-overage" role="status"><span class="ctl-badge ctl-badge--warn">{{ ov.pct }}% de tu plan</span> Te quedan {{ ov.remaining|thousands }} conversaciones incluidas este mes. Si las pasas, el agente sigue atendiendo y se cobra el exceso a fin de mes.</p>
         {% endif %}
-        <p class="ctl-muted rep-disclaimer">Tu plan incluye {{ ov.included|thousands }} conversaciones al mes. Si recibes más, el agente sigue atendiendo y a fin de mes se cobran bloques adicionales de {{ ov.block_size }} conversaciones a {{ ov.block_price }} cada uno, en tu misma factura. El contador se reinicia el día 1 de cada mes.{% if ov.wa.included %} WhatsApp: {{ ov.wa.used|thousands }} de {{ ov.wa.included|thousands }} conversaciones (bloques de {{ ov.wa.block_size }} a {{ ov.wa.block_price }}).{% endif %}{% if ov.seats.included %} Asientos internos: {{ ov.seats.used }} de {{ ov.seats.included }} (extra {{ ov.seats.price }}/mes).{% endif %}</p>
+        <p class="ctl-muted rep-disclaimer">Tu plan incluye {{ ov.included|thousands }} conversaciones al mes. Si recibes más, el agente sigue atendiendo y a fin de mes se cobran bloques adicionales de {{ ov.block_size }} conversaciones a {{ ov.block_price }} + IVU cada uno, en tu próxima factura (los planes anuales reciben una factura aparte). El contador se reinicia el día 1 de cada mes.{% if ov.wa.included %} WhatsApp: {{ ov.wa.used|thousands }} de {{ ov.wa.included|thousands }} conversaciones (bloques de {{ ov.wa.block_size }} a {{ ov.wa.block_price }} + IVU).{% endif %}{% if ov.seats.included %} Asientos internos: {{ ov.seats.used }} de {{ ov.seats.included }} (extra {{ ov.seats.price }}/mes).{% endif %}</p>
         <p class="ctl-muted">Mensajes este mes: <b>{{ allowance.messages|thousands }}</b>.</p>
         {% endif %}{% endwith %}
         {% else %}
         <p class="rep-big">Llevas <b>{{ allowance.used|thousands }}</b> mensajes este mes.</p>
         {% endif %}
         <p class="ctl-muted">Hoy: <b>{{ allowance.today|thousands }}</b>{% if allowance.today_cap %} de {{ allowance.today_cap|thousands }} mensajes (tope diario){% if allowance.today_warn %} <span class="ctl-badge ctl-badge--warn">{{ allowance.today_pct }}% del tope de hoy</span>{% endif %}{% else %} mensajes{% endif %}.</p>
+        {% if internal_month or internal_conversations %}
+        <p class="ctl-muted rep-internal">Asistente interno: <b>{{ internal_month|thousands }}</b> conversaciones este mes ({{ internal_conversations|thousands }} en {{ period_label|lower }}). Una conversación = un empleado por día.</p>
+        {% endif %}
     </section>
 
     {% if value.price %}

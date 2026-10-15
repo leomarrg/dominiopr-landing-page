@@ -28,11 +28,13 @@ from .models import AuditEvent, Client, KnowledgeFragment, KnowledgeSource, Memb
 
 logger = logging.getLogger(__name__)
 
-SELF_PUBLISH_PLANS = frozenset({'pro', 'scale', 'custom'})
+# Starter and Small: DOMINIO reviews and publishes. Medium and up (and the
+# older Pro/Scale/Custom) publish their own knowledge.
+SELF_PUBLISH_PLANS = frozenset({'pro', 'scale', 'custom', 'medium', 'large', 'premium'})
 SELF_PUBLISH_STATUSES = frozenset({'active', 'past_due'})
 MAX_SOURCE_CHARS = 8_000
 MAX_TOTAL_CHARS = 40_000
-REVIEW_MESSAGE = ('Tu plan Starter: DOMINIO revisa y publica tus cambios '
+REVIEW_MESSAGE = ('En tu plan, DOMINIO revisa y publica tus cambios '
                   '(normalmente en 1 día laborable).')
 NOTIFY_TTL = 24 * 3600
 CLIENT_DAILY_REVIEW_EMAILS = 5
@@ -123,7 +125,7 @@ def open_draft_for(source):
     return KnowledgeSource(
         client=source.client, kind=source.kind, title=source.title, origin=source.origin,
         content=source.content, position=source.position, review_by=source.review_by,
-        replaces=source)
+        audience=source.audience, replaces=source)
 
 
 def _guess_replaced(source):

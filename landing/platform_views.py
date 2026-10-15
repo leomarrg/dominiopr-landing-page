@@ -10,6 +10,7 @@ product understandable:
      leads and conversations only.
 """
 import csv
+import json
 import logging
 from decimal import Decimal
 
@@ -22,22 +23,22 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.views.decorators.http import require_POST
 
-from . import agent, analytics, ingest, knowledge, publishing
+from . import agent, analytics, entitlements, ingest, knowledge, publishing, turns
 from . import usage as usage_ledger
 from .models import (
     AvailabilityRule, Booking, Client, ContactSubmission, Conversation,
     KnowledgeSource, Membership, StaffContact, UsageEvent,
 )
 from .views import (
-    _audit, _client_ip, _member_client_ids, _rate_limited, _send_plain_email,
-    _tenant_action_cap_hit, leads_for, staff_required,
+    MAX_CHAT_BODY_BYTES, _audit, _client_ip, _member_client_ids, _rate_limited,
+    _send_plain_email, _tenant_action_cap_hit, leads_for, staff_required,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,11 +69,20 @@ def is_org_admin(user, client=None):
 
 
 def conversations_for(user):
-    qs = Conversation.objects.select_related('client', 'lead')
+    """Conversations this user may read. Phase E: an employee's chat with
+    the internal assistant (channel='internal') is readable only by staff and
+    by an org_admin OF THAT CLIENT — never by an agent, never by another
+    employee (employee memberships are not a dashboard scope at all)."""
+    qs = Conversation.objects.select_related('client', 'lead', 'user')
     if user.is_staff:
         return qs
     ids = _member_client_ids(user)
-    return qs.filter(client_id__in=ids) if ids else qs.none()
+    if not ids:
+        return qs.none()
+    admin_ids = list(Membership.objects.filter(
+        user=user, role='org_admin', client_id__in=ids).values_list('client_id', flat=True))
+    return qs.filter(client_id__in=ids).filter(
+        ~Q(channel='internal') | Q(client_id__in=admin_ids))
 
 
 def bookings_for(user):
@@ -373,6 +383,14 @@ def reports(request):
     context.update({
         'stats': stats,
         'allowance': analytics.allowance(client, month_start, month_end),
+        # Phase E: the employees' assistant is reported on its own line, never
+        # mixed into the visitor figures (period and calendar month).
+        'internal_conversations': Conversation.objects.filter(
+            client_id=client.pk, channel='internal',
+            started_at__gte=start, started_at__lt=end).count(),
+        'internal_month': Conversation.objects.filter(
+            client_id=client.pk, channel='internal',
+            started_at__gte=month_start, started_at__lt=month_end).count(),
         'value': analytics.value_metrics(client, start, end, vol=row, after=after),
         'month_start': month_start,
         'msg_bars': analytics.svg_bars(daily, 'messages'),
@@ -474,6 +492,8 @@ def _knowledge_context(request, client, **extra):
         'all_clients': clients_for(request.user),
         'kind_choices': [c for c in KnowledgeSource.KIND_CHOICES
                          if c[0] in KnowledgeSource.MANUAL_KINDS],
+        'audience_choices': KnowledgeSource.AUDIENCE_CHOICES,
+        'has_internal': 'internal' in entitlements.entitlements(client).get('channels', ()),
         'scan_url': ingest.default_scan_url(client),
         'scan_running': any(s.kind == 'site' and s.in_progress for s in sources),
         'any_in_progress': any(s.in_progress for s in sources),
@@ -569,7 +589,8 @@ def _knowledge_upload(request):
                                 'agente. Intenta de nuevo mañana.')
         return _knowledge_redirect(client)
     try:
-        source = ingest.enqueue_file(client, uploaded)
+        source = ingest.enqueue_file(client, uploaded,
+                                     audience=request.POST.get('audience', 'public'))
     except ValueError as exc:
         messages.error(request, str(exc))
         return _knowledge_redirect(client)
@@ -643,6 +664,12 @@ def knowledge_save(request):
     # (an edited scan/upload keeps its kind and origin: only its text changes)
     source.title = (request.POST.get('title') or '').strip()[:160] or 'Sin título'
     source.content = (request.POST.get('content') or '').strip()[:60000]
+    # Phase E: who the source is for. Unknown/missing value keeps what the
+    # row had (new rows default to 'public'): a stale form can never turn a
+    # public source internal or the other way round by accident.
+    audience = request.POST.get('audience', '')
+    if audience in dict(KnowledgeSource.AUDIENCE_CHOICES):
+        source.audience = audience
     if source.kind == 'url' and ingest.queue_full(client):
         messages.error(request, QUEUE_FULL_MESSAGE)
         return _knowledge_redirect(client)
@@ -698,11 +725,24 @@ def knowledge_action(request, pk):
     action = request.POST.get('action', '')
     # Phase 6: anything that changes what the live agent says is publishing.
     publishes = action in ('activate', 'restore') or (
-        action == 'archive' and source.status == 'active')
+        action in ('archive', 'audience') and source.status == 'active')
     if publishes and not publishing.can_publish(request.user, client):
         return _publish_denied(request, client, source, action)
     result = 'ok'
-    if action in ('activate', 'restore'):
+    audience = request.POST.get('audience', '')
+    if action == 'audience' and audience in dict(KnowledgeSource.AUDIENCE_CHOICES):
+        # Phase E: who the source is for, on any kind (scans and uploads have
+        # no edit form). On a live source this changes what each assistant
+        # says, hence the publish gate above. Never touches the text.
+        KnowledgeSource.objects.filter(pk=source.pk).update(
+            audience=audience, updated_at=timezone.now())
+        messages.success(request, f'"{source.title}" ahora es: '
+                                  f'{dict(KnowledgeSource.AUDIENCE_CHOICES)[audience]}.')
+        result = audience
+    elif action == 'audience':
+        messages.error(request, 'Audiencia no válida.')
+        result = 'no permitida'
+    elif action in ('activate', 'restore'):
         override = request.user.is_staff and request.POST.get('override_caps') == '1'
         try:
             retired = publishing.publish(source, restoring=(action == 'restore'),
@@ -813,17 +853,32 @@ def knowledge_test(request):
         return redirect('dashboard')
     question = (request.POST.get('question') or '').strip()[:2000]
     draft_pk = request.POST.get('draft') or None
+    # Phase E: test as a visitor (public knowledge, web rules) or as an
+    # employee (internal knowledge, internal rules). Never both at once.
+    as_internal = request.POST.get('as') == 'internal'
     test_answer = None
     if question and _tenant_action_cap_hit('ktest', client):
         messages.error(request, 'Llegaste al límite de pruebas de hoy para este agente. '
                                 'Intenta de nuevo mañana.')
+    elif question and as_internal and not client.compiled_internal_prompt(
+            include_draft_pk=draft_pk).strip():
+        # Same short-circuit as assistant_api: without internal documents the
+        # model would answer from nothing (never from DOMINIO's own copy).
+        test_answer = NO_INTERNAL_DOCS_MESSAGE
     elif question:
-        prompt = client.compiled_prompt(include_draft_pk=draft_pk)
+        if as_internal:
+            prompt = client.compiled_internal_prompt(include_draft_pk=draft_pk)
+            # Same kwargs run_turn builds for the assistant (clinic + profile),
+            # so the console tests exactly what the employees get.
+            extra = dict(agent.clinic_kwargs(client), profile='internal')
+        else:
+            prompt = client.compiled_prompt(include_draft_pk=draft_pk)
+            extra = agent.clinic_kwargs(client)
         try:
             test_answer, test_usage = agent.answer(
                 [{'role': 'user', 'content': question}],
                 business_prompt=prompt, handlers={},
-                language=client.primary_language, **agent.clinic_kwargs(client))
+                language=client.primary_language, **extra)
         except agent.AgentNotConfigured:
             test_answer = '(El agente no está configurado — falta ANTHROPIC_API_KEY.)'
         except anthropic.APIError:
@@ -833,12 +888,20 @@ def knowledge_test(request):
             usage_ledger.record('knowledge_test', test_usage, client=client)
     return render(request, 'landing/dashboard_knowledge.html', _knowledge_context(
         request, client, test_question=question, test_answer=test_answer,
-        tested_draft=str(draft_pk or '')))
+        tested_draft=str(draft_pk or ''), tested_as=('internal' if as_internal else 'web')))
 
 
 # ============================================================
 # M-17 — Users & roles per organization
 # ============================================================
+
+def _seats_used(client):
+    """Internal seats in use: active users whose membership is not a
+    dashboard role (entitlements.NON_SEAT_ROLES), i.e. employees. Same rule
+    the month-end seat overage uses, restricted to active logins."""
+    return (client.members.exclude(role__in=entitlements.NON_SEAT_ROLES)
+            .filter(user__is_active=True).count())
+
 
 @login_required
 def users_list(request):
@@ -847,11 +910,16 @@ def users_list(request):
         messages.error(request, 'Solo un administrador puede gestionar usuarios.')
         return redirect('dashboard')
     members = client.members.select_related('user')
+    ent = entitlements.entitlements(client)
     return render(request, 'landing/dashboard_users.html', {
         'active_tab': 'users',
         'client_obj': client, 'members': members,
         'all_clients': clients_for(request.user),
         'role_choices': Membership.ROLE_CHOICES,
+        # Phase E: internal seats (employee accounts) the plan includes.
+        'has_internal': 'internal' in ent.get('channels', ()),
+        'seats_included': int(ent.get('seats') or 0),
+        'seats_used': _seats_used(client),
         # Phase D: routing of the receptionist's messages.
         'staff_contacts': client.staff_contacts.all(),
         'contact_channels': StaffContact.CHANNEL_CHOICES,
@@ -940,28 +1008,56 @@ def user_invite(request):
     except ValidationError:
         messages.error(request, 'Escribe un email válido.')
         return redirect(reverse('dash_users') + f'?client={client.slug}')
+    # The seat count and the membership it guards are decided inside ONE
+    # transaction holding the client row lock: two concurrent employee
+    # invites would otherwise both read "4 of 5" and both get in. The lock is
+    # a no-op on SQLite and a real row lock on Postgres. The email goes out
+    # after the commit.
+    with transaction.atomic():
+        if role == 'employee':
+            Client.objects.select_for_update().get(pk=client.pk)
+            # Phase E: an employee is an internal seat. Only plans that include
+            # the internal assistant have seats, and only as many as sold.
+            ent = entitlements.entitlements(client)
+            seats = int(ent.get('seats') or 0)
+            if 'internal' not in ent.get('channels', ()) or not seats:
+                messages.error(request, 'Tu plan no incluye el asistente interno.')
+                _audit(request, 'user.invite', client=client, target=email,
+                       result='denegado: plan sin asistente interno')
+                return redirect(reverse('dash_users') + f'?client={client.slug}')
+            used = _seats_used(client)
+            if used >= seats:
+                messages.error(
+                    request, f'Llegaste al límite de {seats} asiento{"s" if seats != 1 else ""} '
+                             f'del asistente interno ({used} en uso). Quita un empleado o '
+                             'amplía tu plan.')
+                _audit(request, 'user.invite', client=client, target=email,
+                       result=f'denegado: asientos {used}/{seats}')
+                return redirect(reverse('dash_users') + f'?client={client.slug}')
 
-    User = get_user_model()
-    existing = User.objects.filter(username=email).first()
-    if existing and (existing.is_staff or existing.is_superuser):
-        messages.error(request, 'Ese email pertenece a una cuenta de staff.')
-        return redirect(reverse('dash_users') + f'?client={client.slug}')
+        User = get_user_model()
+        existing = User.objects.filter(username=email).first()
+        if existing and (existing.is_staff or existing.is_superuser):
+            messages.error(request, 'Ese email pertenece a una cuenta de staff.')
+            return redirect(reverse('dash_users') + f'?client={client.slug}')
 
-    # An invite never edits an existing member: re-inviting an org_admin as
-    # 'agent' would otherwise silently demote them (possibly the last admin).
-    if Membership.objects.filter(client=client, user__username=email).exists():
-        messages.error(request, 'Esa persona ya es miembro de este agente.')
-        return redirect(reverse('dash_users') + f'?client={client.slug}')
+        # An invite never edits an existing member: re-inviting an org_admin as
+        # 'agent' would otherwise silently demote them (possibly the last admin).
+        if Membership.objects.filter(client=client, user__username=email).exists():
+            messages.error(request, 'Esa persona ya es miembro de este agente.')
+            return redirect(reverse('dash_users') + f'?client={client.slug}')
 
-    # Reuse the provisioning path: a new account gets a one-time link to create
-    # its password; an existing one (member of another agent) gets no link.
-    original_notify = client.notify_email
-    client.notify_email = email  # provision against the invited address
-    username, setup_url = _provision_client_login(client)
-    client.notify_email = original_notify
+        # Reuse the provisioning path: a new account gets a one-time link to
+        # create its password; an existing one (member of another agent) gets
+        # no link.
+        original_notify = client.notify_email
+        client.notify_email = email  # provision against the invited address
+        username, setup_url = _provision_client_login(client)
+        client.notify_email = original_notify
+        if username:
+            # Only the membership just created above (checked absent before).
+            Membership.objects.filter(user__username=username, client=client).update(role=role)
     if username:
-        # Only the membership just created above (checked absent before).
-        Membership.objects.filter(user__username=username, client=client).update(role=role)
         body = (f'Te invitaron al dashboard de {client.name} en DOMINIO Chat 24/7.\n\n'
                 f'Entra en: {request.build_absolute_uri(reverse("dashboard"))}\n'
                 f'Usuario: {username}\n')
@@ -1002,6 +1098,174 @@ def user_remove(request, pk):
         membership.delete()
     messages.success(request, 'Acceso eliminado (la cuenta sigue existiendo).')
     return redirect(reverse('dash_users') + f'?client={client.slug}')
+
+
+# ============================================================
+# Phase E — Internal assistant for employees
+# ============================================================
+
+# Messages one login may send to the assistant per hour (abuse/cost bound).
+ASSISTANT_USER_HOURLY_LIMIT = 60
+# Max characters of one question (same bound the core stores).
+ASSISTANT_MAX_CHARS = turns.MAX_MESSAGE_CHARS
+NO_INTERNAL_MESSAGE = 'Tu plan no incluye el asistente interno.'
+NO_INTERNAL_DOCS_MESSAGE = ('Todavía no hay documentos internos cargados. Pide a tu '
+                            'administrador que suba el manual o las políticas en Conocimiento.')
+
+
+def _assistant_client(request, slug=''):
+    """The client whose internal assistant this user is opening: one of the
+    clients where they hold an INTERNAL_ROLES membership (`slug` picks among
+    several); staff may pick any client by slug, else their own memberships.
+    Scope is applied BEFORE the slug lookup: a foreign slug yields None.
+
+    Without a slug, the first client (by pk) whose plan includes the
+    assistant wins: the nav shows the link when ANY membership has it, so
+    landing on a lower-plan client first would be a 403 for no reason."""
+    user = request.user
+    slug = (slug or '').strip()[:60]
+    ids = list(Membership.objects.filter(user=user, role__in=Membership.INTERNAL_ROLES)
+               .values_list('client_id', flat=True))
+    qs = Client.objects.filter(id__in=ids) if ids else Client.objects.none()
+    if user.is_staff and slug:
+        qs = Client.objects.all()
+    qs = qs.filter(is_active=True).select_related('subscription')
+    if slug:
+        return qs.filter(slug=slug).first()
+    candidates = list(qs.order_by('pk'))  # a login holds a handful of memberships
+    for candidate in candidates:
+        if _internal_enabled(candidate):
+            return candidate
+    return candidates[0] if candidates else None
+
+
+def _internal_enabled(client):
+    return 'internal' in entitlements.entitlements(client).get('channels', ())
+
+
+def _assistant_external_id(user, now=None):
+    """One conversation per employee per local day: the usage unit of the
+    assistant. Never the username (external_id is not PII)."""
+    day = timezone.localtime(now or timezone.now()).date()
+    return f'user:{user.pk}:{day:%Y-%m-%d}'
+
+
+def _counter_hit(key, limit, window):
+    """Fixed-window counter on the shared cache: True once `limit` hits
+    happened inside `window` seconds (the hit is counted otherwise)."""
+    used = cache.get(key, 0)
+    if used >= limit:
+        return True
+    if used == 0:
+        cache.set(key, 1, window)
+    else:
+        try:
+            cache.incr(key)
+        except ValueError:
+            cache.set(key, 1, window)
+    return False
+
+
+@login_required
+def assistant_page(request):
+    """Phase E: the employees' chat with the internal assistant. Any member
+    of the client (employee, agent, org_admin); staff for any client by
+    slug. Renders today's transcript so a reload keeps the chat."""
+    client = _assistant_client(request, request.GET.get('client'))
+    if client is None:
+        if request.user.is_staff:
+            messages.info(request, 'Escoge un agente de la fábrica para abrir su asistente interno.')
+            return redirect('clients_list')
+        raise Http404
+    enabled = _internal_enabled(client)
+    conv = (Conversation.objects.filter(
+        client=client, channel='internal',
+        external_id=_assistant_external_id(request.user)).first() if enabled else None)
+    # A login with several memberships picks the business (staff pick by slug).
+    options = list(Client.objects.filter(
+        id__in=Membership.objects.filter(
+            user=request.user, role__in=Membership.INTERNAL_ROLES)
+        .values_list('client_id', flat=True), is_active=True)
+        .order_by('name').values_list('slug', 'name'))
+    return render(request, 'landing/dashboard_assistant.html', {
+        'active_tab': 'asistente',
+        'client_obj': client, 'enabled': enabled,
+        'no_internal_message': NO_INTERNAL_MESSAGE,
+        'client_options': options,
+        'msgs': conv.chat_messages.order_by('position') if conv is not None else [],
+        'max_chars': ASSISTANT_MAX_CHARS,
+    }, status=200 if enabled else 403)
+
+
+@require_POST
+def assistant_api(request):
+    """Phase E: one turn with the internal assistant. Session auth + CSRF
+    (the middleware; this view is NOT csrf_exempt), no tools, no captcha.
+    Body: {"message": "...", "client": "<slug>"?}. Replies {"reply": "..."}.
+
+    Limits: body size, message length, 60 messages per user per hour and
+    the tenant's daily_message_cap on its own counter (the public widget's
+    quota and the assistant's never starve each other). The turn itself
+    (transcript, ledger, allowance) is landing.turns.run_turn with the
+    INTERNAL knowledge and the 'internal' profile."""
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': 'Inicia sesión para usar el asistente.'}, status=401)
+    if len(request.body) > MAX_CHAT_BODY_BYTES:
+        return JsonResponse({'error': 'La solicitud es demasiado grande.'}, status=413)
+    try:
+        payload = json.loads(request.body or b'{}')
+    except (ValueError, UnicodeDecodeError):
+        return JsonResponse({'error': 'Solicitud inválida.'}, status=400)
+    if not isinstance(payload, dict):
+        return JsonResponse({'error': 'Solicitud inválida.'}, status=400)
+    slug = payload.get('client') if isinstance(payload.get('client'), str) else ''
+    client = _assistant_client(request, slug or request.GET.get('client'))
+    if client is None:
+        return JsonResponse({'error': 'No tienes acceso a este asistente.'}, status=403)
+    if not _internal_enabled(client):
+        return JsonResponse({'error': NO_INTERNAL_MESSAGE}, status=403)
+    text = payload.get('message')
+    text = text.strip() if isinstance(text, str) else ''
+    if not text:
+        return JsonResponse({'error': 'Escribe una pregunta.'}, status=400)
+    if len(text) > ASSISTANT_MAX_CHARS:
+        return JsonResponse(
+            {'error': f'La pregunta es demasiado larga (máximo {ASSISTANT_MAX_CHARS} caracteres).'},
+            status=400)
+    prompt = client.compiled_internal_prompt()
+    if not prompt.strip():
+        # No internal knowledge at all (no header, no internal/both source):
+        # say so instead of letting the model improvise (or, worse, fall
+        # back to DOMINIO's own copy). No model call, no quota spent.
+        return JsonResponse({'reply': NO_INTERNAL_DOCS_MESSAGE})
+    if _counter_hit(f'rl:asistente:user:{request.user.pk}', ASSISTANT_USER_HOURLY_LIMIT, 3600):
+        resp = JsonResponse({'error': 'Demasiadas preguntas seguidas. Espera unos minutos.'},
+                            status=429)
+        resp['Retry-After'] = '3600'
+        return resp
+    if client.daily_message_cap and _counter_hit(
+            f'chat:internal:{client.slug}:{timezone.now():%Y%m%d}',
+            client.daily_message_cap, 60 * 60 * 26):
+        logger.warning('Internal assistant daily quota reached for %s', client.slug)
+        return JsonResponse({'error': 'El asistente llegó a su límite de hoy. Intenta mañana.'},
+                            status=503)
+
+    conversation, _created = Conversation.objects.get_or_create(
+        client=client, channel='internal',
+        external_id=_assistant_external_id(request.user),
+        defaults={'user': request.user, 'config_version': client.config_version()})
+    try:
+        result = turns.run_turn(
+            client, conversation, text, channel='internal', handlers={},
+            profile='internal', language=client.primary_language,
+            business_prompt=prompt)
+    except agent.AgentNotConfigured:
+        return JsonResponse({'error': 'El asistente no está configurado todavía.'}, status=503)
+    except anthropic.APIError:
+        logger.exception('Internal assistant call failed for %s', client.slug)
+        return JsonResponse({'error': 'Error consultando el modelo. Intenta de nuevo.'},
+                            status=502)
+    return JsonResponse({'reply': result.reply, 'conversation': conversation.pk})
 
 
 # ============================================================

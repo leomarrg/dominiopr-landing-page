@@ -44,7 +44,7 @@
             {% for r in rules %}
             <tr>
                 <td>{{ r.client.name }}</td>
-                <td>{% cycle '' %}{% for num, dname in weekdays %}{% if num == r.weekday %}{{ dname }}{% endif %}{% endfor %}</td>
+                <td>{% for num, dname in weekdays %}{% if num == r.weekday %}{{ dname }}{% endif %}{% endfor %}</td>
                 <td>{{ r.open_time|time:"g:i A" }} – {{ r.close_time|time:"g:i A" }}</td>
                 <td><form method="post" action="{% url 'availability_delete' r.pk %}">{% csrf_token %}<button class="save-btn save-btn--sm">Quitar</button></form></td>
             </tr>

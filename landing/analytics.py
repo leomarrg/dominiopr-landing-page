@@ -67,6 +67,15 @@ def _scoped(qs, client_ids, field='client_id'):
     return qs.filter(**{f'{field}__in': list(client_ids)})
 
 
+def _visitor_conversations(qs):
+    """Phase E: every conversation figure here is about VISITORS (web today,
+    WhatsApp later). An employee's chat with the internal assistant
+    (channel='internal') is reported on its own line by the caller, never
+    mixed into volume, daily bars, after-hours or the "what visitors ask"
+    lists (its topics would leak internal matters to the agent role)."""
+    return qs.exclude(channel='internal')
+
+
 # ------------------------------------------------------------------
 # Revenue
 # ------------------------------------------------------------------
@@ -108,7 +117,9 @@ def _empty_volume():
 
 
 def volume(client_ids, start, end):
-    """Per-client activity in [start, end). Five grouped queries in total.
+    """Per-client VISITOR activity in [start, end). Five grouped queries in
+    total. Internal-assistant conversations are excluded (see
+    _visitor_conversations).
 
     Returns {client_id: {'conversations', 'escalated', 'leads', 'chat_leads',
     'bookings', 'messages', 'events', 'input', 'output', 'cache_read',
@@ -122,7 +133,8 @@ def volume(client_ids, start, end):
             result[cid] = _empty_volume()
         return result[cid]
 
-    convs = (_scoped(Conversation.objects.filter(started_at__gte=start, started_at__lt=end),
+    convs = (_scoped(_visitor_conversations(
+                         Conversation.objects.filter(started_at__gte=start, started_at__lt=end)),
                      client_ids)
              .order_by().values('client_id')
              .annotate(n=Count('id'), esc=Count('id', filter=Q(state='escalated'))))
@@ -196,7 +208,8 @@ def daily_series(client_id, days=30):
         .annotate(messages=Count('id', filter=Q(kind='chat')), cost=Sum('cost_usd'))
     }
     convs = dict(
-        Conversation.objects.filter(client_id=client_id, started_at__gte=since)
+        _visitor_conversations(
+            Conversation.objects.filter(client_id=client_id, started_at__gte=since))
         .order_by().annotate(day=TruncDate('started_at', tzinfo=tz)).values('day')
         .annotate(n=Count('id')).values_list('day', 'n'))
     series = []
@@ -280,8 +293,9 @@ def monthly_table(client_id, months=12):
 def top_intents(client_ids, start, end):
     """[{'intent', 'label', 'n'}] for tagged conversations started in the
     period, most frequent first. One query."""
-    rows = (_scoped(Conversation.objects.filter(started_at__gte=start, started_at__lt=end,
-                                                tagged_at__isnull=False),
+    rows = (_scoped(_visitor_conversations(
+                        Conversation.objects.filter(started_at__gte=start, started_at__lt=end,
+                                                    tagged_at__isnull=False)),
                     client_ids)
             .exclude(intent='').order_by().values('intent')
             .annotate(n=Count('id')).order_by('-n', 'intent'))
@@ -292,7 +306,8 @@ def top_intents(client_ids, start, end):
 def top_topics(client_ids, start, end, n=10):
     """[{'topic', 'n'}], most frequent first. Clinic clients never have a
     topic, so they contribute nothing. One query."""
-    rows = (_scoped(Conversation.objects.filter(started_at__gte=start, started_at__lt=end),
+    rows = (_scoped(_visitor_conversations(
+                        Conversation.objects.filter(started_at__gte=start, started_at__lt=end)),
                     client_ids)
             .exclude(topic='').order_by().values('topic')
             .annotate(n=Count('id')).order_by('-n', 'topic')[:n])
@@ -303,7 +318,8 @@ def recent_first_questions(client_id, n=20):
     """Latest opening questions of one client. Always empty for clinic_mode
     clients (enforced in the query, not only by the template). One query."""
     return list(
-        Conversation.objects.filter(client_id=client_id, client__clinic_mode=False)
+        _visitor_conversations(
+            Conversation.objects.filter(client_id=client_id, client__clinic_mode=False))
         .exclude(first_question='').order_by('-started_at')
         .values('pk', 'first_question', 'intent', 'started_at')[:n])
 
@@ -472,7 +488,8 @@ def after_hours(client_ids, start, end, rules=None):
     if rules is None:
         rules = business_hours(client_ids)
     out = {}
-    rows = (_scoped(Conversation.objects.filter(started_at__gte=start, started_at__lt=end),
+    rows = (_scoped(_visitor_conversations(
+                        Conversation.objects.filter(started_at__gte=start, started_at__lt=end)),
                     client_ids)
             .order_by().values_list('client_id', 'started_at'))
     for cid, started in rows.iterator():
