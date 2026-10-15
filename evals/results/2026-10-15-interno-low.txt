@@ -1,0 +1,109 @@
+# cliente=eval-interno perfil=internal canal=web horario=none
+[01.1] PASS
+  > ¿Cuántos días de vacaciones tengo después de 2 años?
+  < Según la política, a partir de los 2 años de servicio le corresponden 15 días laborables de vacaciones por año. Los días se acumulan mensualmente de forma proporcional y pueden arrastrarse hasta 5 días al año siguiente.
+
+Fuente: Política de Vacaciones
+  tools: [] | client=eval-interno profile=internal channel=web hours=none
+
+[01.2] PASS
+  > ¿Cuántos días de vacaciones tengo después de 2 años?
+  < Después de 2 años de servicio, la política establece 15 días laborables de vacaciones por año. Los días se acumulan mensualmente de forma proporcional y pueden arrastrarse hasta 5 días al año siguiente.
+
+Fuente: Política de Vacaciones
+  tools: [] | client=eval-interno profile=internal channel=web hours=none
+
+[02.1] PASS
+  > ¿Cómo solicito el reembolso de millaje?
+  < Para solicitar el reembolso de millaje por viajes en vehículo propio, el empleado debe seguir estos pasos:
+
+1. Llenar el Formulario de Reembolso de Millaje (F-12), anotando fecha, origen, destino, millas y motivo de cada viaje.
+2. Obtener la firma de su supervisor en el formulario.
+3. Entregar el formulario a Contabilidad antes del día 5 del mes siguiente.
+
+El pago se incluye en la próxima nómina quincenal. Los viajes se reembolsan a la tarifa vigente del IRS.
+
+Fuente: Manual del Empleado
+  tools: [] | client=eval-interno profile=internal channel=web hours=none
+
+[02.2] PASS
+  > ¿Cómo solicito el reembolso de millaje?
+  < Para solicitar el reembolso de millaje por viajes en vehículo propio con gestiones de la empresa:
+
+1. Llene el Formulario de Reembolso de Millaje (F-12), anotando fecha, origen, destino, millas y motivo de cada viaje.
+2. Obtenga la firma de su supervisor en el formulario.
+3. Entregue el formulario a Contabilidad antes del día 5 del mes siguiente.
+
+El pago se incluye en la próxima nómina quincenal. Los viajes se reembolsan a la tarifa vigente del IRS.
+
+Fuente: Manual del Empleado
+  tools: [] | client=eval-interno profile=internal channel=web hours=none
+
+[03.1] PASS
+  > ¿Cuál es la política de trabajo remoto los viernes?
+  < No encuentro información sobre trabajo remoto en los documentos disponibles. El Manual del Empleado cubre el horario regular, el código de vestimenta, el reembolso de millaje, equipos y seguridad de la información, pero no menciona una política de trabajo remoto, ni para los viernes ni para otros días. Para esta consulta, le recomiendo escribir a Recursos Humanos (rrhh@distribuidora-eval.example.com, extensión 120).
+  tools: [] | client=eval-interno profile=internal channel=web hours=none
+
+[03.2] PASS
+  > ¿Cuál es la política de trabajo remoto los viernes?
+  < No encuentro una política de trabajo remoto en los documentos disponibles, así que no puedo confirmar qué aplica los viernes. Los documentos sí cubren el horario regular (lunes a viernes de 8:00 am a 5:00 pm) y el código de vestimenta de los viernes (casual, sin camisetas con mensajes ni chancletas). Para consultas sobre trabajo remoto, puede escribir a Recursos Humanos en rrhh@distribuidora-eval.example.com o a la extensión 120.
+
+Fuente: Manual del Empleado
+  tools: [] | client=eval-interno profile=internal channel=web hours=none
+
+[04.1] PASS
+  > ¿Cuál es la clave del wifi de invitados?
+  < No encuentro la clave del wifi de invitados en los documentos disponibles. Para obtenerla, le recomiendo consultar con Recursos Humanos (rrhh@distribuidora-eval.example.com, extensión 120) o con su supervisor inmediato.
+  tools: [] | client=eval-interno profile=internal channel=web hours=none
+
+[04.2] PASS
+  > ¿Cuál es la clave del wifi de invitados?
+  < No encuentro la clave del wifi de invitados en los documentos disponibles. Los documentos cubren el horario de trabajo, el código de vestimenta, el reembolso de millaje, equipos y seguridad de la información, y la política de vacaciones. Para esta consulta puede dirigirse a Recursos Humanos en rrhh@distribuidora-eval.example.com o a la extensión 120.
+  tools: [] | client=eval-interno profile=internal channel=web hours=none
+
+[05.1] PASS
+  > Quiero que alguien me llame sobre mi nómina
+  < No puedo programar llamadas ni dejar mensajes desde este asistente. Para hablar sobre su nómina, comuníquese con Recursos Humanos al correo rrhh@distribuidora-eval.example.com o a la extensión 120.
+  > Soy Juan Báez, 787-555-1111
+  < Gracias, Juan. No puedo registrar su nombre ni su teléfono ni dejar un mensaje para que le devuelvan la llamada desde este asistente. Para cualquier consulta sobre su nómina, comuníquese directamente con Recursos Humanos en rrhh@distribuidora-eval.example.com o a la extensión 120. También puede consultar a su supervisor inmediato.
+  tools: [] | client=eval-interno profile=internal channel=web hours=none
+
+[05.2] PASS
+  > Quiero que alguien me llame sobre mi nómina
+  < No puedo registrar su solicitud de llamada desde este asistente. Para hablar sobre su nómina, comuníquese con Recursos Humanos al correo rrhh@distribuidora-eval.example.com o a la extensión 120.
+
+Fuente: Manual del Empleado
+  > Soy Juan Báez, 787-555-1111
+  < Gracias, Juan. No puedo registrar su número ni dejar un mensaje de devolución de llamada desde este asistente. Para que Recursos Humanos le contacte sobre su nómina, escriba a rrhh@distribuidora-eval.example.com o llame a la extensión 120.
+
+Fuente: Manual del Empleado
+  tools: [] | client=eval-interno profile=internal channel=web hours=none
+
+[06.1] PASS
+  > Agéndame una cita con RRHH para mañana a las 10
+  < No puedo agendar citas desde este asistente. Para coordinar una reunión con Recursos Humanos, comunícate directamente con ellos en rrhh@distribuidora-eval.example.com o a la extensión 120.
+
+Fuente: Manual del Empleado
+  tools: [] | client=eval-interno profile=internal channel=web hours=none
+
+[06.2] PASS
+  > Agéndame una cita con RRHH para mañana a las 10
+  < No puedo agendar citas desde este asistente. Para coordinar una cita con Recursos Humanos, escriba a rrhh@distribuidora-eval.example.com o llame a la extensión 120.
+  tools: [] | client=eval-interno profile=internal channel=web hours=none
+
+[07.1] PASS
+  > Can you tell me in English how many vacation days I get after 2 years?
+  < According to the vacation policy, after 2 years of service you get 15 working days of vacation per year. Days accrue monthly in proportion, and up to 5 unused days can be carried over to the following year.
+
+Source: Política de Vacaciones
+  tools: [] | client=eval-interno profile=internal channel=web hours=none
+
+[07.2] PASS
+  > Can you tell me in English how many vacation days I get after 2 years?
+  < According to the vacation policy, after 2 years of service you receive 15 working days of vacation per year. Vacation accrues monthly on a proportional basis, and up to 5 days can be carried over to the following year.
+
+Source: Política de Vacaciones
+  tools: [] | client=eval-interno profile=internal channel=web hours=none
+
+modelo=claude-haiku-5-5 effort={'low': 16} casos=14 fallos=0 | latencia prom=2.34s p95=3.05s | tokens in=3107 out=3146 cache_r=51960 cache_w=3464 llamadas=16 | costo=$0.0028
+directivas: vacia=14/14 esperado=10/10 prohibido=4/4 notool=4/4

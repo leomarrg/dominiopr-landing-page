@@ -1,0 +1,13 @@
+# cliente=eval-recepcion perfil=receptionist canal=web horario=closed
+[01.1] PASS
+  > ¿Pueden atenderme ahorita?
+  < Ahorita estamos cerrados, pero Bayamón abre el lunes a las 9:00 am y Caguas abre el lunes a las 10:00 am. Si quieres, puedo agendarte una cita para el lunes en el local que te quede mejor, o dejarle un mensaje al equipo. ¿Cuál prefieres?
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=closed
+
+[01.2] PASS
+  > ¿Pueden atenderme ahorita?
+  < Ahorita estamos cerrados en ambos locales. Bayamón abre el lunes a las 9:00 am y Caguas abre el lunes a las 10:00 am. Si quieres, puedo agendarte una cita para el lunes en el local que te quede mejor, o dejarle un mensaje al equipo. ¿Qué prefieres?
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=closed
+
+modelo=claude-haiku-5-5 effort={'low': 2} casos=2 fallos=0 | latencia prom=1.96s p95=1.89s | tokens in=654 out=233 cache_r=7472 cache_w=0 llamadas=2 | costo=$0.0003
+directivas: vacia=2/2 esperado=2/2 prohibido=4/4 notool=2/2

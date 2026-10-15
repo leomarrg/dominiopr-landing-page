@@ -1017,6 +1017,19 @@ def _take_message_handler(request, client_obj=None, conversation=None, page_url=
         urgency = data.get('urgency') if data.get('urgency') in ('normal', 'urgent') else 'normal'
         target = recipient or department
 
+        # Phase F: a known Location (its real name, used for routing too).
+        # With 2+ locations an unknown or missing one is a soft rejection,
+        # like _booking_handler: the message would otherwise be routed to the
+        # default contact and the visitor's later answer never reaches it.
+        # Resolved before the caps so the rejection costs nothing. With 0-1
+        # locations the model's words stay as free text outside clinic mode.
+        loc = match_location(client_obj, data.get('location'))
+        locations = list(client_obj.locations.all()) if client_obj is not None else []
+        if loc is None and len(locations) > 1:
+            names = ', '.join(l.name for l in locations)
+            return ('No se guardó el recado: falta el local. Pregunta en cuál local '
+                    f'ocurre: {names}.')
+
         ip = _client_ip(request) or 'unknown'
         cap_key = f'msgcap:{actor_key or ip}'
         if cache.get(cap_key, 0) >= 5:
@@ -1026,9 +1039,6 @@ def _take_message_handler(request, client_obj=None, conversation=None, page_url=
             return noted
         cache.set(cap_key, cache.get(cap_key, 0) + 1, 3600)
 
-        # Phase F: a known Location (its real name, used for routing too);
-        # otherwise the model's words stay as free text outside clinic mode.
-        loc = match_location(client_obj, data.get('location'))
         if clinic:
             # Nothing the model wrote in free text is stored (B10): the summary
             # may carry health details even if the rules say it must not.

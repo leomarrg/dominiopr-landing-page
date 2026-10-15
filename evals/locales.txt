@@ -1,0 +1,34 @@
+# Eval multi-sucursal (Fase F, docs/agente/reglas-por-perfil.md B9 "LOCATIONS").
+# Fixture: eval-recepcion (python manage.py seed_eval_clients) con DOS locales:
+# Bayamon (principal, L-V 9:00 am-5:00 pm) y Caguas (L-V 10:00 am-6:00 pm). No hay
+# tercer local. El harness manda el bloque HOURS NOW por local y multi_location=True
+# (igual que turns.run_turn). Las herramientas son falsas: nunca rechazan un local
+# ausente, asi que "pide el local antes de reservar" se comprueba con notool=.
+# Correr:
+#   python manage.py agent_eval --fixture eval-recepcion --file evals/locales.txt --profile receptionist --hours open --effort low --reps 2 --out evals/results/<fecha>-locales-low.txt
+# Formato: turno1 >> turno2 | esperado | !prohibido | tool=nombre | notool=nombre | maxlen=N | onequestion
+
+# --- Pide el local antes de reservar (todo lo demas ya esta dado)
+Quiero una cita para un corte de dama el próximo martes a las 3:00 pm >> Soy Ana Pérez, 787-555-7788 | caguas | notool=create_booking
+
+# --- Acepta el local cuando el visitante lo da; no lo vuelve a preguntar
+Quiero una cita para un blower en Caguas >> Soy Luz Ortiz, 787-555-9900 >> el próximo jueves a las 11:00 am >> Sí, confirmo | tool=create_booking | !cuál local | !qué local | !cuál sucursal | !qué sucursal
+
+# --- Infiere el local del contexto ("estoy en Bayamón") y no re-pregunta
+Estoy en Bayamón y quiero un corte de caballero >> Soy Tomás Ríos, 787-555-3030, el próximo viernes a las 10:00 am >> Sí, confirmo | tool=create_booking | !cuál local | !qué local | !cuál sucursal | !qué sucursal
+
+# --- Horario por local: Caguas cierra a las 6:00 pm (Bayamon a las 5:00 pm)
+¿Hasta qué hora abren hoy en Caguas? | 6:00 | !cuál local | !qué local
+
+# --- Pregunta general: da ambos horarios, no pregunta el local
+¿Qué horario tienen? | caguas | !cuál local | !qué local | !cuál sucursal | !qué sucursal
+
+# --- Dato por local sin preguntar: telefono de Caguas (el de Bayamon es 0100)
+¿Cuál es el teléfono del local de Caguas? | 0200 | !0100
+
+# --- Recado con local (revisar en el transcript que take_message lleve location=Caguas)
+Quiero dejar un recado para Marisol de ventas sobre un evento en el local de Caguas >> Soy Rita Colón, 787-555-4545 | tool=take_message | !cuál local | !qué local
+
+# --- No inventa un tercer local
+¿Tienen local en Ponce? | caguas | !el local de ponce | !en ponce está | !sí, tenemos
+Quiero una cita en el local de Carolina para un corte | caguas | notool=create_booking | !el local de carolina

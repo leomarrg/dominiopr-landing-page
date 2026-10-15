@@ -35,7 +35,15 @@ Flags for the agent profiles (docs/agente/reglas-por-perfil.md):
   provider seam (agent._provider_client) as a last system block, replacing
   any hours line the engine built, so the eval controls the open/closed
   state. The "hours:" part comes from the client's AvailabilityRule rows
-  (default Mon-Fri 09:00-17:00 when there are none).
+  (default Mon-Fri 09:00-17:00 when there are none). With 2+ Location rows
+  (Phase F) the line becomes the per-location block turns.hours_now_lines
+  builds ("HOURS NOW (authoritative, per location):" + one "[Name] ..." line
+  each, from that location's rules or the business-wide ones), every
+  location in the SAME fixed state.
+- `multi_location=True` is passed to agent.answer exactly when turns.run_turn
+  would (2+ locations, profile not internal), so the LOCATIONS rules are
+  under test; the fake handlers never reject a missing location, so a
+  booking without one is caught only by the case's `notool=`.
 """
 import inspect
 import re
@@ -50,7 +58,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.test.utils import override_settings
 
 from landing import agent, usage as usage_ledger
-from landing.models import Client
+from landing.models import Client, rules_for
 
 # take_message is offered as a fake handler too: the engine only registers the
 # tool once Phase D lands; until then the extra handler key is ignored.
@@ -99,11 +107,14 @@ def parse_case(line):
     return case
 
 
-def fake_handlers(called):
-    """Recording stand-ins for the real tool handlers: no DB writes, no email."""
+def fake_handlers(called, inputs=None):
+    """Recording stand-ins for the real tool handlers: no DB writes, no email.
+    `inputs` (optional list) receives (name, tool_input) for the transcript."""
     def make(name):
         def handler(tool_input):
             called.append(name)
+            if inputs is not None:
+                inputs.append((name, dict(tool_input or {})))
             return 'Listo: guardado correctamente.'
         return handler
     return {name: make(name) for name in TOOLS}
@@ -121,14 +132,35 @@ def _rules_for(client):
 def schedule_summary(client=None):
     """'Mon-Fri 09:00-17:00; Sat-Sun closed' from the client's AvailabilityRule
     rows (consecutive days with the same window are grouped)."""
-    rules = {r.weekday: f'{r.open_time:%H:%M}-{r.close_time:%H:%M}' for r in _rules_for(client)}
-    if not rules:
+    return _schedule_of(_rules_for(client))
+
+
+def _locations(client):
+    manager = getattr(client, 'locations', None)
+    return list(manager.all()) if manager is not None else []
+
+
+def _hours_state(state, rules):
+    """'OPEN NOW, closes today 17:00' / 'CLOSED NOW, opens Monday 09:00' from
+    the first rule (Monday 09:00-17:00 when there are none)."""
+    first = rules[0] if rules else None
+    opens = f'{first.open_time:%H:%M}' if first else '09:00'
+    closes = f'{first.close_time:%H:%M}' if first else '17:00'
+    opens_day = _DAY_NAME[first.weekday] if first else 'Monday'
+    if state == 'open':
+        return f'OPEN NOW, closes today {closes}'
+    return f'CLOSED NOW, opens {opens_day} {opens}'
+
+
+def _schedule_of(rules):
+    saved = {r.weekday: f'{r.open_time:%H:%M}-{r.close_time:%H:%M}' for r in rules}
+    if not saved:
         return _DEFAULT_SCHEDULE
     parts, start = [], 0
     for i in range(1, 8):
-        if i == 7 or rules.get(i) != rules.get(start):
+        if i == 7 or saved.get(i) != saved.get(start):
             span = _DAY_ABBR[start] if i - 1 == start else f'{_DAY_ABBR[start]}-{_DAY_ABBR[i - 1]}'
-            parts.append(f'{span} {rules.get(start, "closed")}')
+            parts.append(f'{span} {saved.get(start, "closed")}')
             start = i
     return '; '.join(parts)
 
@@ -137,20 +169,22 @@ def hours_line(state, client=None):
     """The fixed HOURS NOW line (docs B8) for `state`; '' for 'none'. The
     'closes today' / 'opens <day>' values come from the client's first
     AvailabilityRule (Monday 09:00-17:00 when there are none): the eval fixes
-    the state, it never computes it from the clock."""
+    the state, it never computes it from the clock. With 2+ locations
+    (Phase F) the per-location block of turns.hours_now_lines, each location
+    in the same `state` with its own rules (rules_for)."""
     if state not in ('open', 'closed'):
         return ''
-    rules = _rules_for(client)
-    first = rules[0] if rules else None
-    opens = f'{first.open_time:%H:%M}' if first else '09:00'
-    closes = f'{first.close_time:%H:%M}' if first else '17:00'
-    opens_day = _DAY_NAME[first.weekday] if first else 'Monday'
-    if state == 'open':
-        status = f'OPEN NOW, closes today {closes}'
-    else:
-        status = f'CLOSED NOW, opens {opens_day} {opens}'
-    return (f'HOURS NOW (authoritative): {status} | hours: {schedule_summary(client)} '
-            f'({settings.TIME_ZONE})')
+    locations = _locations(client)
+    if len(locations) < 2:
+        rules = _rules_for(client)
+        return (f'HOURS NOW (authoritative): {_hours_state(state, rules)} | '
+                f'hours: {schedule_summary(client)} ({settings.TIME_ZONE})')
+    lines = ['HOURS NOW (authoritative, per location):']
+    for loc in locations:
+        rules = sorted(rules_for(client, loc), key=lambda r: r.weekday)
+        lines.append(f'[{loc.name}] {_hours_state(state, rules)} | '
+                     f'hours: {_schedule_of(rules)} ({settings.TIME_ZONE})')
+    return '\n'.join(lines)
 
 
 def with_hours_block(create, line):
@@ -318,14 +352,17 @@ class Command(BaseCommand):
                 extra['profile'] = profile
             if channel != 'web':
                 extra['channel'] = channel
+            if profile != 'internal' and len(_locations(case_client)) > 1:
+                # Phase F, same condition as turns.run_turn.
+                extra['multi_location'] = True
             line_hours = hours_line(hours, case_client)
             if line_hours and supports_context_lines():
                 extra['context_lines'] = (line_hours,)
 
             for rep in range(reps):
                 runs += 1
-                called, history, replies = [], [], []
-                handlers = fake_handlers(called)
+                called, inputs, history, replies = [], [], [], []
+                handlers = fake_handlers(called, inputs)
                 with hours_injection(line_hours):
                     for turn in case['turns']:
                         history.append({'role': 'user', 'content': turn})
@@ -388,7 +425,10 @@ class Command(BaseCommand):
                 for turn, reply in zip(case['turns'], replies):
                     transcript.append(f'  > {turn}\n  < {reply}')
                 transcript.append(f'  tools: {called} | client={case_client.slug} '
-                                  f'profile={profile} channel={channel} hours={hours}\n')
+                                  f'profile={profile} channel={channel} hours={hours}')
+                for name, tool_input in inputs:
+                    transcript.append(f'  input {name}: {tool_input}')
+                transcript.append('')
 
         cost = usage_ledger.cost_for(total.get('model', ''), total)
         avg = sum(latencies) / len(latencies) if latencies else 0

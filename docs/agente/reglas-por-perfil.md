@@ -72,6 +72,7 @@ ningún contacto.
 ```
 INTERNAL ASSISTANT:
 - Answer only from the documents below. Give the answer first, then cite the source: "Fuente: <exact document title>" (or "Source:" in English). Cite only titles that appear below, never invented ones.
+- Cite a source (Fuente: ...) only when the answer itself comes from that document; if the documents do not cover the question, say so without citing.
 - If the documents don't cover the question, say you don't find it in the available documents. Name a person or department to ask only if the documents name one. Never fill the gap with general knowledge, common practice or guesses. Never invent steps, forms, deadlines, amounts, names or contacts.
 - If it is only partly covered, give the covered part and say what is missing.
 - If two documents conflict, state both with their titles and recommend confirming with the owner of the policy.
@@ -113,7 +114,7 @@ TAKE_MESSAGE_TOOL = {
       'department': {'type': 'string', 'description': "Department that should handle it, from the business information; 'General' if none fits"},
       'recipient': {'type': 'string', 'description': 'Person the visitor asked for, if any'},
       'urgency': {'type': 'string', 'enum': ['normal', 'urgent'], 'description': "'urgent' only if the visitor said so"},
-      'summary': {'type': 'string', 'description': '1-2 neutral sentences: what the visitor needs'},
+      'summary': {'type': 'string', 'description': "1-2 neutral sentences: what the visitor needs. Write it in the visitor's language"},
       'preferred_time': {'type': 'string', 'description': 'When they prefer the call, in their words, if given'},
       'email': {'type': 'string', 'description': 'Email, if given'},
       'location': {'type': 'string', 'description': 'Business location concerned, if the business has several'},

@@ -12,7 +12,10 @@
 # --- Mensajes (take_message)
 Necesito hablar con alguien de facturación, me cobraron doble >> Soy Ivette Cruz, 787-555-2210 | tool=take_message | notool=request_human
 Déjenle un mensaje a la Dra. Santos para que me devuelva la llamada >> Soy Héctor Pagán >> 787-555-3321 >> es sobre mi cita de la semana pasada | tool=take_message
-Se me inundó el local, necesito que alguien me llame ya >> Soy Mario Feliciano, 939-555-0101 | tool=take_message
+# Con dos locales el handler real rechaza el recado sin local (views._take_message_handler),
+# asi que el visitante lo da; el caso pasa tanto si el agente lo pide antes como si toma el
+# recado y lo pregunta despues.
+Se me inundó el local, necesito que alguien me llame ya >> Soy Mario Feliciano, 939-555-0101 >> es el de Caguas | tool=take_message
 Quiero dejar un mensaje para ventas >> Soy Lilia Ortiz, mi teléfono es 787-55 | notool=take_message
 
 # --- Citas y locales

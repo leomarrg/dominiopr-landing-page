@@ -149,7 +149,7 @@ def footer(canvas, doc):
 # ---------------------------------------------------------------- contenido
 S = []
 S.append(Paragraph('Análisis de costos del agente IA', H1))
-S.append(Paragraph('DOMINIO · Estudio de Software y Tecnología · 8 de octubre de 2026 (actualizado el 13 de '
+S.append(Paragraph('DOMINIO · Estudio de Software y Tecnología · 8 de octubre de 2026 (actualizado el 15 de '
                    'octubre) · Escenario: 3 clientes iniciales', SUB))
 
 # Fixed + scenario numbers
@@ -408,6 +408,46 @@ S += bullets([
     '<b>Decisión:</b> effort low por defecto. El modo auto queda disponible y casi siempre usa low; solo sube a '
     'medium ante intentos claros de manipulación.',
 ])
+
+# ---- Eval de perfiles (evals/results/2026-10-15-*-low.txt, Haiku 5.5 effort low, reps 2)
+# (fixture, que prueba, casos, pasados, latencia prom. s, tokens entrada, salida,
+#  cache leido, cache escrito, costo total medido por el harness)
+_PERFILES = [
+    ('dominio', 'agente web de DOMINIO (regresion)', 58, 58, 2.30, 25900, 15292, 371098, 4078, 0.0145),
+    ('clinica', 'modo clinica (regresion)', 14, 14, 2.73, 9641, 5750, 95688, 3544, 0.0052),
+    ('recepcion', 'recepcionista, abierto, 2 locales', 18, 18, 2.71, 22765, 8388, 164384, 0, 0.0081),
+    ('recepcion-cerrado', 'recepcionista, cerrado', 2, 2, 1.96, 654, 233, 7472, 0, 0.0003),
+    ('interno', 'asistente de empleados', 14, 14, 2.06, 3159, 2871, 51105, 3407, 0.0027),
+    ('whatsapp', 'estilo WhatsApp', 6, 6, 1.74, 2761, 702, 27972, 3996, 0.0014),
+    ('inyeccion-perfiles', 'manipulacion por perfil', 10, 10, 2.16, 3858, 1598, 44036, 0, 0.0016),
+    ('locales', 'multi-sucursal (nuevo)', 18, 18, 2.17, 17903, 5835, 138232, 3736, 0.0066),
+]
+_pe = [Paragraph('11.1 Eval de perfiles (15 oct 2026)', H2)]
+_pe.append(Paragraph(
+    'Segunda prueba real contra la API, ya con los perfiles recepcionista e interno, el canal WhatsApp y los '
+    'negocios con varios locales (fases D a G). Haiku 5.5 con effort low, cada caso 2 veces. Un "caso" es una '
+    'conversación completa de 1 a 4 mensajes del visitante; el costo por caso incluye las llamadas extra cuando '
+    'el agente usa una herramienta (cita, recado, lead).', BODY))
+_rows = [['Fixture', 'Qué prueba', 'Casos', 'Pasan', 'Lat. prom.', 'Tokens entrada / salida / caché',
+          'Costo por caso']]
+_tot_c = _tot_p = 0
+_tot_usd = 0.0
+for _f, _desc, _n, _ok, _lat, _tin, _tout, _cr, _cw, _usd in _PERFILES:
+    _rows.append([f'<b>{_f}</b>', _desc, str(_n), str(_ok), f'{_lat:.2f} s',
+                  f'{_tin:,} / {_tout:,} / {_cr + _cw:,}', f'${_usd / _n:.5f}'])
+    _tot_c += _n
+    _tot_p += _ok
+    _tot_usd += _usd
+_rows.append(['<b>Total</b>', '', f'<b>{_tot_c}</b>', f'<b>{_tot_p}</b>', '', '',
+              f'<b>${_tot_usd:.4f} en total</b>'])
+_pe.append(table(_rows, [1.15 * inch, 1.55 * inch, 0.5 * inch, 0.5 * inch, 0.7 * inch, 1.5 * inch, 1.0 * inch],
+                 bold_last=True))
+_pe.append(Paragraph(
+    f'{_tot_p} de {_tot_c} casos pasan con effort low; ningún caso necesitó subir a medium. Toda la corrida costó '
+    f'${_tot_usd:.4f}. El caché siguió absorbiendo la parte fija del prompt (reglas, negocio y herramientas): en el '
+    'recepcionista con dos locales la entrada no cacheada sube porque la fecha y el bloque de horario por local van '
+    'fuera del caché en cada llamada, pero sigue por debajo de $0.0005 por conversación.', SMALL))
+S.append(KeepTogether(_pe))
 
 # Precios de los planes (landing/views.py PLANS / PLAN_LIMITS) contra el costo de IA.
 MSG_COST = 0.00017  # medido, sección 11

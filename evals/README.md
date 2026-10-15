@@ -15,21 +15,28 @@ Nunca se llama a la API en tests; los comandos de abajo si gastan tokens.
 | `interno.txt` | `eval-interno` | `--profile internal` | asistente de empleados (7) |
 | `whatsapp.txt` | `eval-recepcion` | `--profile receptionist --channel whatsapp --hours open` | estilo WhatsApp (3) |
 | `inyeccion-perfiles.txt` | mixto (directivas por caso) | ninguna obligatoria | inyeccion por perfil (5) |
+| `locales.txt` | `eval-recepcion` (2 locales) | `--profile receptionist --hours open` | multi-sucursal, Fase F (9) |
 
-Cada archivo documenta en su cabecera el comando exacto. Los 25 casos nuevos
-salen de `docs/agente/reglas-por-perfil.md`, seccion C.
+Cada archivo documenta en su cabecera el comando exacto. Los 25 casos de
+perfiles salen de `docs/agente/reglas-por-perfil.md`, seccion C; los 9 de
+`locales.txt` cubren B9 (pide el local antes de reservar, lo acepta o lo
+infiere sin re-preguntar, horario y telefono por local, recado con local, no
+inventa un tercer local).
 
 ## Fixtures locales
 
     python manage.py seed_eval_clients
 
 Crea o actualiza (idempotente; solo con `DEBUG=True`, `--force` para una BD
-local sin DEBUG) los clientes `eval-recepcion` (salon, locales Bayamon y
-Caguas, departamentos Ventas y Facturacion, L-V 9-5 como `AvailabilityRule`,
-citas activas) y `eval-interno` (dos `KnowledgeSource` activas: "Manual del
-Empleado" y "Politica de Vacaciones"). Si existe `eval-clinica` lo reutiliza.
-Pone `agent_profile` cuando ese campo del modelo existe; antes de eso hay que
-pasar `--profile` al correr.
+local sin DEBUG) los clientes `eval-recepcion` (salon con dos `Location`:
+Bayamon, principal, hereda las `AvailabilityRule` del negocio L-V 9-5; Caguas
+con reglas propias L-V 10-6; departamentos Ventas y Facturacion; citas
+activas; sin tercer local) y `eval-interno` (dos `KnowledgeSource` activas:
+"Manual del Empleado" y "Politica de Vacaciones"). Si existe `eval-clinica`
+lo reutiliza. Pone `agent_profile` cuando el modelo admite el valor:
+`Client.AGENT_PROFILE_CHOICES` no incluye `internal` (el asistente interno
+fija el perfil en su propia vista), asi que `interno.txt` siempre lleva
+`--profile internal`.
 
 ## Banderas del comando
 
@@ -45,7 +52,15 @@ pasar `--profile` al correr.
   igual que en produccion; si no, el comando la inyecta en la costura
   `agent._provider_client` como ultimo bloque y sustituye cualquier linea de
   horario del motor, para que el estado abierto/cerrado lo fije el eval. La
-  parte `hours:` sale de las `AvailabilityRule` del cliente.
+  parte `hours:` sale de las `AvailabilityRule` del cliente. Con 2+ `Location`
+  (Fase F) la linea es el bloque por local de `turns.hours_now_lines`
+  (`HOURS NOW (authoritative, per location):` + una linea `[Local] ...` por
+  local con sus propias reglas o las del negocio), todos en el mismo estado.
+- `multi_location=True` se pasa a `agent.answer` con la misma condicion que
+  `turns.run_turn` (2+ locales y perfil distinto de `internal`), asi que las
+  reglas LOCATIONS si estan bajo prueba. Las herramientas falsas nunca
+  rechazan un local ausente (el handler real si): "pide el local" se
+  comprueba con `notool=create_booking`.
 - Directivas por caso que sobreescriben las banderas: `client=`, `profile=`,
   `channel=`, `hours=` (ver `inyeccion-perfiles.txt`).
 - `--effort`, `--model`, `--reps`, `--out`, `--include-draft`,
@@ -53,7 +68,10 @@ pasar `--profile` al correr.
 
 La ultima linea del resumen no cambia (casos, fallos, latencia, tokens,
 costo); debajo se imprime `directivas: esperado=7/8 prohibido=12/12 ...`
-(pasadas/comprobadas por tipo de directiva).
+(pasadas/comprobadas por tipo de directiva). El transcript (`--out`) anade
+una linea `input <tool>: {...}` por cada herramienta llamada, para revisar a
+mano lo que las directivas no comprueban (`location=`, `department=`,
+`summary`).
 
 ## Corridas
 
@@ -63,11 +81,33 @@ costo); debajo se imprime `directivas: esperado=7/8 prohibido=12/12 ...`
     python manage.py agent_eval --fixture eval-interno --file evals/interno.txt --profile internal --effort low --reps 2 --out evals/results/<fecha>-interno-low.txt
     python manage.py agent_eval --fixture eval-recepcion --file evals/whatsapp.txt --profile receptionist --channel whatsapp --hours open --effort low --reps 2 --out evals/results/<fecha>-whatsapp-low.txt
     python manage.py agent_eval --fixture eval-recepcion --file evals/inyeccion-perfiles.txt --effort low --reps 2 --out evals/results/<fecha>-inyeccion-perfiles-low.txt
+    python manage.py agent_eval --fixture eval-recepcion --file evals/locales.txt --profile receptionist --hours open --effort low --reps 2 --out evals/results/<fecha>-locales-low.txt
 
 `results/` guarda las transcripciones de cada corrida (la ultima linea es el
 resumen: casos, fallos, latencia, tokens y costo). Los archivos `*-prefecha`
 son de antes de darle al agente la fecha de hoy (la cita de "el proximo
 martes" fallaba en todos los niveles); con el arreglo, low y auto pasan 58/58.
 Decision 2026-10-08: effort `low` (ver docs/costos/Analisis-costos-agente-IA.pdf, seccion 11).
-Tras refactorizar `build_rules`, re-correr `dominio.txt` y `clinica.txt` para
-confirmar 58/58 antes de publicar.
+
+Corrida 2026-10-15 (Fase H, Haiku 5.5, effort low, reps 2, API real), tras
+las fases D-G y con `eval-recepcion` ya multi-sucursal:
+
+| Fixture | Casos | Pasados | Latencia prom. | Llamadas | Costo |
+| --- | --- | --- | --- | --- | --- |
+| `dominio.txt` | 58 | 58 | 2.30 s | 92 | $0.0145 |
+| `clinica.txt` | 14 | 14 | 2.73 s | 28 | $0.0052 |
+| `recepcion.txt` | 18 | 18 | 2.71 s | 44 | $0.0081 |
+| `recepcion-cerrado.txt` | 2 | 2 | 1.96 s | 2 | $0.0003 |
+| `interno.txt` | 14 | 14 | 2.06 s | 16 | $0.0027 |
+| `whatsapp.txt` | 6 | 6 | 1.74 s | 8 | $0.0014 |
+| `inyeccion-perfiles.txt` | 10 | 10 | 2.16 s | 12 | $0.0016 |
+| `locales.txt` | 18 | 18 | 2.17 s | 38 | $0.0066 |
+| Total | 140 | 140 | | 240 | $0.0404 |
+
+Sin regresiones en `dominio.txt` ni `clinica.txt`; ningun caso necesito
+effort medium. Observaciones que las directivas no miden (ver transcripts):
+el perfil interno anade "Fuente: Manual del Empleado" tambien cuando dice
+que el tema no esta en los documentos (solo nombra el contacto de RRHH que
+si sale del manual); en el recado urgente de la inundacion el recepcionista
+guardo el mensaje con el local sin resolver y lo pregunto despues, y escribio
+el `summary` en ingles. Pendientes de decision, no fallos.

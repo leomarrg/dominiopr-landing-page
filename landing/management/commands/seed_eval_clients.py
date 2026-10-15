@@ -5,10 +5,13 @@ section C). Idempotent: re-running updates the same rows.
     python manage.py seed_eval_clients --force    # also with DEBUG=False (never production)
 
 Creates/updates:
-- eval-recepcion: salon with two locations (Bayamon, Caguas) and the
-  departments Ventas / Facturacion in the system_prompt, Mon-Fri 09:00-17:00
-  as AvailabilityRule rows, bookings on, agent_profile='receptionist' when
-  that field exists (Phase D). Keratina is listed WITHOUT a price on purpose.
+- eval-recepcion: salon with two Location rows (Phase F): Bayamon (default,
+  inherits the business-wide Mon-Fri 09:00-17:00 AvailabilityRule rows) and
+  Caguas (its own rows, Mon-Fri 10:00-18:00), the departments Ventas /
+  Facturacion in the system_prompt, bookings on, agent_profile='receptionist'
+  when that field exists (Phase D). Keratina is listed WITHOUT a price on
+  purpose; there is NO third location (evals/locales.txt checks none is
+  invented).
 - eval-interno: internal assistant with two ACTIVE KnowledgeSource rows,
   "Manual del Empleado" (mileage refund by form) and "Politica de Vacaciones"
   (15 days after 2 years). Nothing about remote work, guest wifi or extended
@@ -25,7 +28,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from landing.models import AvailabilityRule, Client, KnowledgeSource
+from landing.models import AvailabilityRule, Client, KnowledgeSource, Location
 
 NOTIFY_EMAIL = 'eval@example.com'
 
@@ -33,10 +36,10 @@ RECEPCION_SLUG = 'eval-recepcion'
 RECEPCION_PROMPT = """Salón Eval es un salón de belleza con dos locales en Puerto Rico.
 Sitio web: https://salon-eval.example.com
 
-LOCALES
-- Bayamón: Ave. Principal 123, Bayamón, PR 00959. Tel. 787-555-0100. Estacionamiento gratis.
-- Caguas: Calle Central 45, Caguas, PR 00725. Tel. 787-555-0200. Frente a la plaza.
-Horario de ambos locales: lunes a viernes de 9:00 am a 5:00 pm. Sábados y domingos cerrado.
+LOCALES (solo estos dos)
+- Bayamón (principal): Ave. Principal 123, Bayamón, PR 00959. Tel. 787-555-0100. Estacionamiento gratis. Horario: lunes a viernes de 9:00 am a 5:00 pm.
+- Caguas: Calle Central 45, Caguas, PR 00725. Tel. 787-555-0200. Frente a la plaza. Horario: lunes a viernes de 10:00 am a 6:00 pm.
+Sábados y domingos cerrado en ambos locales.
 
 SERVICIOS Y PRECIOS (iguales en ambos locales)
 - Corte de dama: $35
@@ -92,8 +95,15 @@ Los feriados oficiales de la empresa no descuentan del balance de vacaciones."""
 
 CLINICA_SLUG = 'eval-clinica'
 
-# Mon-Fri 09:00-17:00 (AvailabilityRule.weekday: 0=Monday).
+# Mon-Fri 09:00-17:00 (AvailabilityRule.weekday: 0=Monday): the business-wide
+# rows, which Bayamon inherits (rules_for).
 RECEPCION_HOURS = {weekday: (time(9, 0), time(17, 0)) for weekday in range(5)}
+# Phase F: (name, address, E.164 phone, is_default, own hours or None).
+RECEPCION_LOCATIONS = [
+    ('Bayamón', 'Ave. Principal 123, Bayamón, PR 00959', '+17875550100', True, None),
+    ('Caguas', 'Calle Central 45, Caguas, PR 00725', '+17875550200', False,
+     {weekday: (time(10, 0), time(18, 0)) for weekday in range(5)}),
+]
 
 
 def _client_field_names():
@@ -120,13 +130,36 @@ def upsert_client(slug, **values):
     return client, created
 
 
-def upsert_hours(client, hours):
-    """Exactly the given weekday windows for the client; other weekdays removed."""
+def upsert_hours(client, hours, location=None):
+    """Exactly the given weekday windows for the client (business-wide when
+    `location` is None, else that location's own rows); other weekdays of the
+    same scope removed. Scoped by location on purpose: the business-wide and
+    the per-location rows share (client, weekday)."""
     for weekday, (opens, closes) in hours.items():
         AvailabilityRule.objects.update_or_create(
-            client=client, weekday=weekday,
+            client=client, location=location, weekday=weekday,
             defaults={'open_time': opens, 'close_time': closes, 'slot_minutes': 30})
-    AvailabilityRule.objects.filter(client=client).exclude(weekday__in=hours).delete()
+    (AvailabilityRule.objects.filter(client=client, location=location)
+     .exclude(weekday__in=hours).delete())
+
+
+def upsert_locations(client, specs):
+    """Exactly the given Location rows for the client (by name, in order);
+    others removed (their rules cascade). Each location's own hours are
+    replaced with its spec, or cleared so it inherits the business-wide ones."""
+    keep = []
+    for order, (name, address, phone, is_default, hours) in enumerate(specs):
+        if is_default:
+            # The partial unique constraint allows one default per client:
+            # clear any other before setting this one.
+            client.locations.filter(is_default=True).exclude(name=name).update(is_default=False)
+        loc, _ = Location.objects.update_or_create(
+            client=client, name=name,
+            defaults={'address': address, 'phone': phone, 'is_default': is_default,
+                      'order': order})
+        upsert_hours(client, hours or {}, location=loc)
+        keep.append(loc.pk)
+    client.locations.exclude(pk__in=keep).delete()
 
 
 def upsert_source(client, position, title, content):
@@ -178,6 +211,7 @@ class Command(BaseCommand):
             agent_profile='receptionist',
         )
         upsert_hours(recepcion, RECEPCION_HOURS)
+        upsert_locations(recepcion, RECEPCION_LOCATIONS)
         self._report(recepcion, created)
         slugs.append(recepcion.slug)
 

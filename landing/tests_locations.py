@@ -502,10 +502,32 @@ class TakeMessageLocationTests(TestCase):
         self.assertIn('Local: Caguas', sub.message)
         self.assertNotIn('el de caguas', sub.message)
         self.assertTrue(any('Local: Caguas' in m.body for m in mail.outbox))
-        # Unknown text stays as the model wrote it (not clinic mode).
+        # With 0-1 locations unknown text stays as the model wrote it (not clinic mode).
+        self.cag.delete()
         with patch(SEND):
             self._handle()(self._input(location='Ponce', name='Luis'))
         self.assertIn('Local: Ponce', ContactSubmission.objects.latest('pk').message)
+
+    def test_two_locations_reject_a_missing_or_unknown_location(self):
+        """Soft rejection like _booking_handler: nothing stored, no cap used,
+        the model is told to ask naming the real options."""
+        # 'Ba' is too short for match_location's partial match (2 letters).
+        for location in (None, '', 'Ponce', 'Ba'):
+            with patch(SEND) as send:
+                result = self._handle()(self._input(location=location))
+            self.assertEqual(result, 'No se guardó el recado: falta el local. Pregunta en cuál '
+                                     'local ocurre: Bayamón, Caguas.')
+            send.assert_not_called()
+        self.assertEqual(ContactSubmission.objects.count(), 0)
+        self.assertEqual(mail.outbox, [])
+        self.assertIsNone(cache.get('msgcap:10.1.2.3'))
+        # Named (case/accent-insensitive): stored and routed as before.
+        with patch(SEND):
+            result = self._handle()(self._input(location='bayamon'))
+        self.assertNotIn('No se guardó', result)
+        self.assertEqual(ContactSubmission.objects.count(), 1)
+        self.assertIn('Local: Bayamón', ContactSubmission.objects.get().message)
+        self.assertEqual(cache.get('msgcap:10.1.2.3'), 1)
 
     def test_routes_to_the_department_contact_of_that_location(self):
         anywhere = StaffContact.objects.create(client=self.client_obj, name='Ventas general',

@@ -1,0 +1,50 @@
+# cliente=eval-recepcion perfil=receptionist canal=whatsapp horario=open
+[01.1] PASS
+  > Hola, ¿qué servicios tienen?
+  < ¡Hola! En Salón Eval ofrecemos corte de dama ($35), corte de caballero ($20), blower ($30), color completo (desde $75), manicura ($25) y tratamiento de keratina (con cita). Los precios son iguales en nuestros dos locales, Bayamón y Caguas. ¿Te interesa alguno en particular?
+  tools: [] | client=eval-recepcion profile=receptionist channel=whatsapp hours=open
+
+[01.2] PASS
+  > Hola, ¿qué servicios tienen?
+  < ¡Hola! En Salón Eval ofrecemos:
+
+1. Corte de dama: $35
+2. Corte de caballero: $20
+3. Blower: $30
+4. Color completo: desde $75
+5. Manicura: $25
+6. Tratamiento de keratina (con cita)
+
+Los precios son iguales en nuestros dos locales, Bayamón y Caguas. ¿Te interesa agendar alguno de estos servicios?
+  tools: [] | client=eval-recepcion profile=receptionist channel=whatsapp hours=open
+
+[02.1] PASS
+  > Mándame el link de tu página
+  < Aquí tienes el link de nuestra página: https://salon-eval.example.com
+
+¿Te puedo ayudar con algo más, como información de servicios o agendar una cita?
+  tools: [] | client=eval-recepcion profile=receptionist channel=whatsapp hours=open
+
+[02.2] PASS
+  > Mándame el link de tu página
+  < Aquí tienes el link de nuestra página: https://salon-eval.example.com
+
+¿Te ayudo con algo más, como agendar una cita o información de servicios?
+  tools: [] | client=eval-recepcion profile=receptionist channel=whatsapp hours=open
+
+[03.1] PASS
+  > Quiero dejar un mensaje para ventas
+  < Con gusto te ayudo a dejarle un mensaje a ventas. Para que el equipo te devuelva la llamada, ¿me das tu nombre, un número de teléfono de 10 dígitos y en qué te podemos ayudar?
+  > Soy Paola Rivera
+  < Gracias, Paola. Para completar el mensaje, ¿me das un número de teléfono de 10 dígitos donde te puedan devolver la llamada? Y cuéntame brevemente en qué te podemos ayudar con ventas.
+  tools: [] | client=eval-recepcion profile=receptionist channel=whatsapp hours=open
+
+[03.2] PASS
+  > Quiero dejar un mensaje para ventas
+  < Claro, con gusto te ayudo a dejarle un mensaje a Ventas. Para pasarle tu mensaje al equipo, ¿me compartes tu nombre y un número de teléfono de 10 dígitos donde te puedan devolver la llamada?
+  > Soy Paola Rivera
+  < Gracias, Paola. Para completar el mensaje necesito también un número de teléfono de 10 dígitos donde te puedan devolver la llamada. ¿Cuál es?
+  tools: [] | client=eval-recepcion profile=receptionist channel=whatsapp hours=open
+
+modelo=claude-haiku-5-5 effort={'low': 8} casos=6 fallos=0 | latencia prom=1.74s p95=1.84s | tokens in=2761 out=702 cache_r=27972 cache_w=3996 llamadas=8 | costo=$0.0014
+directivas: vacia=6/6 esperado=2/2 prohibido=10/10 notool=2/2

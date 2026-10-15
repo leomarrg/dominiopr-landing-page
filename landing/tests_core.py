@@ -325,6 +325,17 @@ class ProfileRulesTests(SimpleTestCase):
         self.assertIn(int_block, internal)
         self.assertNotIn(lead_block, internal)
         self.assertNotIn(rec_block, internal)
+        # Phase H eval: no "Fuente:" line when the documents don't cover it.
+        cite_rule = ('Cite a source (Fuente: ...) only when the answer itself comes from '
+                     'that document; if the documents do not cover the question, say so '
+                     'without citing.')
+        self.assertIn(cite_rule, internal)
+        self.assertNotIn(cite_rule, web)
+        self.assertNotIn(cite_rule, rec)
+        # The take_message summary is written in the visitor's language (tool
+        # description, not a rules block: the cached prompt blocks don't move).
+        self.assertIn("Write it in the visitor's language",
+                      agent.TAKE_MESSAGE_TOOL['input_schema']['properties']['summary']['description'])
         self.assertTrue(internal.startswith(agent._INTRO_INTERNAL.strip()))
         self.assertIn(agent.LANGUAGE_RULES_INTERNAL['es'].strip(), internal)
         self.assertNotIn(agent.LANGUAGE_RULES['es'].strip(), internal)

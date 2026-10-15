@@ -21,8 +21,8 @@ from .management.commands import agent_eval
 from .management.commands.agent_eval import (
     hours_line, parse_case, schedule_summary, with_hours_block)
 from .management.commands.seed_eval_clients import (
-    INTERNO_SLUG, INTERNO_SOURCES, RECEPCION_SLUG, _profile_choices)
-from .models import AvailabilityRule, Client, KnowledgeSource
+    INTERNO_SLUG, INTERNO_SOURCES, RECEPCION_LOCATIONS, RECEPCION_SLUG, _profile_choices)
+from .models import AvailabilityRule, Client, KnowledgeSource, Location
 
 
 def _usage(**extra):
@@ -163,6 +163,48 @@ class HoursLineWithRulesTests(TestCase):
 
 # --- the command forwards flags -------------------------------------------------
 
+class HoursLinePerLocationTests(TestCase):
+    """Phase F: with 2+ locations the fixed line becomes the per-location
+    block of turns.hours_now_lines, every location in the same state."""
+
+    def setUp(self):
+        self.client_row = _client('eval-l')
+        for weekday in range(5):
+            AvailabilityRule.objects.create(client=self.client_row, weekday=weekday,
+                                            open_time=time(9, 0), close_time=time(17, 0))
+        self.bay = Location.objects.create(client=self.client_row, name='Bayamón', is_default=True)
+
+    def test_single_location_keeps_the_one_line(self):
+        self.assertTrue(hours_line('open', self.client_row)
+                        .startswith('HOURS NOW (authoritative): OPEN NOW, closes today 17:00'))
+
+    def test_two_locations_one_line_each_with_own_rules(self):
+        cag = Location.objects.create(client=self.client_row, name='Caguas', order=1)
+        for weekday in range(5):
+            AvailabilityRule.objects.create(client=self.client_row, location=cag, weekday=weekday,
+                                            open_time=time(10, 0), close_time=time(18, 0))
+        tz = '(America/Puerto_Rico)'
+        self.assertEqual(hours_line('open', self.client_row).split('\n'), [
+            'HOURS NOW (authoritative, per location):',
+            f'[Bayamón] OPEN NOW, closes today 17:00 | hours: Mon-Fri 09:00-17:00; Sat-Sun closed {tz}',
+            f'[Caguas] OPEN NOW, closes today 18:00 | hours: Mon-Fri 10:00-18:00; Sat-Sun closed {tz}',
+        ])
+        self.assertEqual(hours_line('closed', self.client_row).split('\n')[1:], [
+            f'[Bayamón] CLOSED NOW, opens Monday 09:00 | hours: Mon-Fri 09:00-17:00; Sat-Sun closed {tz}',
+            f'[Caguas] CLOSED NOW, opens Monday 10:00 | hours: Mon-Fri 10:00-18:00; Sat-Sun closed {tz}',
+        ])
+        self.assertEqual(hours_line('none', self.client_row), '')
+        # The wrapper strips every per-location line the engine may have built.
+        system = [{'type': 'text', 'text': 'rules'},
+                  {'type': 'text', 'text': 'DATE\n\nHOURS NOW (authoritative, per location):\n'
+                                           '[Bayamón] CLOSED NOW | x\n[Caguas] OPEN NOW | y'}]
+        seen = []
+        with_hours_block(lambda **kw: seen.append(kw), hours_line('open', self.client_row))(system=system)
+        texts = [b['text'] for b in seen[0]['system']]
+        self.assertEqual(texts[1], 'DATE')
+        self.assertEqual(texts[-1], hours_line('open', self.client_row))
+
+
 class EvalCommandForwardingTests(TestCase):
     def setUp(self):
         self.client_row = _client('eval-x', primary_language='es')
@@ -191,6 +233,33 @@ class EvalCommandForwardingTests(TestCase):
         self.assertEqual(kwargs['language'], 'es')
         self.assertIn('1/1 casos pasaron', out)
         self.assertIn('directivas: vacia=1/1 esperado=1/1', out)
+
+    def test_multi_location_forwarded_like_run_turn(self):
+        Location.objects.create(client=self.client_row, name='Bayamón')
+        self._run('hola\n', '--profile', 'receptionist')
+        self.assertNotIn('multi_location', self.calls[0])
+        Location.objects.create(client=self.client_row, name='Caguas', order=1)
+        self.calls.clear()
+        self._run('hola\n', '--profile', 'receptionist')
+        self.assertTrue(self.calls[0]['multi_location'])
+        self.calls.clear()
+        self._run('hola\n', '--profile', 'internal')
+        self.assertNotIn('multi_location', self.calls[0])
+
+    def test_transcript_records_tool_inputs(self):
+        def answer_with_tool(history, handlers=None, **kwargs):
+            handlers['take_message']({'name': 'Rita', 'location': 'Caguas'})
+            return 'Listo.', _usage()
+        path = _eval_file(self, 'hola | tool=take_message\n')
+        out_path = path + '.out'
+        self.addCleanup(lambda: os.path.exists(out_path) and os.unlink(out_path))
+        with patch.object(agent, 'answer', side_effect=answer_with_tool):
+            call_command('agent_eval', '--fixture', 'eval-x', '--file', path, '--out', out_path,
+                         stdout=StringIO())
+        with open(out_path, encoding='utf-8') as fh:
+            text = fh.read()
+        self.assertIn("tools: ['take_message']", text)
+        self.assertIn("input take_message: {'name': 'Rita', 'location': 'Caguas'}", text)
 
     def test_profile_and_channel_forwarded_only_when_non_default(self):
         self._run('hola\n', '--profile', 'receptionist', '--channel', 'whatsapp')
@@ -387,10 +456,22 @@ class SeedEvalClientsTests(TestCase):
         for word in ('Bayamón', 'Caguas', 'Ventas', 'Facturación', 'keratina'):
             self.assertIn(word, recepcion.system_prompt)
         self.assertNotRegex(recepcion.system_prompt, r'keratina[^\n]*\$')
-        rules = list(recepcion.availability_rules.order_by('weekday'))
+        rules = list(recepcion.availability_rules.filter(location__isnull=True).order_by('weekday'))
         self.assertEqual([r.weekday for r in rules], [0, 1, 2, 3, 4])
         self.assertEqual({(r.open_time, r.close_time) for r in rules}, {(time(9, 0), time(17, 0))})
         self.assertEqual(schedule_summary(recepcion), 'Mon-Fri 09:00-17:00; Sat-Sun closed')
+        # Phase F: two locations, Caguas with its own later window, Bayamon
+        # inheriting the business-wide one; nothing else.
+        locations = list(recepcion.locations.all())
+        self.assertEqual([(l.name, l.is_default) for l in locations],
+                         [(name, default) for name, _a, _p, default, _h in RECEPCION_LOCATIONS])
+        bay, cag = locations
+        self.assertFalse(bay.availability_rules.exists())
+        caguas = list(cag.availability_rules.order_by('weekday'))
+        self.assertEqual([r.weekday for r in caguas], [0, 1, 2, 3, 4])
+        self.assertEqual({(r.open_time, r.close_time) for r in caguas}, {(time(10, 0), time(18, 0))})
+        self.assertIn('=== Locales ===', recepcion.compiled_prompt())
+        self.assertIn('6:00 pm', recepcion.system_prompt)
         if 'receptionist' in _profile_choices():
             self.assertEqual(recepcion.agent_profile, 'receptionist')
 
@@ -418,17 +499,27 @@ class SeedEvalClientsTests(TestCase):
         self._run()
         recepcion = Client.objects.get(slug=RECEPCION_SLUG)
         interno = Client.objects.get(slug=INTERNO_SLUG)
-        # Drift: a Saturday rule, a de-activated document and a duplicate title.
+        # Drift: a Saturday rule, a third location with a Saturday rule of its
+        # own, a de-activated document and a duplicate title.
         AvailabilityRule.objects.create(client=recepcion, weekday=5,
                                         open_time=time(10, 0), close_time=time(14, 0))
+        ponce = Location.objects.create(client=recepcion, name='Ponce', order=9)
+        AvailabilityRule.objects.create(client=recepcion, location=ponce, weekday=5,
+                                        open_time=time(10, 0), close_time=time(14, 0))
+        AvailabilityRule.objects.create(
+            client=recepcion, location=recepcion.locations.get(name='Caguas'), weekday=6,
+            open_time=time(10, 0), close_time=time(14, 0))
         KnowledgeSource.objects.filter(client=interno).update(status='draft')
         KnowledgeSource.objects.create(client=interno, title='Manual del Empleado',
                                        kind='text', content='viejo', status='active', position=9)
         before = Client.objects.count()
         self._run()
         self.assertEqual(Client.objects.count(), before)
-        self.assertEqual(list(recepcion.availability_rules.values_list('weekday', flat=True)),
-                         [0, 1, 2, 3, 4])
+        self.assertEqual(list(recepcion.availability_rules.filter(location__isnull=True)
+                              .values_list('weekday', flat=True)), [0, 1, 2, 3, 4])
+        self.assertEqual([l.name for l in recepcion.locations.all()], ['Bayamón', 'Caguas'])
+        self.assertEqual(list(recepcion.locations.get(name='Caguas').availability_rules
+                              .values_list('weekday', flat=True)), [0, 1, 2, 3, 4])
         active = interno.knowledge_sources.filter(status='active').order_by('position')
         self.assertEqual([s.title for s in active], [t for t, _ in INTERNO_SOURCES])
         self.assertEqual(interno.knowledge_sources.filter(status='archived').count(), 1)
