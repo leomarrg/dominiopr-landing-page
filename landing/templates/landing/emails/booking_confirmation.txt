@@ -2,7 +2,8 @@ Gracias, {{ booking.name }}.
 
 Recibimos tu solicitud de cita:
 Cuándo: {{ local_start|date:"d/m/Y, g:i A" }}
-{% if booking.service %}Para:   {{ booking.service }}
+{% if location %}Local:  {{ location.name }}{% if location.address %} — {{ location.address }}{% endif %}
+{% endif %}{% if booking.service %}Para:   {{ booking.service }}
 {% endif %}
 Te confirmamos en breve. Si necesitas cambiar la hora, solo responde a este correo.
 

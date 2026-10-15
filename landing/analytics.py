@@ -459,10 +459,12 @@ def allowance(client, month_start, month_end):
 
 def business_hours(client_ids):
     """{client_id: {weekday: (open, close)}} from AvailabilityRule. Clients
-    absent from the result have no rules (use DEFAULT_HOURS). One query."""
+    absent from the result have no rules (use DEFAULT_HOURS). One query.
+    Phase F: business-wide rules only; a location's own window must not
+    overwrite the business's in the after-hours report."""
     out = {}
-    rows = (_scoped(AvailabilityRule.objects.all(), client_ids).order_by()
-            .values_list('client_id', 'weekday', 'open_time', 'close_time'))
+    rows = (_scoped(AvailabilityRule.objects.filter(location__isnull=True), client_ids)
+            .order_by().values_list('client_id', 'weekday', 'open_time', 'close_time'))
     for cid, weekday, open_t, close_t in rows:
         out.setdefault(cid, {})[weekday] = (open_t, close_t)
     return out

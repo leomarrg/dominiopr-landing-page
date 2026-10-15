@@ -30,15 +30,16 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.views.decorators.http import require_POST
 
-from . import agent, analytics, entitlements, ingest, knowledge, publishing, turns
+from . import agent, analytics, entitlements, ingest, knowledge, notify, publishing, turns
 from . import usage as usage_ledger
 from .models import (
     AvailabilityRule, Booking, Client, ContactSubmission, Conversation,
-    KnowledgeSource, Membership, StaffContact, UsageEvent,
+    KnowledgeSource, Location, Membership, StaffContact, UsageEvent,
 )
 from .views import (
     MAX_CHAT_BODY_BYTES, _audit, _client_ip, _member_client_ids, _rate_limited,
-    _send_plain_email, _tenant_action_cap_hit, leads_for, staff_required,
+    _send_plain_email, _tenant_action_cap_hit, booking_sms_where, leads_for,
+    staff_required,
 )
 
 logger = logging.getLogger(__name__)
@@ -86,7 +87,7 @@ def conversations_for(user):
 
 
 def bookings_for(user):
-    qs = Booking.objects.select_related('client', 'lead')
+    qs = Booking.objects.select_related('client', 'lead', 'location')
     if user.is_staff:
         return qs
     ids = _member_client_ids(user)
@@ -193,16 +194,42 @@ BOOKING_TRANSITIONS = {
 @login_required
 def bookings_list(request):
     qs = bookings_for(request.user)
+    my_clients = clients_for(request.user).filter(enable_bookings=True)
+    # Phase F: the locations the user may see, and an optional ?location=<pk>
+    # filter on the lists (scoped: a foreign pk simply filters nothing).
+    locations = (Location.objects.filter(client__in=clients_for(request.user))
+                 .select_related('client'))
+    location_filter = None
+    try:
+        location_filter = locations.filter(pk=int(request.GET.get('location', ''))).first()
+    except (TypeError, ValueError):
+        pass
+    if location_filter is not None:
+        qs = qs.filter(location=location_filter)
     now = timezone.now()
     upcoming = qs.filter(start__gte=now).exclude(status='cancelled').order_by('start')[:100]
     past = qs.filter(start__lt=now).order_by('-start')[:50]
-    my_clients = clients_for(request.user).filter(enable_bookings=True)
     can_manage_rules = is_org_admin(request.user)
-    rules = AvailabilityRule.objects.filter(client__in=my_clients).select_related('client')
+    rules = (AvailabilityRule.objects.filter(client__in=my_clients)
+             .select_related('client', 'location'))
+    # How many locations each plan allows (the save view enforces it), and
+    # which clients exceed it after a downgrade: the extras keep working,
+    # the page only says no more can be added.
+    location_limits = {c.pk: int(entitlements.entitlements(c)['locations'] or 0)
+                       for c in my_clients}
+    location_counts = {}
+    for loc in locations:
+        location_counts[loc.client_id] = location_counts.get(loc.client_id, 0) + 1
+    location_over = [{'client': c, 'allowed': location_limits[c.pk],
+                      'count': location_counts.get(c.pk, 0)}
+                     for c in my_clients if location_counts.get(c.pk, 0) > location_limits[c.pk]]
     return render(request, 'landing/dashboard_bookings.html', {
         'active_tab': 'bookings',
         'upcoming': upcoming, 'past': past, 'rules': rules,
         'rule_clients': my_clients, 'can_manage_rules': can_manage_rules,
+        'locations': locations, 'location_filter': location_filter,
+        'location_limits': location_limits, 'location_over': location_over,
+        'has_locations': locations.exists(),
         'weekdays': [(0, 'Lunes'), (1, 'Martes'), (2, 'Miércoles'), (3, 'Jueves'),
                      (4, 'Viernes'), (5, 'Sábado'), (6, 'Domingo')],
         'transitions': BOOKING_TRANSITIONS,
@@ -220,18 +247,34 @@ def booking_status(request, pk):
     Booking.objects.filter(pk=booking.pk).update(status=new_status)
     _audit(request, 'booking.status', client=booking.client,
            target=f'booking:{booking.pk}', result=new_status)
-    # AC M-05: the visitor hears about confirmations and cancellations.
+    # AC M-05: the visitor hears about confirmations and cancellations. By
+    # email when the booking has one; phone-only bookings (Phase D) get an
+    # SMS instead, never an email to an empty address. Phase F: with the
+    # location, so a multi-site visitor knows where to go.
     business = booking.client.name if booking.client else 'DOMINIO'
     local = timezone.localtime(booking.start)
+    where = f' en {booking.location.name}' if booking.location_id else ''
+    when_sms = f'{local:%d/%m} a las {local:%I:%M %p}'.replace(' 0', ' ') + booking_sms_where(booking)
     if new_status == 'confirmed':
-        _send_plain_email(
-            f'Tu cita quedó confirmada — {business}', [booking.email],
-            f'¡Confirmado! Te esperamos el {local:%A %d de %B a las %I:%M %p}.\n\n— {business}')
+        if booking.email:
+            _send_plain_email(
+                f'Tu cita quedó confirmada — {business}', [booking.email],
+                f'¡Confirmado! Te esperamos el {local:%A %d de %B a las %I:%M %p}{where}.'
+                f'\n\n— {business}')
+        elif booking.phone:
+            notify.send_to(booking.phone,
+                           f'{business}: tu cita del {when_sms} quedo confirmada. Te esperamos.',
+                           'sms')
     elif new_status == 'cancelled':
-        _send_plain_email(
-            f'Tu cita fue cancelada — {business}', [booking.email],
-            f'Tu cita del {local:%A %d de %B a las %I:%M %p} fue cancelada. '
-            f'Si quieres otra fecha, escríbenos o usa el chat.\n\n— {business}')
+        if booking.email:
+            _send_plain_email(
+                f'Tu cita fue cancelada — {business}', [booking.email],
+                f'Tu cita del {local:%A %d de %B a las %I:%M %p}{where} fue cancelada. '
+                f'Si quieres otra fecha, escríbenos o usa el chat.\n\n— {business}')
+        elif booking.phone:
+            notify.send_to(booking.phone,
+                           f'{business}: tu cita del {when_sms} fue cancelada. '
+                           'Si quieres otra fecha, escribenos.', 'sms')
     messages.success(request, f'Cita marcada como {new_status}.')
     return redirect('bookings')
 
@@ -255,11 +298,21 @@ def availability_add(request):
     except (TypeError, ValueError):
         messages.error(request, 'Revisa el día y las horas (apertura antes del cierre).')
         return redirect('bookings')
+    # Phase F: optional location; blank = the whole business. It must be one
+    # of THIS client's locations (a foreign pk is rejected, never attached).
+    location = None
+    loc_pk = (request.POST.get('location') or '').strip()
+    if loc_pk:
+        location = Location.objects.filter(client=client, pk=loc_pk).first() if loc_pk.isdigit() else None
+        if location is None:
+            messages.error(request, 'Ese local no existe.')
+            return redirect('bookings')
     AvailabilityRule.objects.update_or_create(
-        client=client, weekday=weekday,
+        client=client, location=location, weekday=weekday,
         defaults={'open_time': open_t, 'close_time': close_t})
     _audit(request, 'availability.set', client=client,
-           target=f'weekday:{weekday}', result=f'{open_t}-{close_t}')
+           target=f'weekday:{weekday}' + (f'|location:{location.pk}' if location else ''),
+           result=f'{open_t}-{close_t}')
     messages.success(request, 'Horario guardado.')
     return redirect('bookings')
 
@@ -275,6 +328,115 @@ def availability_delete(request, pk):
     _audit(request, 'availability.delete', client=rule.client, target=str(rule))
     rule.delete()
     messages.success(request, 'Horario eliminado.')
+    return redirect('bookings')
+
+
+# ============================================================
+# Phase F — Locations (multi-site businesses)
+# ============================================================
+
+@login_required
+@require_POST
+def location_save(request):
+    """Create or update (POST `pk`) a Location of the org_admin's client.
+    The plan decides how many a tenant may have (entitlements['locations']);
+    a refused creation is audited as location.denied. A downgrade never
+    deletes existing locations: it only stops new ones."""
+    from .phone import normalize_phone
+    client = _knowledge_client(request)
+    if client is None:
+        messages.error(request, 'Solo un administrador puede gestionar locales.')
+        return redirect('bookings')
+    name = ' '.join((request.POST.get('name') or '').split())[:80]
+    address = ' '.join((request.POST.get('address') or '').split())[:200]
+    phone = normalize_phone(request.POST.get('phone') or '')
+    is_default = request.POST.get('is_default') == 'on'
+    pk = (request.POST.get('pk') or '').strip()
+    existing = (get_object_or_404(Location.objects.filter(client=client), pk=pk)
+                if pk.isdigit() else None)
+    if not name:
+        messages.error(request, 'Escribe el nombre del local (ej. Bayamón).')
+        return redirect('bookings')
+    if phone is None:
+        messages.error(request, 'Escribe un teléfono válido de 10 dígitos, ej. (787) 123-4567.')
+        return redirect('bookings')
+    result = name
+    try:
+        with transaction.atomic():
+            # Lock the client row first (a real lock on Postgres, a no-op on
+            # SQLite, same as user_invite): the duplicate-name and plan-limit
+            # checks and the insert happen under it, so two concurrent saves
+            # cannot both pass the count. The unique constraint on (client,
+            # name) is the backstop for the name.
+            Client.objects.select_for_update().get(pk=client.pk)
+            dup = client.locations.filter(name__iexact=name)
+            if existing is not None:
+                dup = dup.exclude(pk=existing.pk)
+            if dup.exists():
+                messages.error(request, f'Ya existe un local llamado "{name}".')
+                return redirect('bookings')
+            if existing is None:
+                allowed = int(entitlements.entitlements(client)['locations'] or 0)
+                count = client.locations.count()
+                if count >= allowed:
+                    _audit(request, 'location.denied', client=client, target=name,
+                           result=f'limit:{allowed}')
+                    messages.error(request, (f'Tu plan incluye {allowed} local(es). Para '
+                                             'añadir más, escríbenos y ajustamos tu plan.'))
+                    return redirect('bookings')
+            if is_default:
+                client.locations.filter(is_default=True).update(is_default=False)
+            if existing is None:
+                location = Location.objects.create(
+                    client=client, name=name, address=address, phone=phone or '',
+                    is_default=is_default, order=count)
+                if count == 0:
+                    # The FIRST location inherits the business-wide bookings
+                    # still to come: from now on the handler assigns every new
+                    # booking to a location, and a slot must not be held twice
+                    # (once with location NULL, once with the location).
+                    moved = Booking.objects.filter(
+                        client=client, location__isnull=True, start__gte=timezone.now(),
+                        status__in=('pending', 'confirmed')).update(location=location)
+                    if moved:
+                        result = f'{name}|citas_reasignadas:{moved}'
+            else:
+                location = existing
+                Location.objects.filter(pk=existing.pk).update(
+                    name=name, address=address, phone=phone or '', is_default=is_default)
+    except IntegrityError:
+        messages.error(request, 'No se pudo guardar el local; vuelve a intentarlo.')
+        return redirect('bookings')
+    _audit(request, 'location.add' if existing is None else 'location.update',
+           client=client, target=f'location:{location.pk}', result=result)
+    messages.success(request, 'Local guardado.')
+    return redirect('bookings')
+
+
+@login_required
+@require_POST
+def location_delete(request, pk):
+    """Remove a Location. Refused while it still has pending/confirmed future
+    bookings (the visitor was told where to go); past bookings keep their
+    row with location=NULL (SET_NULL). Its own hours go with it (CASCADE)."""
+    location = get_object_or_404(
+        Location.objects.filter(client__in=clients_for(request.user)), pk=pk)
+    if not is_org_admin(request.user, location.client):
+        messages.error(request, 'Solo un administrador puede gestionar locales.')
+        return redirect('bookings')
+    with transaction.atomic():
+        # Lock the row so a booking landing between the check and the delete
+        # cannot be orphaned (Postgres; no-op on SQLite).
+        location = Location.objects.select_for_update().get(pk=location.pk)
+        if location.bookings.filter(status__in=('pending', 'confirmed'),
+                                    start__gte=timezone.now()).exists():
+            messages.error(request, (f'"{location.name}" tiene citas pendientes o confirmadas; '
+                                     'cancélalas o complétalas antes de quitarlo.'))
+            return redirect('bookings')
+        _audit(request, 'location.remove', client=location.client,
+               target=f'location:{location.pk}', result=location.name)
+        location.delete()
+    messages.success(request, 'Local eliminado.')
     return redirect('bookings')
 
 
@@ -921,8 +1083,10 @@ def users_list(request):
         'seats_included': int(ent.get('seats') or 0),
         'seats_used': _seats_used(client),
         # Phase D: routing of the receptionist's messages.
-        'staff_contacts': client.staff_contacts.all(),
+        'staff_contacts': client.staff_contacts.select_related('location'),
         'contact_channels': StaffContact.CHANNEL_CHOICES,
+        # Phase F: a contact may serve one location only.
+        'locations': client.locations.all(),
     })
 
 
@@ -964,6 +1128,14 @@ def staff_contact_add(request):
     if client.staff_contacts.count() >= 50:
         messages.error(request, 'Máximo 50 contactos por agente.')
         return back
+    # Phase F: optional location, which must be this client's.
+    location = None
+    loc_pk = (request.POST.get('location') or '').strip()
+    if loc_pk:
+        location = Location.objects.filter(client=client, pk=loc_pk).first() if loc_pk.isdigit() else None
+        if location is None:
+            messages.error(request, 'Ese local no existe.')
+            return back
     is_default = request.POST.get('is_default') == 'on'
     with transaction.atomic():
         if is_default:
@@ -971,7 +1143,7 @@ def staff_contact_add(request):
         contact = StaffContact.objects.create(
             client=client, name=name, department=department, email=email,
             phone=phone or '', channel=channel, is_default=is_default,
-            order=client.staff_contacts.count())
+            location=location, order=client.staff_contacts.count())
     _audit(request, 'contact.add', client=client, target=f'contact:{contact.pk}',
            result=department or 'por nombre')
     messages.success(request, 'Contacto guardado.')

@@ -148,8 +148,10 @@ class PlanTableTests(TestCase):
         self.assertIn('whatsapp', premium['channels'])
 
     def test_launch_plans_are_unchanged(self):
+        # Phase F added the explicit 'locations' ceiling (1 = as before).
         self.assertEqual(views.plan_limits('pro'),
-                         {'daily_message_cap': 500, 'enable_bookings': True, 'unit': 'messages'})
+                         {'daily_message_cap': 500, 'enable_bookings': True, 'unit': 'messages',
+                          'locations': 1})
         self.assertEqual(views.PLAN_LIMITS['starter']['daily_message_cap'], 200)
         self.assertEqual(views.plan_limits('nope')['unit'], 'messages')
         # Top level of a package mirrors step 1 for the provisioning code.

@@ -215,17 +215,19 @@ _RULES_SECURITY_GENERAL = _RULES_SECURITY.replace(_SECURITY_TOOLS_WEB, _SECURITY
 
 
 def build_rules(language='es', bookings=False, human=False, clinic=False,
-                profile='web', channel='web'):
+                profile='web', channel='web', multi_location=False):
     """Assemble the shared behaviour rules for one agent configuration.
-    Deterministic per (language, bookings, human, clinic, profile, channel) so
-    prompt caching still hits.
+    Deterministic per (language, bookings, human, clinic, profile, channel,
+    multi_location) so prompt caching still hits.
 
     'web' is byte-identical to the pre-profile output for every (language,
     bookings, human, clinic) combination (tests_core keeps a snapshot). The
     other profiles follow docs/agente/reglas-por-perfil.md: INTRO + LANGUAGE +
-    CORE + STYLE (+ WHATSAPP_STYLE) (+ BOOKING) (+ CLINIC) + SECURITY last.
-    HUMAN_RULES is web-only (the receptionist takes messages instead) and the
-    internal profile never books.
+    CORE + STYLE (+ WHATSAPP_STYLE) (+ BOOKING) (+ MULTI_LOCATION) (+ CLINIC)
+    + SECURITY last. HUMAN_RULES is web-only (the receptionist takes messages
+    instead); the internal profile never books and never gets the LOCATIONS
+    block (Phase F: `multi_location` is True only with 2+ Location rows; on
+    the web profile it is appended last, so the snapshot holds).
     """
     if profile not in PROFILES:
         raise ValueError(f'Unknown agent profile: {profile!r}')
@@ -245,6 +247,8 @@ def build_rules(language='es', bookings=False, human=False, clinic=False,
             rules += HUMAN_RULES
         if clinic:
             rules += CLINIC_RULES
+        if multi_location:
+            rules += MULTI_LOCATION_RULES
         return rules
 
     if profile == 'internal':
@@ -253,6 +257,7 @@ def build_rules(language='es', bookings=False, human=False, clinic=False,
             language, LANGUAGE_RULES.get(language, LANGUAGE_RULES_INTERNAL['es']))
         core = INTERNAL_RULES
         bookings = False
+        multi_location = False
     else:
         intro = _INTRO_RECEPTION
         language_block = LANGUAGE_RULES.get(language, LANGUAGE_RULES['es'])
@@ -262,6 +267,8 @@ def build_rules(language='es', bookings=False, human=False, clinic=False,
         parts.append(WHATSAPP_STYLE)
     if bookings:
         parts.append(BOOKING_RULES_GENERAL)
+    if multi_location:
+        parts.append(MULTI_LOCATION_RULES)
     if clinic:
         parts.append(CLINIC_RULES)
     parts.append(_RULES_SECURITY_GENERAL)
@@ -497,6 +504,21 @@ CLINIC_RULES = (
     "for create_booking the service is the service name only and notes stay empty."
 )
 
+# Phase F (reglas-por-perfil B9): only when the business has 2+ Location
+# rows. The prompt lists them in a '=== Locales ===' block (Client._compiled)
+# and the receptionist's HOURS NOW block carries one line per location.
+MULTI_LOCATION_RULES = (
+    "\n\nLOCATIONS: This business has several locations (listed below). Hours, address, "
+    "phone and services can differ by location.\n"
+    "- If the answer or a booking depends on the location and the visitor hasn't said or "
+    "implied it (a town, \"the one in X\", an earlier message), ask once which location, "
+    "naming the options. Don't ask for general questions.\n"
+    "- Infer the location from context when it is clear. Don't ask again once chosen.\n"
+    "- If only one location offers the service, say that instead of asking.\n"
+    "- Use the hours line and details of the chosen location, and put the location in "
+    "tool inputs."
+)
+
 # Backwards-compatible default rules (Spanish, no optional tools).
 AGENT_RULES = build_rules()
 
@@ -628,7 +650,7 @@ def _accumulate_usage(usage, response):
 
 
 def answer(history, business_prompt=None, handlers=None, language='es', clinic=False,
-           profile='web', channel='web', context_lines=()):
+           profile='web', channel='web', context_lines=(), multi_location=False):
     """Return (reply, usage) for the conversation, for a given business.
 
     `business_prompt` is the Client's compiled knowledge (defaults to DOMINIO).
@@ -638,7 +660,8 @@ def answer(history, business_prompt=None, handlers=None, language='es', clinic=F
     true, as a keyword (`**clinic_kwargs(client)`).
     `profile` picks the rule set (see PROFILES) and `channel` the delivery
     style (see CHANNELS); callers pass them only when not 'web', so existing
-    call sites and mocks keep the old signature.
+    call sites and mocks keep the old signature. `multi_location` adds
+    MULTI_LOCATION_RULES (Phase F; passed only when True, same reason).
     `context_lines` are per-request facts the model must not work out itself
     (the receptionist's "HOURS NOW" line, later the WhatsApp CHANNEL line).
     They go with the current date in the UNCACHED second system block, so
@@ -670,7 +693,8 @@ def answer(history, business_prompt=None, handlers=None, language='es', clinic=F
     rules = build_rules(language=language,
                         bookings='create_booking' in handlers,
                         human='request_human' in handlers,
-                        clinic=clinic, profile=profile, channel=channel)
+                        clinic=clinic, profile=profile, channel=channel,
+                        multi_location=multi_location)
     system = [{
         'type': 'text',
         'text': rules + BUSINESS_HEADER + (business_prompt or DOMINIO_BUSINESS),

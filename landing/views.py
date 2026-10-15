@@ -44,7 +44,7 @@ from .forms import ContactForm, LeadNoteForm
 from .models import (
     AuditEvent, Booking, Client, ContactSubmission, Conversation,
     LeadNote, Membership, ProcessedWebhookEvent, Subscription, Survey,
-    route_contact,
+    fold_text, match_location, route_contact, rules_for,
 )
 from .phone import normalize_phone
 # Bound of a single visitor message (shared with the channel-agnostic turn
@@ -360,7 +360,9 @@ def _send_booking_emails(booking, notify_to=None, business='DOMINIO'):
     local = timezone.localtime(booking.start)
     context = {'booking': booking, 'business': business, 'local_start': local,
                'clinic_mode': bool(booking.client and booking.client.clinic_mode),
-               'clinic_note': CLINIC_DASHBOARD_NOTE}
+               'clinic_note': CLINIC_DASHBOARD_NOTE,
+               # Phase F: None for single-site businesses (the templates skip it).
+               'location': booking.location}
 
     if notify_to:
         _send_html_email(
@@ -388,13 +390,22 @@ def _send_booking_emails(booking, notify_to=None, business='DOMINIO'):
 def booking_sms_text(booking, business, reminder=False):
     """Visitor-facing SMS for a booking (confirmation or 24h reminder). No
     service name: the text is short and, in clinic mode, must carry nothing
-    the model wrote."""
+    the model wrote. Phase F adds ' en <local>' (accent-free, like the rest
+    of the text, so the SMS stays in the GSM-7 alphabet)."""
     local = timezone.localtime(booking.start)
     when = f'{local:%d/%m} a las {local:%I:%M %p}'.replace(' 0', ' ')
+    when += booking_sms_where(booking)
     if reminder:
         return (f'{business}: te recordamos tu cita manana, {when}. '
                 f'Si necesitas cambiarla, llamanos.')
     return f'{business}: recibimos tu cita para el {when}. Te confirmamos en breve.'
+
+
+def booking_sms_where(booking):
+    """' en Bayamon' for a booking with a location, '' otherwise."""
+    if booking.location_id is None:
+        return ''
+    return f' en {fold_text(booking.location.name).title()}'
 
 
 def _send_onboarding_email(client, embed_snippet, login=None):
@@ -756,6 +767,11 @@ def _human_handler(request, client_obj=None, conversation=None, page_url=''):
 def _booking_handler(request, client_obj=None):
     """Callback the agent invokes to create a booking. The BACKEND validates the
     time and the DB constraint prevents double-booking — the model only proposes.
+
+    Phase F (locations): with no Location rows the booking is business-wide;
+    with exactly one it is assigned silently; with several the tool input
+    `location` must name one (match_location) or nothing is booked and the
+    model is told to ask. Hours are validated against that location's rules.
     """
     import datetime as dt
     from django.core.exceptions import ValidationError
@@ -793,6 +809,21 @@ def _booking_handler(request, client_obj=None):
         # A bad phone next to a valid email is simply not kept.
         phone = phone or ''
 
+        # Phase F: which location. Resolved before the caps so a missing
+        # location (a soft rejection the model fixes by asking) costs nothing.
+        location = None
+        locations = list(client_obj.locations.all()) if client_obj is not None else []
+        if len(locations) == 1:
+            location = locations[0]
+        elif len(locations) > 1:
+            location = match_location(client_obj, data.get('location'))
+            if location is None:
+                # Returned as text (not raised): the model never guesses a
+                # site; it asks the visitor, naming the real options.
+                names = ', '.join(loc.name for loc in locations)
+                return ('No se reservó: falta el local. Pregunta en cuál local quiere '
+                        f'la cita: {names}.')
+
         ip = _client_ip(request) or 'unknown'
         cap_key = f'bookcap:{ip}'
         if cache.get(cap_key, 0) >= 5:
@@ -815,8 +846,9 @@ def _booking_handler(request, client_obj=None):
 
         # M-05: if the tenant configured working hours, the slot must fall inside
         # them. No rules configured = same behavior as before (any future slot).
+        # Phase F: the location's own rules win over the business-wide ones.
         if client_obj is not None:
-            rules = list(client_obj.availability_rules.all())
+            rules = rules_for(client_obj, location)
             if rules:
                 local = timezone.localtime(start)
                 day_rules = [r for r in rules if r.weekday == local.weekday()]
@@ -826,31 +858,44 @@ def _booking_handler(request, client_obj=None):
                         'That time is outside business hours. Offer a time within '
                         'the business schedule.')
 
+        taken = 'Esa hora ya está ocupada. Ofrécele al visitante otra hora.'
         try:
             with transaction.atomic():
+                # Phase F: the DB constraints keep each pool (business-wide,
+                # per location) free of duplicates, but not one pool against
+                # the other. A slot held by a business-wide booking is busy
+                # for every location, and a slot held at any location is busy
+                # for a business-wide booking (same reply as the constraint).
+                if client_obj is not None:
+                    active = Booking.objects.filter(
+                        client=client_obj, start=start, status__in=('pending', 'confirmed'))
+                    if active.filter(location__isnull=location is not None).exists():
+                        return taken
                 booking = Booking.objects.create(
                     client=client_obj, name=name, email=email, phone=phone,
                     # Clinic mode: no model-written text, it can carry health details.
                     service='' if clinic else (data.get('service') or '').strip()[:120],
                     # Clinic mode: the model's free-text notes are never stored.
                     notes='' if clinic else (data.get('notes') or '').strip()[:1000],
-                    start=start, status='pending',
+                    start=start, status='pending', location=location,
                 )
         except IntegrityError:
-            return 'Esa hora ya está ocupada. Ofrécele al visitante otra hora.'
+            return taken
 
         cache.set(cap_key, cache.get(cap_key, 0) + 1, 3600)
         _send_booking_emails(booking, notify_to=notify_to, business=business_name)
         local = timezone.localtime(start)
+        where = f' en {location.name}' if location is not None else ''
         notify.notify_client(
             client_obj,
             f'DOMINIO Chat: nueva cita para {business_name} — {name}, '
-            f'{local:%a %d %b, %I:%M %p}.')
+            f'{local:%a %d %b, %I:%M %p}{where}.')
         # No visitor PII in the logs — journald outlives our retention policy.
         logger.info('Booking created: booking=%s client=%s at %s',
                     booking.pk, client_obj.slug, local)
         via = 'email' if email else 'SMS'
-        return f'Reservado para {local:%A %b %d a las %I:%M %p}. Se envió una confirmación por {via}.'
+        return (f'Reservado para {local:%A %b %d a las %I:%M %p}{where}. '
+                f'Se envió una confirmación por {via}.')
 
     return handle
 
@@ -901,16 +946,22 @@ def _take_message_handler(request, client_obj=None, conversation=None, page_url=
             return noted
         cache.set(cap_key, cache.get(cap_key, 0) + 1, 3600)
 
+        # Phase F: a known Location (its real name, used for routing too);
+        # otherwise the model's words stay as free text outside clinic mode.
+        loc = match_location(client_obj, data.get('location'))
         if clinic:
             # Nothing the model wrote in free text is stored (B10): the summary
             # may carry health details even if the rules say it must not.
-            summary = preferred = location = ''
+            summary = preferred = ''
+            location = loc.name if loc is not None else ''
             message = (f'[Recado] Para: {target} · servicio: no se guarda en modo clínica; '
                        f'el equipo confirma los detalles con la persona.')
+            if location:
+                message += f' · Local: {location}'
         else:
             summary = _single_line(data.get('summary'), 1000)
             preferred = _single_line(data.get('preferred_time'), 120)
-            location = _single_line(data.get('location'), 80)
+            location = loc.name if loc is not None else _single_line(data.get('location'), 80)
             message = f'[Recado] Para: {target} · Urgencia: {urgency} · {summary}'
             if preferred:
                 message += f' · Prefiere llamada: {preferred}'
@@ -928,7 +979,8 @@ def _take_message_handler(request, client_obj=None, conversation=None, page_url=
             Conversation.objects.filter(pk=conversation.pk).update(lead=submission)
 
         # Routing: a StaffContact wins over the client's default inbox/phone.
-        contact = route_contact(client_obj, department=department, recipient=recipient)
+        contact = route_contact(client_obj, department=department, recipient=recipient,
+                                location=loc)
         notify_to = ((contact.email if contact else '')
                      or (client_obj.notify_email if client_obj else '')
                      or getattr(settings, 'CONTACT_NOTIFY_EMAIL', ''))
@@ -946,8 +998,8 @@ def _take_message_handler(request, client_obj=None, conversation=None, page_url=
                 lines.append(f'Asunto: {summary or "—"}')
                 if preferred:
                     lines.append(f'Prefiere llamada: {preferred}')
-                if location:
-                    lines.append(f'Local: {location}')
+            if location:
+                lines.append(f'Local: {location}')
             lines += ['', f'Página: {page_url or "—"}',
                       f'Dashboard: {settings.SITE_URL}{reverse("dashboard")}']
             _send_plain_email(
@@ -1531,10 +1583,16 @@ def _package_limits(plan_id, enable_bookings, channels, locations):
 # i+1 and plan_limits(plan, step) resolves it. Client.entitlement_overrides
 # may override any of these keys per client (landing.entitlements).
 PLAN_LIMITS = {
-    'starter': {'daily_message_cap': 200, 'enable_bookings': False, 'unit': 'messages'},
-    'pro': {'daily_message_cap': 500, 'enable_bookings': True, 'unit': 'messages'},
-    'scale': {'daily_message_cap': 1500, 'enable_bookings': True, 'unit': 'messages'},
-    'custom': {'daily_message_cap': 3000, 'enable_bookings': True, 'unit': 'messages'},
+    # Phase F: 'locations' = how many Location rows a tenant may create
+    # (landing.entitlements; the dashboard refuses more, never deletes extras).
+    'starter': {'daily_message_cap': 200, 'enable_bookings': False, 'unit': 'messages',
+                'locations': 1},
+    'pro': {'daily_message_cap': 500, 'enable_bookings': True, 'unit': 'messages',
+            'locations': 1},
+    'scale': {'daily_message_cap': 1500, 'enable_bookings': True, 'unit': 'messages',
+              'locations': 3},
+    'custom': {'daily_message_cap': 3000, 'enable_bookings': True, 'unit': 'messages',
+               'locations': 50},
     'small': _package_limits('small', False, ('web',), 1),
     'medium': _package_limits('medium', True, ('web',), 1),
     'large': _package_limits('large', True, ('web', 'internal'), 3),

@@ -2,8 +2,8 @@ from django.contrib import admin
 
 from .models import (
     AuditEvent, AvailabilityRule, Booking, Client, ContactSubmission,
-    Conversation, KnowledgeSource, LeadNote, Membership, StaffContact, Subscription, Survey,
-    UsageEvent,
+    Conversation, KnowledgeSource, LeadNote, Location, Membership, StaffContact,
+    Subscription, Survey, UsageEvent,
 )
 
 
@@ -33,18 +33,43 @@ class MembershipAdmin(admin.ModelAdmin):
     autocomplete_fields = ('client',)
 
 
+class LocationScopedAdmin(admin.ModelAdmin):
+    """Phase F: on the change form, the `location` choices are the client's
+    own (the add form has no client yet; Model.clean() rejects a foreign
+    location there)."""
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == 'location':
+            object_id = (request.resolver_match.kwargs.get('object_id')
+                         if request.resolver_match else None)
+            instance = self.model.objects.filter(pk=object_id).first() if object_id else None
+            if instance is not None:
+                kwargs['queryset'] = Location.objects.filter(client_id=instance.client_id)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
 @admin.register(Booking)
-class BookingAdmin(admin.ModelAdmin):
-    list_display = ('start', 'name', 'email', 'phone', 'service', 'status', 'client')
+class BookingAdmin(LocationScopedAdmin):
+    list_display = ('start', 'name', 'email', 'phone', 'service', 'location', 'status', 'client')
     list_filter = ('status', 'start', 'client')
     list_editable = ('status',)
     search_fields = ('name', 'email', 'phone')
     date_hierarchy = 'start'
-    list_select_related = ('client', 'lead')
+    list_select_related = ('client', 'lead', 'location')
+
+
+@admin.register(Location)
+class LocationAdmin(admin.ModelAdmin):
+    """Phase F: the branches of a multi-location business."""
+    list_display = ('client', 'name', 'address', 'phone', 'is_default', 'order')
+    list_filter = ('client',)
+    search_fields = ('name', 'address', 'client__name', 'client__slug')
+    list_select_related = ('client',)
+    autocomplete_fields = ('client',)
 
 
 @admin.register(StaffContact)
-class StaffContactAdmin(admin.ModelAdmin):
+class StaffContactAdmin(LocationScopedAdmin):
     """Phase D: who receives the receptionist's messages per department."""
     list_display = ('client', 'name', 'department', 'channel', 'is_default', 'order')
     list_filter = ('client', 'channel', 'is_default')
@@ -143,7 +168,11 @@ class UsageEventAdmin(admin.ModelAdmin):
         return False
 
 
-admin.site.register(AvailabilityRule)
+@admin.register(AvailabilityRule)
+class AvailabilityRuleAdmin(LocationScopedAdmin):
+    list_display = ('client', 'location', 'weekday', 'open_time', 'close_time')
+    list_filter = ('client',)
+    list_select_related = ('client', 'location')
 
 
 @admin.register(LeadNote)

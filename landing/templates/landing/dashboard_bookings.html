@@ -3,9 +3,21 @@
 {% block content %}
 <h1 class="dash-h1">Citas</h1>
 
+{% if has_locations %}
+<form class="dash-inline-form" method="get" action="{% url 'bookings' %}">
+    <label class="dash-muted" for="location-filter">Local</label>
+    <select name="location" id="location-filter">
+        <option value="">Todos los locales</option>
+        {% for loc in locations %}<option value="{{ loc.pk }}" {% if location_filter and location_filter.pk == loc.pk %}selected{% endif %}>{{ loc.name }}{% if locations|length > 1 and rule_clients|length > 1 %} · {{ loc.client.name }}{% endif %}</option>{% endfor %}
+    </select>
+    <button type="submit" class="save-btn save-btn--sm">Filtrar</button>
+    {% if location_filter %}<a class="dash-muted" href="{% url 'bookings' %}">Quitar filtro</a>{% endif %}
+</form>
+{% endif %}
+
 <div class="dash-table-wrap">
     <table class="dash-table">
-        <thead><tr><th>Fecha y hora</th><th>Nombre</th><th>Contacto</th><th>Servicio</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>Fecha y hora</th><th>Nombre</th><th>Contacto</th><th>Servicio</th>{% if has_locations %}<th>Local</th>{% endif %}<th>Estado</th><th>Acciones</th></tr></thead>
         <tbody>
             {% for b in upcoming %}
             <tr>
@@ -13,6 +25,7 @@
                 <td>{{ b.name }}</td>
                 <td>{% if b.email %}<a href="mailto:{{ b.email }}">{{ b.email }}</a>{% endif %}{% if b.phone %}{% if b.email %}<div class="dash-sub">{% endif %}<a href="tel:{{ b.phone }}">{{ b.phone }}</a>{% if b.email %}</div>{% endif %}{% endif %}{% if not b.email and not b.phone %}—{% endif %}</td>
                 <td>{{ b.service|default:"—" }}</td>
+                {% if has_locations %}<td>{{ b.location.name|default:"—" }}</td>{% endif %}
                 <td><span class="dash-pill dash-pill--{{ b.status }}">{{ b.get_status_display }}</span></td>
                 <td>
                     <div class="dash-actions-row" style="margin:0">
@@ -28,7 +41,7 @@
                 </td>
             </tr>
             {% empty %}
-            <tr><td colspan="6"><div class="dash-empty">No hay citas próximas. El agente las creará según los visitantes reserven.</div></td></tr>
+            <tr><td colspan="7"><div class="dash-empty">No hay citas próximas. El agente las creará según los visitantes reserven.</div></td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -36,14 +49,66 @@
 
 {% if can_manage_rules and rule_clients %}
 <div class="dash-card">
+    <h2>Locales</h2>
+    <p class="dash-muted">Si tu negocio tiene más de un local, el agente pregunta en cuál quiere la cita el visitante, usa el horario de ese local y lo indica en la confirmación. Con un solo local (o ninguno) todo funciona como hasta ahora.</p>
+    {% for over in location_over %}
+    <p class="dash-muted" style="color:#f0b429">{% if rule_clients|length > 1 %}{{ over.client.name }}: {% endif %}Tu plan incluye {{ over.allowed }} local(es) y tienes {{ over.count }}; el agente seguirá usándolos, pero no podrás añadir más. Contáctanos para ampliar el plan.</p>
+    {% endfor %}
+    {% for c in rule_clients %}
+    {% if rule_clients|length > 1 %}<h3 class="dash-sub" style="margin:12px 0 6px">{{ c.name }}</h3>{% endif %}
+    {# One edit form per row, owned through the HTML5 form= attribute (a <form> cannot sit inside a <tr>). #}
+    {% for loc in locations %}{% if loc.client_id == c.pk %}
+    <form id="loc-edit-{{ loc.pk }}" method="post" action="{% url 'location_save' %}">
+        {% csrf_token %}
+        <input type="hidden" name="client" value="{{ c.slug }}">
+        <input type="hidden" name="pk" value="{{ loc.pk }}">
+    </form>
+    <form id="loc-del-{{ loc.pk }}" method="post" action="{% url 'location_delete' loc.pk %}">{% csrf_token %}</form>
+    {% endif %}{% endfor %}
+    <table class="dash-table" style="max-width:960px">
+        <thead><tr><th>Nombre</th><th>Dirección</th><th>Teléfono</th><th>Principal</th><th></th></tr></thead>
+        <tbody>
+            {% for loc in locations %}{% if loc.client_id == c.pk %}
+            <tr>
+                <td><input type="text" name="name" form="loc-edit-{{ loc.pk }}" value="{{ loc.name }}" required maxlength="80" style="min-width:140px"></td>
+                <td><input type="text" name="address" form="loc-edit-{{ loc.pk }}" value="{{ loc.address }}" maxlength="200" style="min-width:220px"></td>
+                <td><input type="tel" name="phone" form="loc-edit-{{ loc.pk }}" value="{{ loc.phone }}" style="min-width:140px"></td>
+                <td><input type="checkbox" name="is_default" form="loc-edit-{{ loc.pk }}" {% if loc.is_default %}checked{% endif %}></td>
+                <td>
+                    <div class="dash-actions-row" style="margin:0">
+                        <button type="submit" form="loc-edit-{{ loc.pk }}" class="save-btn save-btn--sm">Guardar</button>
+                        <button type="submit" form="loc-del-{{ loc.pk }}" class="save-btn save-btn--sm">Quitar</button>
+                    </div>
+                </td>
+            </tr>
+            {% endif %}{% empty %}
+            <tr><td colspan="5"><div class="dash-empty">Sin locales: el agente trata el negocio como un solo sitio.</div></td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <form class="dash-inline-form" method="post" action="{% url 'location_save' %}">
+        {% csrf_token %}
+        <input type="hidden" name="client" value="{{ c.slug }}">
+        <input type="text" name="name" placeholder="Nombre (ej. Bayamón)" required maxlength="80" style="min-width:160px">
+        <input type="text" name="address" placeholder="Dirección" maxlength="200" style="min-width:220px">
+        <input type="tel" name="phone" placeholder="(787) 123-4567" style="min-width:140px">
+        <label class="dash-muted" style="display:inline-flex;align-items:center;gap:6px"><input type="checkbox" name="is_default"> Principal</label>
+        <button type="submit" class="save-btn save-btn--sm">Añadir local</button>
+        <span class="dash-muted">Tu plan incluye {% for pk, limit in location_limits.items %}{% if pk == c.pk %}{{ limit }}{% endif %}{% endfor %} local(es).</span>
+    </form>
+    {% endfor %}
+</div>
+
+<div class="dash-card">
     <h2>Horario laboral (el agente solo ofrece horas dentro de estas ventanas)</h2>
     {% if rules %}
     <table class="dash-table" style="max-width:640px">
-        <thead><tr><th>Agente</th><th>Día</th><th>Horario</th><th></th></tr></thead>
+        <thead><tr><th>Agente</th><th>Local</th><th>Día</th><th>Horario</th><th></th></tr></thead>
         <tbody>
             {% for r in rules %}
             <tr>
                 <td>{{ r.client.name }}</td>
+                <td>{{ r.location.name|default:"Todo el negocio" }}</td>
                 <td>{% for num, dname in weekdays %}{% if num == r.weekday %}{{ dname }}{% endif %}{% endfor %}</td>
                 <td>{{ r.open_time|time:"g:i A" }} – {{ r.close_time|time:"g:i A" }}</td>
                 <td><form method="post" action="{% url 'availability_delete' r.pk %}">{% csrf_token %}<button class="save-btn save-btn--sm">Quitar</button></form></td>
@@ -57,6 +122,12 @@
     <form class="dash-inline-form" method="post" action="{% url 'availability_add' %}">
         {% csrf_token %}
         <select name="client">{% for c in rule_clients %}<option value="{{ c.pk }}">{{ c.name }}</option>{% endfor %}</select>
+        {% if has_locations %}
+        <select name="location">
+            <option value="">Todo el negocio</option>
+            {% for loc in locations %}<option value="{{ loc.pk }}">{{ loc.name }}{% if rule_clients|length > 1 %} · {{ loc.client.name }}{% endif %}</option>{% endfor %}
+        </select>
+        {% endif %}
         <select name="weekday">{% for num, dname in weekdays %}<option value="{{ num }}">{{ dname }}</option>{% endfor %}</select>
         <input type="time" name="open_time" required>
         <input type="time" name="close_time" required>
@@ -71,7 +142,7 @@
     <table class="dash-table">
         <tbody>
             {% for b in past %}
-            <tr><td>{{ b.start|date:"M d · g:i A" }}</td><td>{{ b.name }}</td><td><span class="dash-pill dash-pill--{{ b.status }}">{{ b.get_status_display }}</span></td></tr>
+            <tr><td>{{ b.start|date:"M d · g:i A" }}</td><td>{{ b.name }}</td>{% if has_locations %}<td>{{ b.location.name|default:"—" }}</td>{% endif %}<td><span class="dash-pill dash-pill--{{ b.status }}">{{ b.get_status_display }}</span></td></tr>
             {% endfor %}
         </tbody>
     </table>

@@ -22,7 +22,7 @@ from django.utils import timezone
 
 from . import agent, entitlements
 from . import usage as usage_ledger
-from .models import ChatMessage, Conversation
+from .models import ChatMessage, Conversation, rules_for
 
 logger = logging.getLogger(__name__)
 
@@ -51,22 +51,9 @@ def _hours_summary(by_day):
     return '; '.join(parts)
 
 
-def hours_now_line(client, now=None):
-    """The receptionist's authoritative open/closed line (reglas-por-perfil B8):
-
-        HOURS NOW (authoritative): OPEN NOW, closes today 17:00 | hours: Mon-Fri
-        09:00-17:00; Sat 10:00-14:00; Sun closed (America/Puerto_Rico)
-        HOURS NOW (authoritative): CLOSED NOW, opens Monday 09:00 | hours: ...
-
-    Computed on the server in local (Puerto Rico) time from the client's
-    AvailabilityRules; "opens today|tomorrow|<Weekday>" is never left to the
-    model. '' when the client has no rules (the line is omitted). Half-open
-    windows: open at open_time, closed at close_time."""
-    if client is None:
-        return ''
-    rules = list(client.availability_rules.all())
-    if not rules:
-        return ''
+def _hours_state(rules, now=None):
+    """'<STATE> | hours: <summary> (<tz>)' for a list of AvailabilityRules,
+    or '' when they define no usable window."""
     by_day = {r.weekday: (r.open_time, r.close_time) for r in rules if r.open_time < r.close_time}
     if not by_day:
         return ''
@@ -86,8 +73,52 @@ def hours_now_line(client, now=None):
                 when = 'tomorrow' if offset == 1 else _DAY_NAMES[(today + offset) % 7]
                 state = f'CLOSED NOW, opens {when} {nxt[0]:%H:%M}'
                 break
-    return (f'HOURS NOW (authoritative): {state} | hours: {_hours_summary(by_day)} '
-            f'({settings.TIME_ZONE})')
+    return f'{state} | hours: {_hours_summary(by_day)} ({settings.TIME_ZONE})'
+
+
+def hours_now_line(client, now=None):
+    """The receptionist's authoritative open/closed line (reglas-por-perfil B8):
+
+        HOURS NOW (authoritative): OPEN NOW, closes today 17:00 | hours: Mon-Fri
+        09:00-17:00; Sat 10:00-14:00; Sun closed (America/Puerto_Rico)
+        HOURS NOW (authoritative): CLOSED NOW, opens Monday 09:00 | hours: ...
+
+    Computed on the server in local (Puerto Rico) time from the client's
+    business-wide AvailabilityRules (location NULL; per-location windows are
+    hours_now_lines' job); "opens today|tomorrow|<Weekday>" is never left to
+    the model. '' when the client has no rules (the line is omitted).
+    Half-open windows: open at open_time, closed at close_time."""
+    if client is None:
+        return ''
+    state = _hours_state(rules_for(client), now)
+    return f'HOURS NOW (authoritative): {state}' if state else ''
+
+
+def hours_now_lines(client, now=None):
+    """Phase F: the HOURS NOW lines for the uncached block. With 0 or 1
+    locations, [hours_now_line] (or [] without rules). With several:
+
+        HOURS NOW (authoritative, per location):
+        [Bayamón] OPEN NOW, closes today 17:00 | hours: ... (America/Puerto_Rico)
+        [Caguas] CLOSED NOW, opens tomorrow 09:00 | hours: ...
+
+    Each location uses its own rules or, lacking them, the business-wide
+    ones (rules_for). A location with neither is left out; [] when none has
+    hours. The caller joins the lines into ONE context line."""
+    if client is None:
+        return []
+    locations = list(client.locations.all())
+    if len(locations) < 2:
+        line = hours_now_line(client, now)
+        return [line] if line else []
+    lines = []
+    for loc in locations:
+        state = _hours_state(rules_for(client, loc), now)
+        if state:
+            lines.append(f'[{loc.name}] {state}')
+    if not lines:
+        return []
+    return ['HOURS NOW (authoritative, per location):'] + lines
 
 # Bound of a single stored/sent message. Defined here (the core never imports
 # a transport); views re-exports it for the web endpoint's body checks.
@@ -189,12 +220,17 @@ def run_turn(client, conversation, user_text, *, channel, handlers,
         extra['profile'] = profile
     if channel in _AGENT_CHANNEL:
         extra['channel'] = _AGENT_CHANNEL[channel]
+    if client is not None and profile != 'internal' and client.locations.count() > 1:
+        # Phase F: the LOCATIONS rules only when there is something to choose
+        # between; the employees' assistant never books or routes by site.
+        extra['multi_location'] = True
     if profile == 'receptionist':
         # The front desk never works out open/closed itself: the server states
         # it (uncached block, next to the date). Omitted without hours rules.
-        hours = hours_now_line(client)
+        # Several locations: one block, header + one line per location.
+        hours = hours_now_lines(client)
         if hours:
-            extra['context_lines'] = [hours]
+            extra['context_lines'] = ['\n'.join(hours)]
 
     history = build_history(conversation, user_text, fallback_history=fallback_history)
     try:

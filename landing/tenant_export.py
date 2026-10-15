@@ -48,6 +48,12 @@ def _cell(value):
     return value
 
 
+def _headers(cols):
+    """Column names for the files: a joined lookup ('location__name') is
+    written under the related name ('location')."""
+    return tuple(c.split('__', 1)[0] if '__' in c else c for c in cols)
+
+
 def _tables(client):
     """(name, columns, row iterator factory) for every exported table. Each
     factory returns a fresh iterator: JSON and CSV are written in two passes
@@ -66,11 +72,12 @@ def _tables(client):
                  'topic', 'first_question', 'tokens_used', 'config_version',
                  'started_at', 'last_message_at')
     msg_cols = ('conversation_id', 'position', 'role', 'content', 'created_at')
-    booking_cols = ('id', 'lead_id', 'name', 'email', 'service', 'notes', 'start',
-                    'duration_minutes', 'status', 'created_at')
+    # Phase F: the location by name (empty for business-wide rows).
+    booking_cols = ('id', 'lead_id', 'name', 'email', 'phone', 'service', 'notes', 'start',
+                    'duration_minutes', 'status', 'location__name', 'created_at')
     ks_cols = ('id', 'kind', 'title', 'origin', 'status', 'review_by', 'position',
                'replaces_id', 'content', 'created_at', 'updated_at')
-    avail_cols = ('weekday', 'open_time', 'close_time', 'slot_minutes')
+    avail_cols = ('weekday', 'open_time', 'close_time', 'slot_minutes', 'location__name')
     member_cols = ('user__email', 'user__username', 'role', 'created_at')
     survey_cols = ('conversation_id', 'score', 'comment', 'created_at')
 
@@ -108,10 +115,10 @@ def _tables(client):
         ('messages', msg_cols,
          values(ChatMessage.objects.filter(conversation__client=client)
                 .order_by('conversation_id', 'position'), msg_cols)),
-        ('bookings', booking_cols, values(Booking.objects.filter(client=client).order_by('pk'),
-                                          booking_cols)),
+        ('bookings', _headers(booking_cols),
+         values(Booking.objects.filter(client=client).order_by('pk'), booking_cols)),
         ('knowledge_sources', ks_cols, knowledge_rows),
-        ('availability_rules', avail_cols,
+        ('availability_rules', _headers(avail_cols),
          values(AvailabilityRule.objects.filter(client=client), avail_cols)),
         ('members', ('email', 'username', 'role', 'created_at'),
          values(Membership.objects.filter(client=client).order_by('pk'), member_cols)),

@@ -4,7 +4,8 @@ Recibida el {{ booking.created_at|date:"d/m/Y, g:i A" }}
 Nombre:  {{ booking.name }}
 Correo:  {{ booking.email }}
 Cuándo:  {{ local_start|date:"d/m/Y, g:i A" }}
-{% if booking.service %}Para:    {{ booking.service }}
+{% if location %}Local:   {{ location.name }}{% if location.address %} — {{ location.address }}{% endif %}
+{% endif %}{% if booking.service %}Para:    {{ booking.service }}
 {% endif %}{% if booking.notes and not clinic_mode %}Notas:   {{ booking.notes }}
 {% endif %}Estado:  {{ booking.get_status_display }}
 {% if clinic_mode %}

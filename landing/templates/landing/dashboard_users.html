@@ -58,19 +58,20 @@
     <h2>Contactos para recados</h2>
     <p class="dash-muted">A quién le llega cada recado que toma el recepcionista virtual: por la persona que pide el visitante, por departamento, o el contacto por defecto. Sin contactos, todo llega al email y teléfono de avisos del agente.</p>
     <table class="dash-table" style="max-width:860px">
-        <thead><tr><th>Nombre</th><th>Departamento</th><th>Email</th><th>Teléfono</th><th>Canal</th><th></th></tr></thead>
+        <thead><tr><th>Nombre</th><th>Departamento</th>{% if locations %}<th>Local</th>{% endif %}<th>Email</th><th>Teléfono</th><th>Canal</th><th></th></tr></thead>
         <tbody>
             {% for c in staff_contacts %}
             <tr>
                 <td>{{ c.name }}{% if c.is_default %} <span class="dash-pill dash-pill--active">por defecto</span>{% endif %}</td>
                 <td>{{ c.department|default:"—" }}</td>
+                {% if locations %}<td>{{ c.location.name|default:"Todos" }}</td>{% endif %}
                 <td>{{ c.email|default:"—" }}</td>
                 <td>{{ c.phone|default:"—" }}</td>
                 <td>{{ c.get_channel_display }}</td>
                 <td><form method="post" action="{% url 'staff_contact_delete' c.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><button class="save-btn save-btn--sm">Quitar</button></form></td>
             </tr>
             {% empty %}
-            <tr><td colspan="6"><div class="dash-empty">Sin contactos: los recados llegan a {{ client_obj.notify_email }}.</div></td></tr>
+            <tr><td colspan="7"><div class="dash-empty">Sin contactos: los recados llegan a {{ client_obj.notify_email }}.</div></td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -79,6 +80,12 @@
         <input type="hidden" name="client" value="{{ client_obj.slug }}">
         <input type="text" name="name" placeholder="Nombre" required maxlength="120" style="min-width:160px">
         <input type="text" name="department" placeholder="Departamento (ej. Ventas)" maxlength="80" style="min-width:180px">
+        {% if locations %}
+        <select name="location">
+            <option value="">Todos los locales</option>
+            {% for loc in locations %}<option value="{{ loc.pk }}">{{ loc.name }}</option>{% endfor %}
+        </select>
+        {% endif %}
         <input type="email" name="email" placeholder="email@negocio.com" style="min-width:200px">
         <input type="tel" name="phone" placeholder="(787) 123-4567" style="min-width:140px">
         <select name="channel">

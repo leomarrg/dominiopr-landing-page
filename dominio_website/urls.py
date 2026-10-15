@@ -107,6 +107,10 @@ urlpatterns = [
          name='availability_add'),
     path('dashboard/availability/<int:pk>/delete/', platform_views.availability_delete,
          name='availability_delete'),
+    # Phase F: locations of a multi-site business (org_admin).
+    path('dashboard/locales/save/', platform_views.location_save, name='location_save'),
+    path('dashboard/locales/<int:pk>/delete/', platform_views.location_delete,
+         name='location_delete'),
     path('dashboard/reports/', platform_views.reports, name='reports'),
     path('dashboard/knowledge/', platform_views.knowledge_list, name='knowledge'),
     path('dashboard/knowledge/save/', platform_views.knowledge_save, name='knowledge_save'),

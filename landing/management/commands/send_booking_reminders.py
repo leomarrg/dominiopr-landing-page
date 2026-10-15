@@ -26,17 +26,19 @@ class Command(BaseCommand):
             status__in=['pending', 'confirmed'],
             reminder_sent=False,
             start__gte=window_start, start__lt=window_end,
-        ).select_related('client')
+        ).select_related('client', 'location')
         sent = 0
         for b in qs:
             business = b.client.name if b.client else 'DOMINIO'
             local = timezone.localtime(b.start)
+            # Phase F: which location, for multi-site businesses.
+            where = f' en {b.location.name}' if b.location_id else ''
             if b.email:
                 ok = _send_plain_email(
                     f'Recordatorio de tu cita — {business}',
                     [b.email],
                     (f'¡Hola {b.name}! Te recordamos tu cita con {business} '
-                     f'mañana: {local:%A %d de %B a las %I:%M %p}.\n\n'
+                     f'mañana: {local:%A %d de %B a las %I:%M %p}{where}.\n\n'
                      f'Si necesitas cambiarla, respóndenos este email.\n\n— {business}'))
             elif b.phone:
                 ok = notify.send_to(b.phone, booking_sms_text(b, business, reminder=True), 'sms')

@@ -1,6 +1,7 @@
 import hashlib
 import json
 import secrets
+import unicodedata
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -172,6 +173,12 @@ class Client(models.Model):
 
     def _compiled(self, audiences, include_draft_pk=None):
         parts = [self.system_prompt.strip()] if self.system_prompt.strip() else []
+        # Phase F: the business's locations, as a deterministic block right
+        # after the header so the model knows the options (and the rules can
+        # say "listed below"). Part of compiled_prompt, so of config_version.
+        locations_block = self.locations_block()
+        if locations_block:
+            parts.append(locations_block)
         sources = self.knowledge_sources.filter(status='active')
         try:
             draft_pk = int(include_draft_pk) if include_draft_pk else None
@@ -191,6 +198,21 @@ class Client(models.Model):
             if text:
                 parts.append(f'=== {src.title} ===\n{text}')
         return '\n\n'.join(parts)
+
+    def locations_block(self):
+        """'=== Locales ===' lines for the prompt, '' when the business has
+        no Location rows. One line per location in display order:
+        '- Bayamón (principal): Calle 1 · Tel. (787) 555-0100'."""
+        from .phone import format_phone
+        lines = []
+        for loc in self.locations.all():
+            label = f'- {loc.name}' + (' (principal)' if loc.is_default else '')
+            details = [d for d in (loc.address, f'Tel. {format_phone(loc.phone)}' if loc.phone else '')
+                       if d]
+            lines.append(label + (': ' + ' · '.join(details) if details else ''))
+        if not lines:
+            return ''
+        return '=== Locales ===\n' + '\n'.join(lines)
 
     def config_version(self):
         """Short fingerprint of the agent's effective configuration (M-19).
@@ -301,9 +323,101 @@ class LeadNote(models.Model):
         return f'Nota lead:{self.lead_id} · {self.created_at:%Y-%m-%d %H:%M}'
 
 
+class Location(models.Model):
+    """Phase F: one branch/office of a multi-location business. Everything that
+    existed before a business had Location rows (availability rules, bookings,
+    staff contacts) keeps location=NULL, which means "the whole business"; a
+    business with 0 or 1 locations behaves exactly as before."""
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='locations')
+    name = models.CharField(max_length=80)
+    address = models.CharField(max_length=200, blank=True)
+    # E.164 (landing.phone.normalize_phone), like every other stored phone.
+    phone = models.CharField(max_length=30, blank=True)
+    # The main location: labelled "(principal)" in the prompt. At most one.
+    is_default = models.BooleanField(default=False)
+    order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['order', 'pk']
+        constraints = [
+            models.UniqueConstraint(fields=['client', 'name'],
+                                    name='uniq_location_name_per_client'),
+            models.UniqueConstraint(fields=['client'], condition=models.Q(is_default=True),
+                                    name='uniq_default_location_per_client'),
+        ]
+
+    def __str__(self):
+        return f'{self.client.slug} · {self.name}'
+
+
+def fold_text(text):
+    """Lower-case, accent-free, single-spaced copy of `text` for tolerant
+    matching ('Bayamón' == 'bayamon') and for SMS bodies, which stay in the
+    GSM-7 alphabet like the rest of landing.notify's texts."""
+    text = unicodedata.normalize('NFKD', str(text or ''))
+    text = ''.join(ch for ch in text if not unicodedata.combining(ch))
+    return ' '.join(text.lower().split())
+
+
+def match_location(client, text):
+    """The client's Location that `text` (a tool input, the visitor's words)
+    refers to, or None. Case- and accent-insensitive; a name contained in the
+    text or the text contained in the name both count, like route_contact.
+    Exact matches win; a containment that fits SEVERAL locations ('Bayamón'
+    vs 'Bayamón Norte' / 'Bayamón Sur') is ambiguous and returns None: with
+    more than one location the handlers never guess."""
+    if client is None:
+        return None
+    needle = fold_text(text)
+    if not needle:
+        return None
+    locations = list(client.locations.all())
+    for loc in locations:
+        if fold_text(loc.name) == needle:
+            return loc
+    partial = []
+    for loc in locations:
+        name = fold_text(loc.name)
+        # A name inside the text always counts ("el de Caguas"); the text
+        # inside a name only from 3 characters, so "a" or "n" never pick one.
+        if name and (name in needle or (len(needle) >= 3 and needle in name)):
+            partial.append(loc)
+    return partial[0] if len(partial) == 1 else None
+
+
+def _check_location_tenant(instance):
+    """ValidationError when `instance.location` belongs to another client.
+    Shared by the clean() of every model with a Location FK: the admin and
+    any form path must never attach a tenant's row to a foreign location."""
+    if instance.location_id is None or instance.client_id is None:
+        return
+    owner = (Location.objects.filter(pk=instance.location_id)
+             .values_list('client_id', flat=True).first())
+    if owner is not None and owner != instance.client_id:
+        raise ValidationError({'location': 'El local debe ser del mismo cliente.'})
+
+
+def rules_for(client, location=None):
+    """The AvailabilityRules in force at `location`: its own rules when it has
+    any, otherwise the business-wide rules (location NULL). Without a location
+    only the business-wide rules apply. [] without a client or without rules
+    (= any future slot, as before)."""
+    if client is None:
+        return []
+    if location is not None:
+        # Scoped to the client too: a foreign location (bad caller, admin
+        # mistake) must never lend its hours to this tenant.
+        own = list(location.availability_rules.filter(client=client))
+        if own:
+            return own
+    return list(client.availability_rules.filter(location__isnull=True))
+
+
 class Booking(models.Model):
     """A reservation/appointment the agent can take. Double-booking is prevented
-    at the database level by a partial unique constraint per (client, start)."""
+    at the database level by a partial unique constraint per (client, start),
+    or per (location, start) when the booking is for one location (Phase F)."""
     STATUS_CHOICES = [
         ('pending', 'Pending confirmation'),
         ('confirmed', 'Confirmed'),
@@ -315,6 +429,11 @@ class Booking(models.Model):
         'Client', null=True, blank=True, on_delete=models.PROTECT, related_name='bookings')
     lead = models.ForeignKey(
         ContactSubmission, null=True, blank=True, on_delete=models.SET_NULL, related_name='bookings')
+    # Phase F: which location the visitor booked at. NULL = the business has
+    # no locations (or the booking predates them). SET_NULL: removing a
+    # location must never delete its past bookings.
+    location = models.ForeignKey(
+        Location, null=True, blank=True, on_delete=models.SET_NULL, related_name='bookings')
 
     name = models.CharField(max_length=120)
     # A booking needs one way to reach the visitor: email OR phone (Phase D,
@@ -336,15 +455,27 @@ class Booking(models.Model):
         ordering = ['start']
         constraints = [
             # One active booking per slot per client — DB-level anti double-booking.
+            # Phase F: business-wide bookings and per-location bookings are
+            # two separate pools (SQL UNIQUE treats NULLs as distinct, so the
+            # location column cannot simply join the first constraint).
             models.UniqueConstraint(
                 fields=['client', 'start'],
-                condition=models.Q(status__in=['pending', 'confirmed']),
+                condition=models.Q(status__in=['pending', 'confirmed'], location__isnull=True),
                 name='uniq_active_booking_per_slot',
+            ),
+            models.UniqueConstraint(
+                fields=['location', 'start'],
+                condition=models.Q(status__in=['pending', 'confirmed'], location__isnull=False),
+                name='uniq_active_booking_per_location_slot',
             ),
         ]
 
     def __str__(self):
         return f'{self.name} @ {self.start:%Y-%m-%d %H:%M} ({self.status})'
+
+    def clean(self):
+        super().clean()
+        _check_location_tenant(self)
 
 
 class Membership(models.Model):
@@ -785,6 +916,11 @@ class AvailabilityRule(models.Model):
     """M-05: a tenant's working window for one weekday (0=Monday … 6=Sunday).
     No rules configured = bookings behave exactly as before (any future slot)."""
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='availability_rules')
+    # Phase F: NULL = the whole business; set = this location's own window,
+    # which replaces the business-wide one for that location (rules_for).
+    location = models.ForeignKey(
+        Location, null=True, blank=True, on_delete=models.CASCADE,
+        related_name='availability_rules')
     weekday = models.PositiveSmallIntegerField()  # 0=Monday … 6=Sunday
     open_time = models.TimeField()
     close_time = models.TimeField()
@@ -793,13 +929,24 @@ class AvailabilityRule(models.Model):
     class Meta:
         ordering = ['weekday', 'open_time']
         constraints = [
+            # One window per weekday for the business, and one per weekday
+            # per location (partial: NULLs are distinct in SQL UNIQUE).
             models.UniqueConstraint(fields=['client', 'weekday'],
+                                    condition=models.Q(location__isnull=True),
                                     name='uniq_availability_per_weekday'),
+            models.UniqueConstraint(fields=['location', 'weekday'],
+                                    condition=models.Q(location__isnull=False),
+                                    name='uniq_availability_per_location_weekday'),
         ]
 
     def __str__(self):
         days = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom']
-        return f'{self.client.slug} · {days[self.weekday]} {self.open_time}-{self.close_time}'
+        where = f' [{self.location.name}]' if self.location_id else ''
+        return f'{self.client.slug}{where} · {days[self.weekday]} {self.open_time}-{self.close_time}'
+
+    def clean(self):
+        super().clean()
+        _check_location_tenant(self)
 
 
 class StaffContact(models.Model):
@@ -816,6 +963,10 @@ class StaffContact(models.Model):
     phone = models.CharField(max_length=30, blank=True)
     email = models.EmailField(blank=True)
     channel = models.CharField(max_length=12, choices=CHANNEL_CHOICES, default='email')
+    # Phase F: the location this contact serves. NULL = every location.
+    location = models.ForeignKey(
+        Location, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='staff_contacts')
     # The contact that gets a message no department or person matched.
     is_default = models.BooleanField(default=False)
     order = models.PositiveSmallIntegerField(default=0)
@@ -828,12 +979,19 @@ class StaffContact(models.Model):
         dept = f' ({self.department})' if self.department else ''
         return f'{self.client.slug} · {self.name}{dept}'
 
+    def clean(self):
+        super().clean()
+        _check_location_tenant(self)
 
-def route_contact(client, department=None, recipient=None):
+
+def route_contact(client, department=None, recipient=None, location=None):
     """The StaffContact a message for `department`/`recipient` goes to, or
     None when the client's own notify_email/notify_phone should be used.
-    Precedence: the person named > the department > the default contact.
-    Matching is case-insensitive and tolerant of 'Dra. Santos' vs 'Santos'."""
+    Precedence (Phase F): the person named > the department at `location` >
+    the department anywhere > the location's own contact (no department) >
+    the default contact. Without `location` this is the Phase D order:
+    person > department > default. Matching is case-insensitive and tolerant
+    of 'Dra. Santos' vs 'Santos'."""
     if client is None:
         return None
     contacts = list(client.staff_contacts.all())
@@ -841,14 +999,27 @@ def route_contact(client, department=None, recipient=None):
         return None
     recipient = (recipient or '').strip().lower()
     department = (department or '').strip().lower()
+    loc_id = getattr(location, 'pk', None)
     if recipient:
         for c in contacts:
             name = c.name.strip().lower()
             if name and (name in recipient or recipient in name):
                 return c
     if department:
+        in_dept = [c for c in contacts
+                   if c.department and c.department.strip().lower() == department]
+        if loc_id is not None:
+            for c in in_dept:
+                if c.location_id == loc_id:
+                    return c
+        # A contact of another location is still the department's contact
+        # when nothing closer exists (never a silent drop of the message).
+        in_dept.sort(key=lambda c: c.location_id is not None)
+        if in_dept:
+            return in_dept[0]
+    if loc_id is not None:
         for c in contacts:
-            if c.department and c.department.strip().lower() == department:
+            if c.location_id == loc_id and not c.department:
                 return c
     for c in contacts:
         if c.is_default:

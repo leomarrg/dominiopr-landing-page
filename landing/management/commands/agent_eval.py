@@ -110,10 +110,12 @@ def fake_handlers(called):
 
 
 def _rules_for(client):
+    """The business-wide rules (Phase F: per-location windows are not the
+    fixture's schedule)."""
     manager = getattr(client, 'availability_rules', None)
     if manager is None:
         return []
-    return list(manager.order_by('weekday'))
+    return list(manager.filter(location__isnull=True).order_by('weekday'))
 
 
 def schedule_summary(client=None):
