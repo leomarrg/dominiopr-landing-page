@@ -27,13 +27,15 @@ MARK = {OK: '[ ok ]', WARN: '[warn]', FAIL: '[FAIL]'}
 
 
 class Command(BaseCommand):
-    help = 'Verify Stripe, email, AI and Django settings are really configured.'
+    help = 'Verify Stripe, email, AI, WhatsApp and Django settings are really configured.'
 
     def add_arguments(self, parser):
         parser.add_argument('--stripe', action='store_true', help='Only the Stripe/payment checks.')
         parser.add_argument('--email', action='store_true', help='Only the email checks.')
         parser.add_argument('--django', action='store_true', help='Only the Django/security checks.')
         parser.add_argument('--ai', action='store_true', help='Only the AI agent checks.')
+        parser.add_argument('--whatsapp', action='store_true',
+                            help='Only the WhatsApp (Meta Cloud API) checks.')
 
     # ---- output helpers -------------------------------------------------
 
@@ -50,7 +52,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         self.results = []
-        chosen = {k for k in ('stripe', 'email', 'django', 'ai') if opts.get(k)}
+        chosen = {k for k in ('stripe', 'email', 'django', 'ai', 'whatsapp') if opts.get(k)}
         run_all = not chosen
 
         if run_all or 'django' in chosen:
@@ -61,6 +63,8 @@ class Command(BaseCommand):
             self.check_email()
         if run_all or 'ai' in chosen:
             self.check_ai()
+        if run_all or 'whatsapp' in chosen:
+            self.check_whatsapp()
 
         fails = self.results.count(FAIL)
         warns = self.results.count(WARN)
@@ -324,3 +328,54 @@ class Command(BaseCommand):
             self._line(WARN, 'dominio prompt',
                        'DB system_prompt differs from agent.DOMINIO_BUSINESS — the live agent '
                        'answers from the DB copy; re-sync it if the code is the newer one')
+
+    # ---- WhatsApp (Phase G) ----------------------------------------------
+
+    def check_whatsapp(self):
+        """Optional: everything off is fine (no tenant on WhatsApp). Once any
+        META_* is set, the three that make the webhook work must all be
+        there, and the token must really read each tenant's number."""
+        self._section('WhatsApp (Meta Cloud API)')
+        from landing import whatsapp
+        from landing.models import ChannelAccount
+
+        token = getattr(settings, 'META_WA_ACCESS_TOKEN', '')
+        secret = getattr(settings, 'META_APP_SECRET', '')
+        verify = getattr(settings, 'META_WA_VERIFY_TOKEN', '')
+        accounts = list(ChannelAccount.objects.filter(is_active=True, client__is_active=True)
+                        .select_related('client')[:10])
+        if not (token or secret or verify or accounts):
+            self._line(OK, 'WhatsApp', 'off — no META_* settings and no ChannelAccount; '
+                                       'the webhook answers 503 and nothing is sent')
+            return
+        for name, value, why in (
+                ('META_APP_SECRET', secret, 'every webhook POST is refused (503)'),
+                ('META_WA_VERIFY_TOKEN', verify, 'Meta cannot verify the callback URL'),
+                ('META_WA_ACCESS_TOKEN', token, 'inbound messages arrive but no reply is sent')):
+            self._line(OK if value else FAIL, name, 'set' if value else f'missing — {why}')
+        if not getattr(settings, 'DOMINIO_PHONE_HASH_KEY', ''):
+            self._line(WARN, 'DOMINIO_PHONE_HASH_KEY',
+                       'empty — contact hashes fall back to SECRET_KEY; a key rotation would '
+                       'split every contact from their history and opt-out. Set it once.')
+        for name in ('META_WA_TEMPLATE_REMINDER', 'META_WA_TEMPLATE_STATUS'):
+            value = getattr(settings, name, '')
+            self._line(OK if value else WARN, name,
+                       value or 'empty — those notices fall back to SMS (Twilio) or nothing')
+        if not accounts:
+            self._line(WARN, 'ChannelAccount', 'no active tenant number — create one in the admin')
+            return
+        for account in accounts:
+            label = f'{account.client.slug} number'
+            if not token:
+                self._line(WARN, label, f'{account.phone_number_id} (not checked: no token)')
+                continue
+            try:
+                node = whatsapp.graph_get(
+                    f'{account.phone_number_id}?fields=display_phone_number,verified_name,'
+                    'quality_rating')
+            except whatsapp.GraphError as e:
+                self._line(FAIL, label, f'{account.phone_number_id} unreadable: {e}')
+                continue
+            self._line(OK, label,
+                       f"{node.get('display_phone_number', '?')} ({node.get('verified_name', '?')}, "
+                       f"quality {node.get('quality_rating', '?')}) [{account.phone_number_id}]")

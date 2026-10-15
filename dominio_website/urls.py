@@ -21,7 +21,7 @@ from django.urls import include, path, reverse_lazy
 from django.contrib.sitemaps.views import sitemap
 from django.views.generic import RedirectView
 
-from landing import control_views, platform_views, seo, views
+from landing import control_views, platform_views, seo, views, whatsapp
 from landing.forms import (
     HumanAdminAuthenticationForm, HumanAuthenticationForm, HumanPasswordResetForm,
 )
@@ -65,6 +65,8 @@ urlpatterns = [
     # Phase 5: hCaptcha challenge the chat widgets frame (404 while disabled).
     path('verificar/', views.human_verify, name='human_verify'),
     path('api/stripe/webhook/', views.stripe_webhook, name='stripe_webhook'),
+    # Phase G: Meta's WhatsApp Cloud API (GET = verification, POST = events).
+    path('api/whatsapp/webhook/', whatsapp.whatsapp_webhook, name='whatsapp_webhook'),
     path('widget.js', views.widget_js, name='widget_js'),
     path('get-started/', views.get_started, name='get_started'),
     path('bienvenida/', views.bienvenida, name='bienvenida'),

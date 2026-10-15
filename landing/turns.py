@@ -182,7 +182,8 @@ NO_INTERNAL_DOCS_PROMPT = '(Este negocio no ha cargado documentos internos todav
 
 def run_turn(client, conversation, user_text, *, channel, handlers,
              language=None, page_url='', clinic=None, profile=None,
-             fallback_history=None, business_prompt=None):
+             fallback_history=None, business_prompt=None, extra_context=(),
+             timeout=None):
     """Run one turn for `client` on `channel` and return a TurnResult.
 
     `conversation` may be None (nothing is persisted, the ledger still records
@@ -192,6 +193,10 @@ def run_turn(client, conversation, user_text, *, channel, handlers,
     `page_url` fills Conversation.page_url when the row has none yet.
     `business_prompt` None = Client.compiled_prompt() (the public knowledge);
     the internal assistant passes Client.compiled_internal_prompt().
+    `extra_context` (Phase G): transport-specific lines for the uncached
+    context block, after the server's own (HOURS NOW); the WhatsApp webhook
+    passes ['CHANNEL: whatsapp']. `timeout`: seconds per provider call
+    (agent.answer). Both reach answer() only when set, for the mocks.
 
     Steps: history from the stored transcript -> agent.answer -> one
     transaction appending the two ChatMessage rows and bumping the
@@ -224,13 +229,19 @@ def run_turn(client, conversation, user_text, *, channel, handlers,
         # Phase F: the LOCATIONS rules only when there is something to choose
         # between; the employees' assistant never books or routes by site.
         extra['multi_location'] = True
+    context_lines = []
     if profile == 'receptionist':
         # The front desk never works out open/closed itself: the server states
         # it (uncached block, next to the date). Omitted without hours rules.
         # Several locations: one block, header + one line per location.
         hours = hours_now_lines(client)
         if hours:
-            extra['context_lines'] = ['\n'.join(hours)]
+            context_lines.append('\n'.join(hours))
+    context_lines.extend(line for line in (extra_context or ()) if line)
+    if context_lines:
+        extra['context_lines'] = context_lines
+    if timeout:
+        extra['timeout'] = timeout
 
     history = build_history(conversation, user_text, fallback_history=fallback_history)
     try:

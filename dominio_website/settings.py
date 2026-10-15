@@ -493,6 +493,37 @@ TWILIO_FROM_WHATSAPP = os.environ.get('TWILIO_FROM_WHATSAPP', '')  # e.g. whatsa
 
 
 # ============================================================
+# WHATSAPP (Phase G) — the visitors' WhatsApp chat through Meta's Cloud API
+# directly (no Twilio, no SDK). One DOMINIO Business app + System User token
+# for every tenant; per tenant only a ChannelAccount row (phone_number_id).
+# All empty = the webhook answers 503 and nothing is ever sent.
+# ============================================================
+
+# Permanent System User token with whatsapp_business_messaging (+ _management).
+META_WA_ACCESS_TOKEN = os.environ.get('META_WA_ACCESS_TOKEN', '')
+# App Secret of the Meta app: every webhook POST is HMAC-SHA256 signed with it.
+META_APP_SECRET = os.environ.get('META_APP_SECRET', '')
+# The string pasted in the webhook config; Meta echoes it on the GET handshake.
+META_WA_VERIFY_TOKEN = os.environ.get('META_WA_VERIFY_TOKEN', '')
+# Graph API version pinned for sends (raise it when Meta deprecates it).
+META_GRAPH_VERSION = os.environ.get('META_GRAPH_VERSION', 'v23.0')
+# Approved UTILITY template names for business-initiated messages (outside
+# the 24 h window). Empty = fall back to SMS (Twilio) or nothing.
+#   reminder: {{1}} negocio, {{2}} fecha/hora, {{3}} local
+#   status:   {{1}} negocio, {{2}} fecha/hora, {{3}} local, {{4}} estado
+META_WA_TEMPLATE_REMINDER = os.environ.get('META_WA_TEMPLATE_REMINDER', '')
+META_WA_TEMPLATE_STATUS = os.environ.get('META_WA_TEMPLATE_STATUS', '')
+# Key of the salted hash that stands in for the visitor's phone number in
+# conversations and opt-outs. Falls back to SECRET_KEY; set it once and
+# NEVER rotate it (every contact's history would split from their opt-out).
+DOMINIO_PHONE_HASH_KEY = os.environ.get('DOMINIO_PHONE_HASH_KEY', '')
+# Messages one WhatsApp contact may send a tenant per day before the agent
+# stops answering (a fixed notice once). Abuse brake, like the widget's
+# per-visitor share of the daily cap.
+DOMINIO_WA_CONTACT_DAILY_CAP = int(os.environ.get('DOMINIO_WA_CONTACT_DAILY_CAP', '40'))
+
+
+# ============================================================
 # SOCIAL PUBLISHING (M-20) — Instagram/Facebook via the Meta Graph API and
 # TikTok photo posts via the Content Posting API. No SDKs: plain HTTPS, same
 # pattern as Stripe. A platform with no credentials is refused loudly by

@@ -1,9 +1,9 @@
 from django.contrib import admin
 
 from .models import (
-    AuditEvent, AvailabilityRule, Booking, Client, ContactSubmission,
-    Conversation, KnowledgeSource, LeadNote, Location, Membership, StaffContact,
-    Subscription, Survey, UsageEvent,
+    AuditEvent, AvailabilityRule, Booking, ChannelAccount, ChannelOptOut, Client,
+    ContactSubmission, Conversation, KnowledgeSource, LeadNote, Location, Membership,
+    StaffContact, Subscription, Survey, UsageEvent,
 )
 
 
@@ -50,8 +50,9 @@ class LocationScopedAdmin(admin.ModelAdmin):
 
 @admin.register(Booking)
 class BookingAdmin(LocationScopedAdmin):
-    list_display = ('start', 'name', 'email', 'phone', 'service', 'location', 'status', 'client')
-    list_filter = ('status', 'start', 'client')
+    list_display = ('start', 'name', 'email', 'phone', 'service', 'location', 'status',
+                    'channel', 'client')
+    list_filter = ('status', 'channel', 'start', 'client')
     list_editable = ('status',)
     search_fields = ('name', 'email', 'phone')
     date_hierarchy = 'start'
@@ -66,6 +67,35 @@ class LocationAdmin(admin.ModelAdmin):
     search_fields = ('name', 'address', 'client__name', 'client__slug')
     list_select_related = ('client',)
     autocomplete_fields = ('client',)
+
+
+@admin.register(ChannelAccount)
+class ChannelAccountAdmin(admin.ModelAdmin):
+    """Phase G: the WhatsApp number of a tenant (Meta phone_number_id).
+    Created by DOMINIO staff after registering the number in the WABA; the
+    form runs clean(), which refuses clinic-mode tenants."""
+    list_display = ('client', 'channel', 'display_phone', 'phone_number_id', 'waba_id',
+                    'is_active', 'created_at')
+    list_filter = ('channel', 'is_active')
+    search_fields = ('client__name', 'client__slug', 'phone_number_id', 'display_phone')
+    list_select_related = ('client',)
+    autocomplete_fields = ('client',)
+
+
+@admin.register(ChannelOptOut)
+class ChannelOptOutAdmin(admin.ModelAdmin):
+    """Phase G: STOP records. Read-only evidence; a contact lifts it by
+    writing START (the webhook deletes the row)."""
+    list_display = ('client', 'channel', 'contact_hash', 'created_at')
+    list_filter = ('channel', 'client')
+    search_fields = ('contact_hash',)
+    readonly_fields = ('client', 'channel', 'contact_hash', 'created_at')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(StaffContact)

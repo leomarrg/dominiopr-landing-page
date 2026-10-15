@@ -2,17 +2,18 @@
 
     python manage.py send_booking_reminders
 
-Email when the booking has one; SMS (Twilio, landing.notify) for phone-only
-bookings (Phase D). Idempotent via Booking.reminder_sent — a booking is
-reminded at most once; a failed send is retried on the next run while the
-booking is still inside the window.
+Email when the booking has one; otherwise by the channel it came from: a
+WhatsApp utility template (Phase G, Meta Cloud API) or an SMS (Twilio,
+landing.notify) for phone-only bookings (Phase D) -- one selector,
+views.booking_notify_visitor. Idempotent via Booking.reminder_sent — a
+booking is reminded at most once; a failed send is retried on the next run
+while the booking is still inside the window.
 """
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from landing import notify
 from landing.models import Booking
-from landing.views import _send_plain_email, booking_sms_text
+from landing.views import booking_notify_visitor
 
 
 class Command(BaseCommand):
@@ -29,22 +30,10 @@ class Command(BaseCommand):
         ).select_related('client', 'location')
         sent = 0
         for b in qs:
-            business = b.client.name if b.client else 'DOMINIO'
-            local = timezone.localtime(b.start)
-            # Phase F: which location, for multi-site businesses.
-            where = f' en {b.location.name}' if b.location_id else ''
-            if b.email:
-                ok = _send_plain_email(
-                    f'Recordatorio de tu cita — {business}',
-                    [b.email],
-                    (f'¡Hola {b.name}! Te recordamos tu cita con {business} '
-                     f'mañana: {local:%A %d de %B a las %I:%M %p}{where}.\n\n'
-                     f'Si necesitas cambiarla, respóndenos este email.\n\n— {business}'))
-            elif b.phone:
-                ok = notify.send_to(b.phone, booking_sms_text(b, business, reminder=True), 'sms')
-            else:
-                # Nothing to remind by (anonymized lead): close it out.
-                ok = True
+            # Email, WhatsApp template or SMS by the booking's channel and
+            # contact; True as well when there is nothing to remind by
+            # (anonymized lead), which closes it out.
+            ok = booking_notify_visitor(b, 'reminder')
             if ok:
                 Booking.objects.filter(pk=b.pk).update(reminder_sent=True)
                 sent += 1

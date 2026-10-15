@@ -100,7 +100,7 @@ nano .env   # edita: pon un SECRET_KEY nuevo, DJANGO_DEBUG=False
 # Para que el chatbot 'Ask DOMINIO' y su mini CRM funcionen hace falta ademas:
 #   ANTHROPIC_API_KEY            (sin ella el widget se oculta, el resto del sitio sigue)
 #   DJANGO_EMAIL_HOST/USER/PASSWORD + DJANGO_CONTACT_NOTIFY_EMAIL  (leads y citas por correo)
-# Todo lo demas (Stripe, Twilio, SOCIAL_*) es opcional y degrada sin romper.
+# Todo lo demas (Stripe, Twilio, META_* de WhatsApp, SOCIAL_*) es opcional y degrada sin romper.
 # Genera SECRET_KEY así (en otra ventana o después):
 # python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
 
@@ -407,6 +407,96 @@ con los eventos `checkout.session.completed`, `customer.subscription.updated`,
 **Evaluación del agente (M-19):** antes de activar cambios de conocimiento de un
 cliente: `python manage.py agent_eval --client SLUG --file evals/SLUG.txt`
 (formato: `pregunta | fragmento esperado`, una por línea).
+
+### WhatsApp (Cloud API de Meta)
+
+Fase G. El chat de WhatsApp de los visitantes va **directo con Meta** (sin Twilio ni BSP):
+Meta hace POST a `https://dominiopr.com/api/whatsapp/webhook/` por cada mensaje, Django
+resuelve el negocio por el `phone_number_id` del número (`ChannelAccount`), corre el mismo
+turno que el widget (mismas herramientas: citas, recados, leads) y responde por la Graph API
+dentro del mismo request. Twilio queda solo para SMS. Una sola app y un solo token de DOMINIO
+sirven a todos los clientes; por cliente no hay secretos, solo el id de su número.
+
+**Una sola vez (cuenta de DOMINIO):**
+
+1. **App de Meta.** En [developers.facebook.com](https://developers.facebook.com) crear una
+   app tipo *Business* ligada al Business Portfolio de DOMINIO y añadirle el producto
+   *WhatsApp*. Eso crea una WhatsApp Business Account (WABA) de DOMINIO.
+2. **Verificación del negocio.** Meta Business Suite → Configuración → Centro de seguridad →
+   *Verificación del negocio* (documentos de DOMINIO). Sin ella la app queda en modo
+   desarrollo: solo el número de prueba y hasta 5 destinatarios.
+3. **System User y token permanente.** Business Suite → Usuarios → *Usuarios del sistema* →
+   crear uno de tipo *Admin*, asignarle la app (control total) y la WABA, y *Generar token*
+   sin caducidad con los permisos `whatsapp_business_messaging` y
+   `whatsapp_business_management`. Ese token es `META_WA_ACCESS_TOKEN`.
+4. **App Secret.** App → Configuración → Básica → *Clave secreta de la app* →
+   `META_APP_SECRET`. Firma cada POST del webhook (`X-Hub-Signature-256`); sin ella el
+   webhook responde 503.
+5. **Clave del hash.** Generar `DOMINIO_PHONE_HASH_KEY` una vez (como la SECRET_KEY) y no
+   rotarla nunca: es lo que sustituye al número del visitante en conversaciones y bajas.
+6. **Webhook.** App → WhatsApp → Configuración → *Webhook*: Callback URL
+   `https://dominiopr.com/api/whatsapp/webhook/`, *Verify token* = el valor inventado que
+   pusiste en `META_WA_VERIFY_TOKEN` (reiniciar gunicorn antes de pulsar *Verificar*).
+   Suscribir el campo **`messages`** (es el único que se procesa). nginx tiene su propia
+   `location = /api/whatsapp/webhook/` con el bucket general: recargar nginx con el
+   `dominio.conf` nuevo (`sudo nginx -t` primero) o Meta verá 503 por el límite de `/api/`.
+7. **Plantillas de utilidad** (WhatsApp Manager → Plantillas de mensajes → *Crear*,
+   categoría **Utilidad**, idioma **Español (es)**). Son obligatorias para escribirle al
+   visitante fuera de la ventana de 24 h (recordatorios y cambios de estado desde el
+   dashboard); dentro de la ventana el agente responde en texto libre y gratis. Texto
+   propuesto (los ejemplos de variables se piden al crearla):
+   - `cita_recordatorio` → `META_WA_TEMPLATE_REMINDER`:
+     `{{1}}: te recordamos tu cita de mañana, {{2}}, en {{3}}. Si necesitas cambiarla, llámanos.`
+     (ejemplos: `Salón Luz` · `21/10 a las 3:00 PM` · `Bayamón`)
+   - `cita_estado` → `META_WA_TEMPLATE_STATUS`:
+     `{{1}}: tu cita del {{2}} en {{3}} quedó {{4}}. Si quieres otra fecha, escríbenos.`
+     (ejemplos: `Salón Luz` · `21/10 a las 3:00 PM` · `Bayamón` · `confirmada`)
+   Hasta que estén aprobadas (minutos a horas) y puestas en `.env`, esos avisos salen por
+   SMS (Twilio) si está configurado, o no salen. `{{3}}` es el local, o el nombre del negocio
+   si no tiene locales (Meta no acepta variables vacías).
+
+**Por cada cliente que contrata WhatsApp (plan Premium o override `channels`):**
+
+1. **Registrar su número en la WABA de DOMINIO.** App → WhatsApp → *Configuración de la
+   API* → *Agregar número de teléfono*: nombre visible (el del negocio; Meta lo revisa),
+   categoría, y el número fijo o VoIP del negocio. La verificación es por SMS o **llamada**
+   (sirve para un fijo). El número no puede estar activo en la app de WhatsApp o WhatsApp
+   Business del cliente: si lo está, hay que borrarlo ahí primero. Al terminar, copiar el
+   **`phone_number_id`** (no es el número) y el `WABA ID`.
+2. **`ChannelAccount` en el admin** (`/admin/landing/channelaccount/`): cliente,
+   `phone_number_id`, `waba_id`, teléfono visible. El formulario rechaza negocios en modo
+   clínica. Un número activo por cliente.
+3. **Comprobar:** `venv/bin/python manage.py preflight --whatsapp` lee cada número con el
+   token (nombre verificado y calidad) y `venv/bin/python manage.py wa_simulate --client SLUG
+   --from 17875551234 --text "hola" --reply "Hola, dime." --force` recorre el webhook completo
+   con el envío simulado (imprime lo que se habría enviado; nada llega a Meta). No es un
+   ensayo en seco: la conversación queda en el historial y el conteo del mes del cliente (con
+   `--reply` no se registra uso del modelo), por eso en producción exige `--force` y conviene
+   usar un cliente de prueba.
+4. **Límites de mensajería de Meta:** un número nuevo puede iniciar conversaciones con 250
+   contactos distintos por 24 h; sube a 1,000 y 10,000 solo según la calidad (bloqueos y
+   reportes de los usuarios). Las respuestas dentro de la ventana no cuentan para ese límite.
+   `preflight --whatsapp` muestra la calidad (`GREEN`/`YELLOW`/`RED`).
+
+**Modo de prueba sin número real:** con la app en desarrollo, Meta da un *número de prueba*
+y un *token temporal de 24 h* en *Configuración de la API*; se añaden hasta 5 destinatarios
+(hay que confirmar cada uno por código). Para recibir el webhook en la laptop:
+`ngrok http 8765`, poner la URL de ngrok + `/api/whatsapp/webhook/` como Callback URL con el
+mismo `META_WA_VERIFY_TOKEN`, crear el `ChannelAccount` con el `phone_number_id` del número
+de prueba y escribirle desde uno de los 5 números. Objetivo antes de dar el canal por bueno:
+20 turnos con p95 < 10 s (Meta reintenta el evento si no hay 200 en pocos segundos; la
+idempotencia por `wamid` absorbe el reintento).
+
+**Qué guarda el sistema:** la conversación se indexa por un hash (`wa:<hash>:<día>`), nunca
+por el número; una conversación = una ventana de 24 h de inactividad y nunca cruza el mes
+(es la unidad del bucket de WhatsApp del plan, con sus avisos de 80/100 % y el cobro de
+exceso por `bill_overage`). Las citas guardan el número (`Booking.wa_id`) porque el
+recordatorio tiene que ir a algún sitio. `STOP`/`BAJA` crea un `ChannelOptOut` (la
+plantilla no se envía; el agente deja de responder) y `START`/`ALTA` lo borra. Los topes:
+`DOMINIO_WA_CONTACT_DAILY_CAP` por contacto, `daily_message_cap` del cliente en su propio
+contador y el tope global `DOMINIO_AGENT_DAILY_CAP` compartido con el widget. Un token
+caducado o revocado (401/190) aparece en la auditoría como `whatsapp.send_failed` (una vez
+por hora por cliente) y en `preflight --whatsapp`.
 
 ## Lanzamiento self-serve (Stripe + correo)
 

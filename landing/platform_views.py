@@ -30,7 +30,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.views.decorators.http import require_POST
 
-from . import agent, analytics, entitlements, ingest, knowledge, notify, publishing, turns
+from . import agent, analytics, entitlements, ingest, knowledge, publishing, turns
 from . import usage as usage_ledger
 from .models import (
     AvailabilityRule, Booking, Client, ContactSubmission, Conversation,
@@ -38,7 +38,7 @@ from .models import (
 )
 from .views import (
     MAX_CHAT_BODY_BYTES, _audit, _client_ip, _member_client_ids, _rate_limited,
-    _send_plain_email, _tenant_action_cap_hit, booking_sms_where, leads_for,
+    _send_plain_email, _tenant_action_cap_hit, booking_notify_visitor, leads_for,
     staff_required,
 )
 
@@ -248,33 +248,12 @@ def booking_status(request, pk):
     _audit(request, 'booking.status', client=booking.client,
            target=f'booking:{booking.pk}', result=new_status)
     # AC M-05: the visitor hears about confirmations and cancellations. By
-    # email when the booking has one; phone-only bookings (Phase D) get an
-    # SMS instead, never an email to an empty address. Phase F: with the
-    # location, so a multi-site visitor knows where to go.
-    business = booking.client.name if booking.client else 'DOMINIO'
-    local = timezone.localtime(booking.start)
-    where = f' en {booking.location.name}' if booking.location_id else ''
-    when_sms = f'{local:%d/%m} a las {local:%I:%M %p}'.replace(' 0', ' ') + booking_sms_where(booking)
-    if new_status == 'confirmed':
-        if booking.email:
-            _send_plain_email(
-                f'Tu cita quedó confirmada — {business}', [booking.email],
-                f'¡Confirmado! Te esperamos el {local:%A %d de %B a las %I:%M %p}{where}.'
-                f'\n\n— {business}')
-        elif booking.phone:
-            notify.send_to(booking.phone,
-                           f'{business}: tu cita del {when_sms} quedo confirmada. Te esperamos.',
-                           'sms')
-    elif new_status == 'cancelled':
-        if booking.email:
-            _send_plain_email(
-                f'Tu cita fue cancelada — {business}', [booking.email],
-                f'Tu cita del {local:%A %d de %B a las %I:%M %p}{where} fue cancelada. '
-                f'Si quieres otra fecha, escríbenos o usa el chat.\n\n— {business}')
-        elif booking.phone:
-            notify.send_to(booking.phone,
-                           f'{business}: tu cita del {when_sms} fue cancelada. '
-                           'Si quieres otra fecha, escribenos.', 'sms')
+    # email when the booking has one; otherwise by the channel the booking
+    # came from (Phase G: a WhatsApp template, else SMS), never an email to
+    # an empty address. Phase F: with the location, so a multi-site visitor
+    # knows where to go. One selector for every booking notice.
+    if new_status in ('confirmed', 'cancelled'):
+        booking_notify_visitor(booking, new_status)
     messages.success(request, f'Cita marcada como {new_status}.')
     return redirect('bookings')
 

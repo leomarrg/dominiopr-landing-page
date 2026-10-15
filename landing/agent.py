@@ -650,7 +650,8 @@ def _accumulate_usage(usage, response):
 
 
 def answer(history, business_prompt=None, handlers=None, language='es', clinic=False,
-           profile='web', channel='web', context_lines=(), multi_location=False):
+           profile='web', channel='web', context_lines=(), multi_location=False,
+           timeout=None):
     """Return (reply, usage) for the conversation, for a given business.
 
     `business_prompt` is the Client's compiled knowledge (defaults to DOMINIO).
@@ -663,9 +664,13 @@ def answer(history, business_prompt=None, handlers=None, language='es', clinic=F
     call sites and mocks keep the old signature. `multi_location` adds
     MULTI_LOCATION_RULES (Phase F; passed only when True, same reason).
     `context_lines` are per-request facts the model must not work out itself
-    (the receptionist's "HOURS NOW" line, later the WhatsApp CHANNEL line).
+    (the receptionist's "HOURS NOW" line, the WhatsApp "CHANNEL" line).
     They go with the current date in the UNCACHED second system block, so
     the cached prefix stays byte-stable.
+    `timeout` (seconds, Phase G) bounds each provider call and drops the
+    SDK's retries to one: a webhook that must answer Meta within seconds
+    cannot wait out the SDK's default timeout and retry budget. None = the
+    SDK defaults (the web widget and the internal assistant).
     `usage` (see new_usage) holds the uncached input, output and cache read/write
     tokens accumulated across the tool loop, plus model, effort and api_calls
     (M-03 cost analytics). Raises AgentNotConfigured if no API key, or
@@ -677,6 +682,8 @@ def answer(history, business_prompt=None, handlers=None, language='es', clinic=F
     handlers = handlers or {}
 
     client = _provider_client(api_key)
+    if timeout:
+        client = client.with_options(timeout=timeout, max_retries=1)
     model = _model()
     max_tokens = getattr(settings, 'DOMINIO_AGENT_MAX_TOKENS', 1500)
     usage = new_usage(model)

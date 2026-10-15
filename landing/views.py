@@ -353,41 +353,100 @@ def _send_lead_emails(submission, notify_to=None):
         )
 
 
+def _booking_context(booking, business):
+    return {'booking': booking, 'business': business,
+            'local_start': timezone.localtime(booking.start),
+            'clinic_mode': bool(booking.client and booking.client.clinic_mode),
+            'clinic_note': CLINIC_DASHBOARD_NOTE,
+            # Phase F: None for single-site businesses (the templates skip it).
+            'location': booking.location}
+
+
 def _send_booking_emails(booking, notify_to=None, business='DOMINIO'):
     """Notify the business of a new booking and confirm it to the visitor."""
     if notify_to is None:
         notify_to = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
     local = timezone.localtime(booking.start)
-    context = {'booking': booking, 'business': business, 'local_start': local,
-               'clinic_mode': bool(booking.client and booking.client.clinic_mode),
-               'clinic_note': CLINIC_DASHBOARD_NOTE,
-               # Phase F: None for single-site businesses (the templates skip it).
-               'location': booking.location}
-
     if notify_to:
         _send_html_email(
             subject=f'Nueva cita para {business}: {booking.name} — {local:%d/%m %I:%M %p}',
             to=[notify_to],
             html_template='landing/emails/booking_notification.html',
             txt_template='landing/emails/booking_notification.txt',
-            context=context,
+            context=_booking_context(booking, business),
             reply_to=[booking.email] if booking.email else None,
         )
+    booking_notify_visitor(booking, 'confirmation', business=business,
+                           reply_to=[notify_to] if notify_to else None)
+
+
+# Phase G: the visitor-facing notices a booking can produce, in one place so
+# the handler, the dashboard and the reminder cron never diverge on channel.
+BOOKING_NOTICE_KINDS = ('confirmation', 'reminder', 'confirmed', 'cancelled')
+
+
+def booking_notify_visitor(booking, kind, business=None, reply_to=None):
+    """Tell the visitor about their booking: `kind` is one of
+    BOOKING_NOTICE_KINDS. Email when the booking has one. Otherwise, by the
+    channel the booking came from: a WhatsApp booking gets a Meta utility
+    template (outside the 24 h window only a template is deliverable) when
+    one is configured and the contact has not opted out; failing that, an
+    SMS over Twilio when it is configured; failing that, nothing. The
+    'confirmation' of a WhatsApp booking is the agent's own reply in the
+    same turn, so no separate message goes out. Returns True when the
+    notice went out (or there was nothing to send by), False when a send
+    was attempted and failed -- the reminder cron retries on False."""
+    if kind not in BOOKING_NOTICE_KINDS:
+        raise ValueError(f'Unknown booking notice: {kind!r}')
+    if business is None:
+        business = booking.client.name if booking.client else 'DOMINIO'
+    local = timezone.localtime(booking.start)
+    where = f' en {booking.location.name}' if booking.location_id else ''
     if booking.email:
-        _send_html_email(
-            subject=f'Recibimos tu cita — {business}',
-            to=[booking.email],
-            html_template='landing/emails/booking_confirmation.html',
-            txt_template='landing/emails/booking_confirmation.txt',
-            context=context,
-            reply_to=[notify_to] if notify_to else None,
-        )
-    elif booking.phone:
-        # Phase D: phone-only booking — the visitor's confirmation goes by SMS.
-        notify.send_to(booking.phone, booking_sms_text(booking, business), 'sms')
+        if kind == 'confirmation':
+            return _send_html_email(
+                subject=f'Recibimos tu cita — {business}',
+                to=[booking.email],
+                html_template='landing/emails/booking_confirmation.html',
+                txt_template='landing/emails/booking_confirmation.txt',
+                context=_booking_context(booking, business),
+                reply_to=reply_to,
+            )
+        if kind == 'reminder':
+            return _send_plain_email(
+                f'Recordatorio de tu cita — {business}', [booking.email],
+                (f'¡Hola {booking.name}! Te recordamos tu cita con {business} '
+                 f'mañana: {local:%A %d de %B a las %I:%M %p}{where}.\n\n'
+                 f'Si necesitas cambiarla, respóndenos este email.\n\n— {business}'))
+        if kind == 'confirmed':
+            return _send_plain_email(
+                f'Tu cita quedó confirmada — {business}', [booking.email],
+                f'¡Confirmado! Te esperamos el {local:%A %d de %B a las %I:%M %p}{where}.'
+                f'\n\n— {business}')
+        return _send_plain_email(
+            f'Tu cita fue cancelada — {business}', [booking.email],
+            f'Tu cita del {local:%A %d de %B a las %I:%M %p}{where} fue cancelada. '
+            f'Si quieres otra fecha, escríbenos o usa el chat.\n\n— {business}')
+    if booking.channel == 'whatsapp' and booking.wa_id:
+        if kind == 'confirmation':
+            return True     # the agent confirms in the same WhatsApp turn
+        from . import whatsapp   # late: whatsapp imports this module
+        if whatsapp.is_opted_out(booking.client, whatsapp.contact_hash(booking.wa_id)):
+            # STOP revokes every notice to that number: no template and no
+            # SMS to the same line either. A different phone on the booking
+            # (someone else's) still gets the SMS below.
+            if not booking.phone or whatsapp.same_number(booking.phone, booking.wa_id):
+                return True
+        else:
+            sent = whatsapp.notify_booking(booking, kind, business)
+            if sent is not None:
+                return sent
+    if booking.phone:
+        return notify.send_to(booking.phone, booking_sms_text(booking, business, kind=kind), 'sms')
+    return True
 
 
-def booking_sms_text(booking, business, reminder=False):
+def booking_sms_text(booking, business, reminder=False, kind=None):
     """Visitor-facing SMS for a booking (confirmation or 24h reminder). No
     service name: the text is short and, in clinic mode, must carry nothing
     the model wrote. Phase F adds ' en <local>' (accent-free, like the rest
@@ -395,9 +454,16 @@ def booking_sms_text(booking, business, reminder=False):
     local = timezone.localtime(booking.start)
     when = f'{local:%d/%m} a las {local:%I:%M %p}'.replace(' 0', ' ')
     when += booking_sms_where(booking)
-    if reminder:
+    if kind is None:
+        kind = 'reminder' if reminder else 'confirmation'
+    if kind == 'reminder':
         return (f'{business}: te recordamos tu cita manana, {when}. '
                 f'Si necesitas cambiarla, llamanos.')
+    if kind == 'confirmed':
+        return f'{business}: tu cita del {when} quedo confirmada. Te esperamos.'
+    if kind == 'cancelled':
+        return (f'{business}: tu cita del {when} fue cancelada. '
+                'Si quieres otra fecha, escribenos.')
     return f'{business}: recibimos tu cita para el {when}. Te confirmamos en breve.'
 
 
@@ -578,13 +644,15 @@ def index(request):
     return render(request, 'landing/index.html', {'form': form})
 
 
-def _chat_lead_handler(request, client_obj=None, page_url='', conversation=None):
+def _chat_lead_handler(request, client_obj=None, page_url='', conversation=None, *,
+                       actor_key=None):
     """Build the callback the agent invokes when it captures a lead in chat.
 
     Saves a ContactSubmission linked to `client_obj` and emails that client's
     own inbox (falling back to DOMINIO's). Returns a short string the model
     feeds back as the tool result. Raises ValueError on a bad email so the
-    agent re-asks the visitor.
+    agent re-asks the visitor. `actor_key` (Phase G) keys the per-visitor
+    cap instead of the IP: on a webhook the IP is the provider's.
     """
     from django.core.exceptions import ValidationError
     from django.core.validators import validate_email
@@ -626,7 +694,7 @@ def _chat_lead_handler(request, client_obj=None, page_url='', conversation=None)
         # Per-IP cap: a bot can't flood the inbox or abuse our SMTP to relay
         # confirmation emails to arbitrary third parties.
         ip = _client_ip(request) or 'unknown'
-        cap_key = f'leadcap:{ip}'
+        cap_key = f'leadcap:{actor_key or ip}'
         if cache.get(cap_key, 0) >= 5:
             logger.warning('Chat lead cap reached for IP %s', ip)
             return 'Anotado — el equipo ya tiene tu solicitud y te dará seguimiento por email.'
@@ -677,7 +745,8 @@ def _chat_lead_handler(request, client_obj=None, page_url='', conversation=None)
     return handle
 
 
-def _human_handler(request, client_obj=None, conversation=None, page_url=''):
+def _human_handler(request, client_obj=None, conversation=None, page_url='', *,
+                   actor_key=None):
     """M-16: the request_human tool. Marks the conversation escalated with the
     reason, saves whatever contact the visitor gave as a lead, and alerts the
     team with the transcript context. Never promises a live chat."""
@@ -710,7 +779,7 @@ def _human_handler(request, client_obj=None, conversation=None, page_url=''):
             email = ''
 
         ip = _client_ip(request) or 'unknown'
-        cap_key = f'humancap:{ip}'
+        cap_key = f'humancap:{actor_key or ip}'
         if cache.get(cap_key, 0) >= 5:
             return 'Anotado — el equipo ya fue notificado y te dará seguimiento.'
         if _tenant_action_cap_hit('human', client_obj):
@@ -764,7 +833,7 @@ def _human_handler(request, client_obj=None, conversation=None, page_url=''):
     return handle
 
 
-def _booking_handler(request, client_obj=None):
+def _booking_handler(request, client_obj=None, *, actor_key=None, channel='web', contact=''):
     """Callback the agent invokes to create a booking. The BACKEND validates the
     time and the DB constraint prevents double-booking — the model only proposes.
 
@@ -772,6 +841,10 @@ def _booking_handler(request, client_obj=None):
     with exactly one it is assigned silently; with several the tool input
     `location` must name one (match_location) or nothing is booked and the
     model is told to ask. Hours are validated against that location's rules.
+
+    Phase G: `actor_key` keys the per-visitor cap (the IP by default);
+    `channel` is stored on the Booking; `contact` is the channel address of
+    the visitor (the WhatsApp wa_id) kept for the outbound reminders.
     """
     import datetime as dt
     from django.core.exceptions import ValidationError
@@ -825,7 +898,7 @@ def _booking_handler(request, client_obj=None):
                         f'la cita: {names}.')
 
         ip = _client_ip(request) or 'unknown'
-        cap_key = f'bookcap:{ip}'
+        cap_key = f'bookcap:{actor_key or ip}'
         if cache.get(cap_key, 0) >= 5:
             return 'Anotado — el equipo te dará seguimiento para confirmar tu hora.'
         if _tenant_action_cap_hit('booking', client_obj):
@@ -878,6 +951,7 @@ def _booking_handler(request, client_obj=None):
                     # Clinic mode: the model's free-text notes are never stored.
                     notes='' if clinic else (data.get('notes') or '').strip()[:1000],
                     start=start, status='pending', location=location,
+                    channel=channel, wa_id=contact if channel == 'whatsapp' else '',
                 )
         except IntegrityError:
             return taken
@@ -893,6 +967,11 @@ def _booking_handler(request, client_obj=None):
         # No visitor PII in the logs — journald outlives our retention policy.
         logger.info('Booking created: booking=%s client=%s at %s',
                     booking.pk, client_obj.slug, local)
+        if not email and channel == 'whatsapp':
+            # No SMS to a WhatsApp visitor: the reply they are reading IS the
+            # confirmation (the model says it in its own words).
+            return (f'Reservado para {local:%A %b %d a las %I:%M %p}{where}. '
+                    'Confírmale los detalles en tu respuesta; no se envía otro mensaje.')
         via = 'email' if email else 'SMS'
         return (f'Reservado para {local:%A %b %d a las %I:%M %p}{where}. '
                 f'Se envió una confirmación por {via}.')
@@ -900,7 +979,8 @@ def _booking_handler(request, client_obj=None):
     return handle
 
 
-def _take_message_handler(request, client_obj=None, conversation=None, page_url=''):
+def _take_message_handler(request, client_obj=None, conversation=None, page_url='', *,
+                          actor_key=None):
     """Phase D: the receptionist's take_message tool. Stores the message as a
     ContactSubmission(source='message'), links it to the conversation, routes
     the alert to the matching StaffContact (person > department > default)
@@ -938,7 +1018,7 @@ def _take_message_handler(request, client_obj=None, conversation=None, page_url=
         target = recipient or department
 
         ip = _client_ip(request) or 'unknown'
-        cap_key = f'msgcap:{ip}'
+        cap_key = f'msgcap:{actor_key or ip}'
         if cache.get(cap_key, 0) >= 5:
             logger.warning('Chat message cap reached for IP %s', ip)
             return noted
@@ -1044,6 +1124,55 @@ def _new_conversation_capped(request, client_obj):
             cache.incr(key)
         except ValueError:
             cache.set(key, 1, 60 * 60 * 26)
+    return False
+
+
+def build_handlers(request, client_obj, conversation, page_url='', *, actor_key=None,
+                   channel='web', contact=''):
+    """The tool callbacks for one turn of `client_obj`'s agent and the rule
+    profile to run them under: (handlers, profile). Shared by the web widget
+    and the WhatsApp webhook (Phase G) so both channels offer the same tools
+    under the same tenant settings. `actor_key` keys the per-visitor caps
+    (None = the request IP); `channel`/`contact` are stamped on bookings."""
+    common = {'actor_key': actor_key}
+    if client_obj is not None and client_obj.agent_profile == 'receptionist':
+        # Phase D: the front desk takes messages instead of capturing leads or
+        # escalating (take_message and request_human overlap; the model would
+        # pick at random). Bookings stay opt-in.
+        handlers = {'take_message': _take_message_handler(
+            request, client_obj, conversation=conversation, page_url=page_url, **common)}
+        profile = 'receptionist'
+    else:
+        handlers = {'capture_lead': _chat_lead_handler(
+            request, client_obj, page_url=page_url, conversation=conversation, **common)}
+        if client_obj is not None:
+            handlers['request_human'] = _human_handler(
+                request, client_obj, conversation=conversation, page_url=page_url, **common)
+        profile = 'web'
+    if client_obj and client_obj.enable_bookings:
+        handlers['create_booking'] = _booking_handler(
+            request, client_obj, channel=channel, contact=contact, **common)
+    return handlers, profile
+
+
+def _global_daily_cap_hit():
+    """Global daily ceiling across ALL IPs and channels -- the defense per-IP
+    limits can't give: caps worst-case daily API spend even under a
+    distributed/botnet attack. True when today's budget is spent; otherwise
+    counts this turn. Shared by the web widget and the WhatsApp webhook."""
+    daily_cap = getattr(settings, 'DOMINIO_AGENT_DAILY_CAP', 2000)
+    day_key = 'chat:global:' + timezone.now().strftime('%Y%m%d')
+    used = cache.get(day_key, 0)
+    if used >= daily_cap:
+        logger.warning('Daily chat cap (%s) reached', daily_cap)
+        return True
+    if used == 0:
+        cache.set(day_key, 1, 60 * 60 * 26)  # ~26h TTL covers the whole day
+    else:
+        try:
+            cache.incr(day_key)
+        except ValueError:
+            cache.set(day_key, 1, 60 * 60 * 26)
     return False
 
 
@@ -1187,25 +1316,13 @@ def chat_api(request):
         if tenant_used + 1 >= int(client_obj.daily_message_cap * 0.8):
             logger.warning('Tenant %s at 80%%+ of daily chat quota', client_obj.slug)
 
-    # Global daily ceiling across ALL IPs — the defense per-IP limits can't give:
-    # caps worst-case daily API spend even under a distributed/botnet attack.
-    daily_cap = getattr(settings, 'DOMINIO_AGENT_DAILY_CAP', 2000)
-    day_key = 'chat:global:' + timezone.now().strftime('%Y%m%d')
-    used = cache.get(day_key, 0)
-    if used >= daily_cap:
-        logger.warning('Daily chat cap (%s) reached', daily_cap)
+    # Global daily ceiling across ALL IPs (shared with the WhatsApp webhook).
+    if _global_daily_cap_hit():
         return JsonResponse(
             {'error': 'Nuestro asistente está descansando por ahora. Usa el formulario de '
                       'contacto y el equipo te responde enseguida.'},
             status=503,
         )
-    if used == 0:
-        cache.set(day_key, 1, 60 * 60 * 26)  # ~26h TTL covers the whole day
-    else:
-        try:
-            cache.incr(day_key)
-        except ValueError:
-            cache.set(day_key, 1, 60 * 60 * 26)
 
     # Page the visitor is chatting from (widget sends location.href) — lets the
     # client see exactly which page produced the lead.
@@ -1240,22 +1357,8 @@ def chat_api(request):
     # The caller controls the request body, so the 'assistant' turns it sends
     # are not evidence of anything we said: run_turn rebuilds the history from
     # the server-owned transcript and takes ONLY the new user turn from here.
-    turn_kwargs = {}
-    if client_obj is not None and client_obj.agent_profile == 'receptionist':
-        # Phase D: the front desk takes messages instead of capturing leads or
-        # escalating (take_message and request_human overlap; the model would
-        # pick at random). Bookings stay opt-in.
-        handlers = {'take_message': _take_message_handler(
-            request, client_obj, conversation=conversation, page_url=page)}
-        turn_kwargs['profile'] = 'receptionist'
-    else:
-        handlers = {'capture_lead': _chat_lead_handler(
-            request, client_obj, page_url=page, conversation=conversation)}
-        if client_obj is not None:
-            handlers['request_human'] = _human_handler(
-                request, client_obj, conversation=conversation, page_url=page)
-    if client_obj and client_obj.enable_bookings:
-        handlers['create_booking'] = _booking_handler(request, client_obj)
+    handlers, profile = build_handlers(request, client_obj, conversation, page_url=page)
+    turn_kwargs = {'profile': profile} if profile != 'web' else {}
 
     # From here on the turn is channel-agnostic (landing.turns): history,
     # model call, persistence and the usage ledger. This view only maps the
