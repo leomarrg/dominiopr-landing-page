@@ -331,7 +331,7 @@ python manage.py preflight   # Stripe, SMTP, IA y Django reales (--stripe|--emai
 # `timeout 900` es el tope duro de la corrida (cada página y cada llamada a la IA ya tienen su
 # límite; esto cubre lo imprevisto). Si lo mata, la fila queda "procesando" y se reintenta sola
 # a los 30 min (luego queda en error); el candado expira solo.
-*/5 * * * * cd /ruta/app && timeout 900 venv/bin/python manage.py process_knowledge >> /home/ubuntu/dominio-cron.log 2>&1
+* * * * * cd /ruta/app && timeout 900 venv/bin/python manage.py process_knowledge >> /home/ubuntu/dominio-cron.log 2>&1
 # M-01: reconciliación de suscripciones contra Stripe, diario
 45 4 * * * cd /ruta/app && venv/bin/python manage.py reconcile_stripe
 # Fase C: el día 1 de cada mes factura el exceso de conversaciones del mes anterior como

@@ -1,4 +1,4 @@
-"""Background knowledge ingest (Phase 8). Run from cron every 5 minutes:
+"""Background knowledge ingest (Phase 8). Run from cron every minute:
 
     python manage.py process_knowledge [--limit 3]
 
@@ -46,7 +46,10 @@ class Command(BaseCommand):
         # Read-only checks before the lock: resetting stale rows here, outside
         # it, could pull a row out from under a run that is still alive.
         if not ingest.pending_ids(1) and not ingest.has_stale():
-            self.stdout.write('Conocimiento: no hay fuentes en cola.')
+            # Cron runs this every minute so a scan starts within ~60 s of being
+            # queued; an idle pass stays silent so the log only shows real work.
+            if options.get('verbosity', 1) >= 2:
+                self.stdout.write('Conocimiento: no hay fuentes en cola.')
             return
         kinds = ingest.BACKGROUND_KINDS
         if not getattr(settings, 'ANTHROPIC_API_KEY', ''):
