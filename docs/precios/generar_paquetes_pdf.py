@@ -452,20 +452,21 @@ S += bullets([
 S.append(Paragraph('9. Qué existe hoy y qué hay que construir', H2))
 S.append(Paragraph(
     'Revisión del código del 13 de octubre de 2026. <b>Importante:</b> el plan Scale publicado hoy promete '
-    '"WhatsApp y multicanal", "hasta 3 locales" y "CRM y calendario", y ninguno existe todavía. Hay que quitarlo o '
-    'marcarlo "próximamente" ya, antes de cualquier venta.', BODY))
+    '"WhatsApp y multicanal", "hasta 3 locales" y "CRM y calendario". Actualización del 15 de octubre: los locales ya '
+    'existen (Scale incluye 3) y WhatsApp está construido pero solo se vende en Premium; en Scale queda como añadido y '
+    'el CRM sigue siendo a la medida.', BODY))
 rows = [['Función', 'Paquete', 'Estado', 'Trabajo estimado']]
 AVAIL = [
     ('Chat web, escaneo de sitio y archivos, leads, emails verificados, anti-bots, dashboards', 'S', 'Listo', '—'),
     ('Citas con horario, recordatorio por email, escalación con aviso SMS/WhatsApp', 'M', 'Listo', '—'),
     ('Versiones del conocimiento, ficha del lead con notas, modo clínica', 'M', 'Listo', '—'),
-    ('Tomar recados (herramienta take_message)', 'M', 'Construir', '1–2 días'),
-    ('Saber si está abierto/cerrado y comportarse fuera de horario', 'M', 'Construir', '1 día'),
-    ('Citas por teléfono sin email + recordatorio por SMS', 'M', 'Construir', '1–2 días'),
-    ('Capacidad mensual por paquete, aviso al 80% y escalones', 'Todos', 'Construir', '4–6 días'),
-    ('Asistente interno con login, asientos y conocimiento interno separado', 'L', 'Construir', '5–8 días'),
-    ('Varios locales (agenda y horario por local) y avisos por departamento', 'L', 'Construir', '6–8 días'),
-    ('WhatsApp Business (Cloud API de Meta, sin intermediario): webhook, respuestas, plantillas, costos', 'P', 'Construir', '10–15 días + 1–3 semanas de Meta'),
+    ('Tomar recados (herramienta take_message) y contactos del equipo por departamento', 'M', 'Listo', '—'),
+    ('Saber si está abierto/cerrado y comportarse fuera de horario', 'M', 'Listo', '—'),
+    ('Citas por teléfono sin email + confirmación y recordatorio por SMS', 'M', 'Listo', '—'),
+    ('Capacidad mensual por paquete, aviso al 80%, escalones y cobro del exceso el día 1', 'Todos', 'Listo', '—'),
+    ('Asistente interno con login, asientos y conocimiento interno separado', 'L', 'Listo', '—'),
+    ('Varios locales (agenda y horario por local) y avisos por departamento', 'L', 'Listo', '—'),
+    ('WhatsApp Business (Cloud API de Meta, sin intermediario): webhook, respuestas, plantillas, STOP, citas', 'P', 'Listo (falta la cuenta de Meta)', 'Verificación de Meta: 1–3 semanas'),
     ('Sincronizar Google/Outlook Calendar, CRM', 'Enterprise', 'Cotizar', '1–2 semanas por integración'),
     ('Voz / llamadas telefónicas', '—', 'Fuera de alcance', 'Requiere proveedor de voz; no recomendado ahora'),
 ]
@@ -517,8 +518,8 @@ S += bullets([
     'las promesas de Scale en el sitio.',
     '<b>Condiciones:</b> decidido mes a mes + compromiso de 3/6 meses + clientes fundadores (sección 6). Falta '
     'redactar la cláusula del compromiso en los términos y crear los cupones de instalación en Stripe.',
-    '<b>Lanzamiento escalonado:</b> publicar Small y Medium primero; Large y Premium como "próximamente" con lista de '
-    'espera hasta que estén construidos.',
+    '<b>Lanzamiento:</b> los cuatro paquetes están construidos (15 de octubre de 2026). Small, Medium y Large se pueden '
+    'vender ya; Premium en cuanto Meta verifique el negocio de DOMINIO (1–3 semanas).',
     '<b>IVU:</b> confirmar con un CPA si aplica 11.5% o 4%.',
     '<b>WhatsApp:</b> conexión directa con la Cloud API de Meta (decidido el 14 de octubre de 2026; Twilio queda '
     'solo para SMS de citas tomadas por teléfono). Abrir la verificación de Meta Business de DOMINIO y del primer '

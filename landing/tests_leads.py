@@ -443,3 +443,27 @@ class ExportTests(TestCase):
         resp = login('admin_a').post(reverse('control_export_tenant', args=['acme']))
         self.assertEqual(resp.status_code, 302)
         self.assertFalse(AuditEvent.objects.filter(action='tenant.export').exists())
+
+
+class OriginListTests(TestCase):
+    """allowed_origins is compared by hostname: full URLs, ports and paths
+    pasted by an owner must not silently disable the widget."""
+
+    def _client(self, origins):
+        return Client.objects.create(slug='orig', name='Orig', system_prompt='x',
+                                     notify_email='o@orig.test', allowed_origins=origins)
+
+    def test_urls_ports_and_paths_reduce_to_hostnames(self):
+        c = self._client('https://Acme.com/, http://127.0.0.1:8791, www.acme.com/tienda, acme.com')
+        self.assertEqual(c.origin_list(), ['acme.com', '127.0.0.1', 'www.acme.com'])
+
+    def test_garbage_entries_are_dropped(self):
+        c = self._client(' , https://, ::bad::, acme.com')
+        self.assertEqual(c.origin_list(), ['acme.com'])
+
+    def test_widget_js_hands_out_the_token_for_a_url_style_entry(self):
+        c = self._client('https://acme.com/')
+        resp = self.client.get(reverse('widget_js') + '?key=orig', HTTP_REFERER='https://acme.com/precios')
+        self.assertEqual(resp.status_code, 200)
+        c.refresh_from_db()
+        self.assertIn(c.widget_token, resp.content.decode())

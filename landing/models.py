@@ -140,7 +140,26 @@ class Client(models.Model):
         return f'{self.name} ({self.slug})'
 
     def origin_list(self):
-        return [o.strip().lower() for o in self.allowed_origins.split(',') if o.strip()]
+        """Allowed hostnames, lower-case. Owners paste whatever they have
+        (`https://acme.com/`, `acme.com:8080`, `www.acme.com`): everything is
+        reduced to the hostname, because that is what the widget's Referer and
+        the chat API's Origin are compared against. An entry that cannot be
+        parsed is dropped rather than left to silently never match."""
+        from urllib.parse import urlsplit
+        hosts = []
+        for raw in self.allowed_origins.split(','):
+            entry = raw.strip().lower()
+            if not entry:
+                continue
+            if '://' not in entry:
+                entry = 'https://' + entry
+            try:
+                host = urlsplit(entry).hostname or ''
+            except ValueError:
+                host = ''
+            if host and host not in hosts:
+                hosts.append(host)
+        return hosts
 
     def ensure_widget_token(self):
         """Mint the widget credential on first use. Called wherever a widget is
