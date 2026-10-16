@@ -165,6 +165,11 @@ class Command(BaseCommand):
         for plan in PLANS:
             if plan['monthly'] is None:      # "Custom" is quote-only, no Price id
                 continue
+            if not plan.get('public', True):
+                # Packages are sold direct and billed from the control center
+                # (manual price / invoice): no Checkout, so no Price id to check.
+                self._line(OK, plan['name'], 'venta directa, sin Checkout: no necesita Price id')
+                continue
             for period, expected, kind in (
                 ('monthly', plan['monthly'], 'recurring-month'),
                 ('annual', plan['annual'], 'recurring-year'),
