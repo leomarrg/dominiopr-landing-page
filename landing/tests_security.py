@@ -185,7 +185,9 @@ class KnowledgeTestCapsTests(TestCase):
     def setUp(self):
         cache.clear()
         self.acme = make_client('acme')
-        make_member('admin@acme.com', self.acme)
+        staff = make_member('admin@acme.com', self.acme)  # Phase I: the console is staff-only
+        staff.is_staff = True
+        staff.save(update_fields=['is_staff'])
         self.http = logged_in('admin@acme.com')
 
     def _ask(self, **kw):

@@ -1,4 +1,5 @@
-"""Phase 6 — knowledge versioning + plan-gated publishing."""
+"""Phase 6 — knowledge versioning; Phase I — knowledge is staff-only and the
+size caps are advice (only the hard ceiling blocks)."""
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -8,7 +9,7 @@ from django.test import Client as HttpClient
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from . import ingest, knowledge, publishing
+from . import ingest, knowledge, platform_views, publishing
 from .models import AuditEvent, Client, KnowledgeSource, Membership, Subscription
 
 PW = 'pw12345!'
@@ -36,7 +37,8 @@ class VersioningBase(TestCase):
         return Subscription.objects.create(client=client or self.acme, plan=plan, status=status)
 
     def login(self, user=None):
-        self.http.force_login(user or self.admin)
+        """Staff by default: since Phase I nobody else reaches these views."""
+        self.http.force_login(user or self.staff)
 
     def src(self, content='Abrimos de 9 a 5.', status='active', **kw):
         defaults = dict(client=self.acme, kind='text', title='Horario', content=content,
@@ -268,153 +270,190 @@ class RestoreAndHistoryTests(VersioningBase):
                                                         status='active').count(), 2)
 
 
-class SizeCapTests(VersioningBase):
+class SizeAdviceTests(VersioningBase):
+    """Phase I: 8k per source / 40k total are advice shown with the cost per
+    question; only DOMINIO_KNOWLEDGE_HARD_MAX_CHARS blocks a publish."""
+
     def setUp(self):
         super().setUp()
-        self.plan('pro')
-
-    def test_per_source_cap(self):
         self.login()
-        big = self.src(content='x' * (publishing.MAX_SOURCE_CHARS + 1), status='draft')
+
+    def test_source_over_the_recommended_size_still_publishes(self):
+        big = self.src(content='x' * (publishing.RECOMMENDED_SOURCE_CHARS + 1), status='draft')
         self.act(big, 'activate')
         big.refresh_from_db()
-        self.assertEqual(big.status, 'draft')
-        ok = self.src(content='x' * publishing.MAX_SOURCE_CHARS, status='draft', title='Ok')
-        self.act(ok, 'activate')
-        ok.refresh_from_db()
-        self.assertEqual(ok.status, 'active')
+        self.assertEqual(big.status, 'active')
+        resp = self.http.get(reverse('knowledge') + '?client=acme')
+        self.assertContains(resp, 'supera los 8,000 caracteres recomendados')
 
-    def test_total_cap_counts_the_swap(self):
-        self.login()
-        chunk = 'y' * publishing.MAX_SOURCE_CHARS
-        live = [self.src(content=chunk, title=f'S{i}') for i in range(5)]  # exactly 40,000
-        extra = self.src(content='z', status='draft', title='Extra')
+    def test_total_over_the_recommended_size_still_publishes_with_a_warning(self):
+        chunk = 'y' * publishing.RECOMMENDED_SOURCE_CHARS
+        for i in range(5):
+            self.src(content=chunk, title=f'S{i}')  # exactly 40,000 live
+        extra = self.src(content='z' * 10, status='draft', title='Extra')
         self.act(extra, 'activate')
         extra.refresh_from_db()
-        self.assertEqual(extra.status, 'draft')
-        # Replacing one of them with something the same size fits: the old one retires.
-        swap = self.src(content='w' * publishing.MAX_SOURCE_CHARS, status='draft',
-                        title='S0', replaces=live[0])
+        self.assertEqual(extra.status, 'active')
+        resp = self.http.get(reverse('knowledge') + '?client=acme')
+        self.assertContains(resp, 'Por encima de lo recomendado en total')
+        self.assertContains(resp, 'Se puede seguir publicando')
+
+    @override_settings(DOMINIO_KNOWLEDGE_HARD_MAX_CHARS=20_000)
+    def test_hard_ceiling_blocks_even_staff_and_counts_the_swap(self):
+        self.src(content='a' * 15_000, title='Grande')
+        over = self.src(content='b' * 6_000, status='draft', title='Demasiado')
+        resp = self.http.post(reverse('knowledge_action', args=[over.pk]),
+                              {'client': 'acme', 'action': 'activate'}, follow=True)
+        over.refresh_from_db()
+        self.assertEqual(over.status, 'draft')
+        self.assertContains(resp, 'techo técnico es 20,000')
+        self.assertContains(resp, 'sumaría 21,000 caracteres')
+        # The same text REPLACING the big one fits: the old version retires.
+        swap = self.src(content='c' * 15_500, status='draft', title='Grande',
+                        replaces=KnowledgeSource.objects.get(title='Grande', status='active'))
         self.act(swap, 'activate')
         swap.refresh_from_db()
         self.assertEqual(swap.status, 'active')
-
-    def test_staff_override_and_org_admin_cannot_override(self):
-        big = self.src(content='x' * (publishing.MAX_SOURCE_CHARS + 50), status='draft')
-        self.login()
-        self.act(big, 'activate', override_caps='1')
-        big.refresh_from_db()
-        self.assertEqual(big.status, 'draft')
-        self.login(self.staff)
-        self.act(big, 'activate', override_caps='1')
-        big.refresh_from_db()
-        self.assertEqual(big.status, 'active')
-        self.assertTrue(AuditEvent.objects.filter(
-            action='knowledge.activate', result__contains='límites ignorados').exists())
-
-    def test_existing_over_cap_source_keeps_working_with_warning(self):
-        self.src(content='q' * (publishing.MAX_SOURCE_CHARS + 10), title='Enorme')
-        self.assertIn('qqqq', self.live())
-        self.login()
+        self.assertEqual(KnowledgeSource.objects.filter(status='active').count(), 1)
+        # No override exists anymore: the old checkbox is gone from the page.
         resp = self.http.get(reverse('knowledge') + '?client=acme')
-        self.assertContains(resp, 'por encima del límite recomendado')
-        self.assertContains(resp, '"Enorme" supera')
+        self.assertNotContains(resp, 'override_caps')
+
+    @override_settings(DOMINIO_KNOWLEDGE_HARD_MAX_CHARS=10_000)
+    def test_existing_over_ceiling_knowledge_keeps_working_and_is_flagged(self):
+        self.src(content='q' * 12_000, title='Enorme')
+        self.assertIn('qqqq', self.live())
+        resp = self.http.get(reverse('knowledge') + '?client=acme')
+        self.assertContains(resp, 'Por encima del techo técnico')
+        self.assertContains(resp, '100% usado')
+
+    @override_settings(DOMINIO_AGENT_MODEL='claude-haiku-5-5',
+                       DOMINIO_MODEL_PRICES={'claude-haiku-5-5': {
+                           'input': 0.10, 'output': 0.50, 'cache_write': 0.125, 'cache_read': 0.01}})
+    def test_size_report_shows_tokens_and_cost_per_question(self):
+        self.src(content='k' * 49_200, title='Catálogo')
+        report = publishing.size_report(self.acme)
+        self.assertEqual((report['total_chars'], report['tokens']), (49_200, 12_300))
+        self.assertEqual(str(report['usd']), '0.001230')
+        self.assertEqual(str(report['usd_cached']), '0.000123')
+        self.assertEqual((report['usd_display'], report['usd_cached_display']),
+                         ('$0.0012', '$0.0001'))
+        self.assertEqual((report['hard_max'], report['hard_pct'], report['over_hard']),
+                         (160_000, 31, False))
+        self.assertTrue(report['over_total'])
+        resp = self.http.get(reverse('knowledge') + '?client=acme')
+        self.assertContains(resp, '49,200 caracteres ≈ 12,300 tokens → ~$0.0012 por pregunta sin caché '
+                                  '($0.0001 con caché leída), con claude-haiku-5-5')
+
+    def test_hard_max_setting_defaults_and_floor(self):
+        with self.settings():
+            from django.conf import settings
+            del settings.DOMINIO_KNOWLEDGE_HARD_MAX_CHARS
+            self.assertEqual(publishing.hard_max_chars(), 160_000)
+        self.assertEqual(settings_value('DOMINIO_KNOWLEDGE_HARD_MAX_CHARS'), 160_000)
+        with override_settings(DOMINIO_KNOWLEDGE_HARD_MAX_CHARS=5):
+            self.assertEqual(publishing.hard_max_chars(), 1_000)
+        # A .env cannot push the ceiling past the model-safe maximum.
+        with override_settings(DOMINIO_KNOWLEDGE_HARD_MAX_CHARS=10_000_000):
+            self.assertEqual(publishing.hard_max_chars(), 400_000)
 
 
-class PlanGateTests(VersioningBase):
-    def test_can_publish_matrix(self):
-        self.assertFalse(publishing.can_publish(self.admin, self.acme))  # no subscription
+def settings_value(name):
+    from django.conf import settings
+    return getattr(settings, name)
+
+
+class StaffOnlyTests(VersioningBase):
+    """Phase I: tenants do not manage their knowledge; DOMINIO does."""
+
+    KNOWLEDGE_URLS = ('knowledge', 'knowledge_save', 'knowledge_scan', 'knowledge_upload',
+                      'knowledge_test')
+
+    def test_can_publish_is_staff_only_whatever_the_plan(self):
         self.assertTrue(publishing.can_publish(self.staff, self.acme))
-        sub = self.plan('starter')
+        self.assertFalse(publishing.can_publish(self.admin, self.acme))
+        self.plan('pro')
         self.acme.refresh_from_db()
         self.assertFalse(publishing.can_publish(self.admin, self.acme))
-        for plan, status, expected in (('pro', 'active', True), ('scale', 'past_due', True),
-                                       ('custom', 'active', True), ('pro', 'canceled', False),
-                                       ('pro', 'incomplete', False)):
-            Subscription.objects.filter(pk=sub.pk).update(plan=plan, status=status)
-            self.acme.refresh_from_db()
-            self.assertEqual(publishing.can_publish(self.admin, self.acme), expected,
-                             (plan, status))
-        Subscription.objects.filter(pk=sub.pk).update(plan='pro', status='active')
-        self.acme.refresh_from_db()
         self.assertFalse(publishing.can_publish(self.agent_user, self.acme))
         self.assertFalse(publishing.can_publish(self.outsider, self.acme))
+        self.assertFalse(publishing.can_publish(self.staff, None))
 
-    def test_starter_gets_403_on_activate_and_owner_notified_once(self):
-        self.plan('starter')
-        self.login()
-        resp = self.http.post(reverse('knowledge_save'), {
-            'client': 'acme', 'kind': 'text', 'title': 'Precios', 'content': 'Corte $25.'},
-            follow=True)
-        self.assertContains(resp, publishing.REVIEW_MESSAGE)
-        draft = KnowledgeSource.objects.get()
-        self.assertEqual(len(mail.outbox), 1)
-        msg = mail.outbox[0]
-        self.assertEqual(msg.to, ['ops@example.com'])
-        self.assertIn('Acme', msg.subject)
-        self.assertIn('Precios', msg.body)
-        self.assertIn('https://dominiopr.com/', msg.body)
-        self.assertIn('?client=acme', msg.body)
+    def test_org_admin_is_redirected_with_the_message_on_every_knowledge_url(self):
+        self.plan('pro')
+        draft = self.src(status='draft')
+        self.login(self.admin)
+        resp = self.http.get(reverse('knowledge'), follow=True)
+        self.assertRedirects(resp, reverse('dashboard'))
+        self.assertContains(resp, platform_views.KNOWLEDGE_CLIENT_MESSAGE)
+        self.assertContains(resp, 'hola@dominiopr.com')
+        self.assertEqual(self.save().status_code, 302)
+        self.assertEqual(self.http.post(reverse('knowledge_scan'),
+                                        {'client': 'acme', 'url': 'https://acme.com/'}).status_code, 302)
+        self.assertEqual(self.http.post(reverse('knowledge_test'),
+                                        {'client': 'acme', 'question': 'hola'}).status_code, 302)
         resp = self.act(draft, 'activate')
-        self.assertEqual(resp.status_code, 403)
+        self.assertRedirects(resp, reverse('dashboard'), fetch_redirect_response=False)
         draft.refresh_from_db()
         self.assertEqual(draft.status, 'draft')
-        self.save(pk=draft.pk, title='Precios', content='Corte $30.')  # same day: no new email
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual(AuditEvent.objects.filter(action='knowledge.publish_request').count(), 1)
-        self.assertNotIn('$30', self.live())
+        self.assertEqual(KnowledgeSource.objects.count(), 1)  # the save created nothing
+        self.assertFalse(AuditEvent.objects.filter(action__startswith='knowledge.').exists())
 
-    def test_starter_cannot_archive_or_restore_live_sources_and_buttons_hidden(self):
-        self.plan('starter')
-        active = self.src()
-        old = self.src(content='Viejo.', status='archived')
-        active.replaces = old
-        active.save()
-        self.src(title='Borrador', content='B.', status='draft')
-        self.login()
-        self.assertEqual(self.act(active, 'archive').status_code, 403)
-        self.assertEqual(self.act(old, 'restore').status_code, 403)
-        active.refresh_from_db()
-        self.assertEqual(active.status, 'active')
-        resp = self.http.get(reverse('knowledge') + '?client=acme')
-        self.assertContains(resp, publishing.REVIEW_MESSAGE)
-        for hidden in ('value="activate"', 'value="restore"', 'value="archive"'):
-            self.assertNotContains(resp, hidden)
-
-    def test_starter_can_still_delete_its_own_draft(self):
-        draft = self.src(status='draft')
-        self.login()
-        self.act(draft, 'delete')
+    def test_org_admin_upload_is_refused_before_the_body_is_read(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.login(self.admin)
+        with patch.object(ingest, 'BoundedMemoryUploadHandler',
+                          side_effect=AssertionError('handler installed for a tenant')):
+            resp = self.http.post(reverse('knowledge_upload'), {
+                'client': 'acme', 'file': SimpleUploadedFile('a.txt', b'abc')}, follow=True)
+        self.assertRedirects(resp, reverse('dashboard'))
+        self.assertContains(resp, platform_views.KNOWLEDGE_CLIENT_MESSAGE)
         self.assertFalse(KnowledgeSource.objects.exists())
 
-    def test_no_plan_editing_active_source_still_keeps_it_live(self):
-        active = self.src()
-        self.login()
-        self.save(pk=active.pk)
-        active.refresh_from_db()
-        self.assertEqual(active.status, 'active')
-        self.assertEqual(len(mail.outbox), 1)
+    def test_nav_shows_knowledge_to_staff_only(self):
+        self.login(self.admin)
+        resp = self.http.get(reverse('dashboard'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, reverse('knowledge'))
+        self.assertNotContains(resp, '>Conocimiento<')
+        self.assertContains(resp, '>Usuarios<')  # the rest of the admin nav stays
+        # Users, contacts and locations keep their own org_admin gate.
+        self.assertEqual(self.http.get(reverse('dash_users') + '?client=acme').status_code, 200)
+        self.login(self.staff)
+        resp = self.http.get(reverse('dashboard'))
+        self.assertContains(resp, '>Conocimiento<')
 
-    def test_pro_org_admin_can_publish_and_no_email(self):
-        self.plan('pro')
-        self.login()
-        self.save()
-        draft = KnowledgeSource.objects.get()
-        resp = self.http.get(reverse('knowledge') + '?client=acme')
-        self.assertContains(resp, 'value="activate"')
-        self.assertNotContains(resp, publishing.REVIEW_MESSAGE)
-        self.act(draft, 'activate')
-        draft.refresh_from_db()
-        self.assertEqual(draft.status, 'active')
-        self.assertEqual(len(mail.outbox), 0)
+    def test_staff_sees_the_page_and_switches_tenants(self):
+        self.src(title='De Acme', content='Acme abre a las 9.')
+        self.src(title='De Otro', content='Otro abre a las 10.', client=self.other)
+        self.login(self.staff)
+        resp = self.http.get(reverse('knowledge'))  # no ?client: first tenant
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['client_obj'], self.acme)
+        self.assertContains(resp, 'De Acme')
+        self.assertNotContains(resp, 'De Otro')
+        self.assertContains(resp, 'id="kn-client"')  # the tenant selector
+        resp = self.http.get(reverse('knowledge') + '?client=otro')
+        self.assertEqual(resp.context['client_obj'], self.other)
+        self.assertContains(resp, 'De Otro')
+        self.assertNotContains(resp, 'De Acme')
+        # Unknown slug never falls back to another tenant (a stale form must
+        # not land staff's action on the wrong agent): back to the dashboard.
+        resp = self.http.get(reverse('knowledge') + '?client=nope', follow=True)
+        self.assertRedirects(resp, reverse('dashboard'))
+        self.assertContains(resp, 'No hay ningún agente con ese identificador')
+        # POST picks the tenant from the form.
+        self.http.post(reverse('knowledge_save'), {
+            'client': 'otro', 'kind': 'text', 'title': 'Nuevo', 'content': 'x'})
+        self.assertEqual(KnowledgeSource.objects.get(title='Nuevo').client, self.other)
 
-    def test_staff_publishes_for_a_starter_tenant(self):
-        self.plan('starter')
+    def test_staff_publishes_for_any_tenant_without_plan(self):
         draft = self.src(status='draft')
         self.login(self.staff)
         self.act(draft, 'activate')
         draft.refresh_from_db()
         self.assertEqual(draft.status, 'active')
+        self.assertEqual(len(mail.outbox), 0)  # nothing to ask DOMINIO: DOMINIO did it
 
     def test_agent_role_cannot_publish(self):
         self.plan('pro')
@@ -425,29 +464,42 @@ class PlanGateTests(VersioningBase):
         draft.refresh_from_db()
         self.assertEqual(draft.status, 'draft')
 
-    def test_other_tenant_cannot_touch_the_source(self):
+    def test_other_tenant_admin_cannot_touch_the_source(self):
         self.plan('pro')
         self.plan('pro', client=self.other)
         active = self.src()
         self.login(self.outsider)
-        self.assertEqual(self.act(active, 'archive', client='otro').status_code, 404)
-        self.assertEqual(self.act(active, 'archive', client='acme').status_code, 302)
+        for client in ('otro', 'acme'):
+            resp = self.act(active, 'archive', client=client)
+            self.assertRedirects(resp, reverse('dashboard'), fetch_redirect_response=False)
         resp = self.http.post(reverse('knowledge_save'), {
             'client': 'otro', 'pk': active.pk, 'kind': 'text', 'title': 'X', 'content': 'y'})
-        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.status_code, 302)
         active.refresh_from_db()
         self.assertEqual((active.status, active.content), ('active', 'Abrimos de 9 a 5.'))
         self.assertEqual(KnowledgeSource.objects.count(), 1)
 
+    def test_page_copy_is_for_staff_not_the_tenant(self):
+        self.login(self.staff)
+        resp = self.http.get(reverse('knowledge') + '?client=acme')
+        self.assertContains(resp, 'Solo staff de DOMINIO ve esta página')
+        self.assertContains(resp, 'Escanear el sitio')
+        self.assertNotContains(resp, 'Escanear mi sitio')
+        self.assertNotContains(resp, 'DOMINIO lo publica')
+        self.assertNotContains(resp, 'revisa y publica tus cambios')
+
 
 class IngestNotificationTests(VersioningBase):
+    """A finished scan/upload is a draft only staff can publish: DOMINIO gets
+    one email per source per day, whatever the tenant's plan."""
+
     def run_cron(self, source):
         with patch.object(ingest, 'run_source', return_value='draft'), \
                 patch.object(ingest, 'claim', return_value=True), \
                 patch.object(ingest, 'pending_ids', return_value=[source.pk]):
             ingest.process_pending(limit=1)
 
-    def test_finished_scan_for_starter_notifies_owner_once(self):
+    def test_finished_scan_notifies_dominio_once(self):
         self.plan('starter')
         src = self.src(kind='site', status='draft', origin='https://acme.com/',
                        title='Sitio web: acme.com')
@@ -455,17 +507,17 @@ class IngestNotificationTests(VersioningBase):
         self.run_cron(src)
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn('Sitio web: acme.com', mail.outbox[0].body)
+        self.assertIn('?client=acme', mail.outbox[0].body)
         event = AuditEvent.objects.get(action='knowledge.publish_request')
         self.assertEqual((event.client, event.user), (self.acme, None))
 
-    def test_finished_scan_for_pro_sends_nothing(self):
+    def test_finished_upload_notifies_whatever_the_plan(self):
         self.plan('pro')
         src = self.src(kind='file', status='draft', origin='archivo: a.pdf', title='a.pdf')
         self.run_cron(src)
-        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(len(mail.outbox), 1)
 
-    def test_starter_url_save_notifies_when_the_cron_makes_the_draft(self):
-        self.plan('starter')
+    def test_url_saved_by_staff_notifies_when_the_cron_makes_the_draft(self):
         self.login()
         resp = self.save(kind='url', title='Precios', content='',
                          origin='https://acme.com/precios')
@@ -478,8 +530,8 @@ class IngestNotificationTests(VersioningBase):
 
 
 class ReviewEmailCapTests(VersioningBase):
-    """M3: a Starter tenant creating draft after draft gets at most
-    CLIENT_DAILY_REVIEW_EMAILS review emails a day."""
+    """M3: a burst of drafts gets at most CLIENT_DAILY_REVIEW_EMAILS review
+    emails a day."""
 
     def test_six_drafts_same_day_send_five_emails(self):
         drafts = [self.src(status='draft', title=f'Borrador {i}') for i in range(6)]
@@ -505,7 +557,6 @@ class KnowledgeActionThrottleTests(VersioningBase):
     """M1: knowledge_action is rate-limited like knowledge_save."""
 
     def test_21st_action_is_throttled(self):
-        self.plan('pro')
         self.login()
         draft = self.src(status='draft')
         for _ in range(20):

@@ -111,3 +111,23 @@ que el tema no esta en los documentos (solo nombra el contacto de RRHH que
 si sale del manual); en el recado urgente de la inundacion el recepcionista
 guardo el mensaje con el local sin resolver y lo pregunto despues, y escribio
 el `summary` en ingles. Pendientes de decision, no fallos.
+
+Repeticion 2026-10-15 (misma configuracion) tras los dos ajustes aprobados
+("Fuente:" solo cuando la respuesta sale del documento; recado sin local con
+2+ locales = rechazo suave; `summary` en el idioma del visitante) y con los
+handlers falsos del eval aplicando ya la regla del local:
+
+| Fixture | Casos | Pasados | Latencia prom. | Llamadas | Costo | Archivo |
+| --- | --- | --- | --- | --- | --- | --- |
+| `interno.txt` | 14 | 14 | 1.73 s | 16 | $0.0025 | `2026-10-15-interno-low-v2.txt` |
+| `recepcion.txt` | 18 | 18 | 2.54 s | 47 | $0.0093 | `2026-10-15-recepcion-low-v3.txt` |
+| `locales.txt` | 18 | 17 | 2.26 s | 37 | $0.0066 | `2026-10-15-locales-low-v2.txt` |
+
+Observado: el perfil interno ya no cita "Fuente:" en las respuestas que dicen
+que el tema no esta en los documentos (solo cuando ademas aporta algo del
+manual); el recado de la inundacion se guarda con `location=Caguas` y el
+`summary` en espanol, y cuando el modelo lo intenta sin local el handler lo
+rechaza y el agente pregunta el local antes de reintentar. El unico fallo de
+`locales.txt` (03.2) fue "el proximo viernes" pedido un jueves: el agente
+pregunto si era manana o en ocho dias y no reservo. No es regresion; el caso
+quedo con fecha absoluta.

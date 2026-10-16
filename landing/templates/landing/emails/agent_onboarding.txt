@@ -1,12 +1,15 @@
 Tu agente de IA está listo, {{ client.name }}.
 
-Instálalo en tu página web pegando esta línea justo antes de </body>:
-
-{% autoescape off %}{{ embed }}{% endautoescape %}
-
-Eso es todo — tu agente aparece en tu página, atiende a los visitantes 24/7 y te envía cada lead por correo.
-
-Funciona en WordPress, Wix, Squarespace, Shopify o HTML simple. Pégala en el área de "código personalizado" / header-footer de tu página.
+Lo instalamos nosotros: no tienes que pegar código ni tocar tu página.
+{% if install_url %}
+QUÉ NECESITAMOS DE TI
+Cuéntanos cómo entrar a tu página (o el contacto de tu webmaster) aquí:
+{{ install_url }}
+{% else %}
+QUÉ NECESITAMOS DE TI
+Responde a este correo con cómo entrar a tu página (o el contacto de tu webmaster).
+{% endif %}
+En cuanto esté en vivo te avisamos por correo. Desde ese momento tu agente atiende a los visitantes 24/7 y te envía cada lead.
 {% if login %}
 TU DASHBOARD DE LEADS
 Ve cada lead, actualiza su estado y responde por correo — todo en un solo lugar:
@@ -15,7 +18,7 @@ Correo: {{ login.username }}{% if login.setup_url %}
 Crea tu contraseña aquí (vale 7 días, una sola vez):
 {% autoescape off %}{{ login.setup_url }}{% endautoescape %}{% endif %}
 {% endif %}
-¿Necesitas ayuda para instalarlo? Solo responde a este correo.
+¿Dudas? Solo responde a este correo.
 
 — DOMINIO
 dominiopr.com

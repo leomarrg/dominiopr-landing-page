@@ -28,9 +28,11 @@
                {% if active == 'asistente' %}aria-current="page"{% endif %}>Asistente</a>
             {% endif %}
             {% if IS_ORG_ADMIN %}
+            {% if request.user.is_staff %}{# Phase I: knowledge is loaded and maintained by DOMINIO #}
             <a href="{% url 'knowledge' %}"
                class="dash-nav__link {% if active == 'knowledge' %}is-active{% endif %}"
                {% if active == 'knowledge' %}aria-current="page"{% endif %}>Conocimiento</a>
+            {% endif %}
             <a href="{% url 'dash_users' %}"
                class="dash-nav__link {% if active == 'users' %}is-active{% endif %}"
                {% if active == 'users' %}aria-current="page"{% endif %}>Usuarios</a>

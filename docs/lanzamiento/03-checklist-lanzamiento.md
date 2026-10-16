@@ -85,11 +85,10 @@ STRIPE_PRICE_STARTER_SETUP=price_...
 STRIPE_PRICE_PRO_SETUP=price_...
 STRIPE_PRICE_SCALE_SETUP=price_...
 
-# --- Twilio (opcional; vacio = sin SMS/WhatsApp, el correo sigue) ---
+# --- Twilio (opcional; solo SMS, vacio = sin SMS, el correo sigue; WhatsApp va por Meta) ---
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
 TWILIO_FROM_SMS=
-TWILIO_FROM_WHATSAPP=
 ```
 
 Reglas del archivo:

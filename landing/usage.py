@@ -32,10 +32,15 @@ _TOKEN_FIELDS = (
 )
 
 
-def _prices_for(model):
+def prices_for(model):
+    """Price row of DOMINIO_MODEL_PRICES for `model` (longest matching
+    prefix), or None when the model is not in the table."""
     table = getattr(settings, 'DOMINIO_MODEL_PRICES', {}) or {}
     matches = [prefix for prefix in table if model and model.startswith(prefix)]
     return table[max(matches, key=len)] if matches else None
+
+
+_prices_for = prices_for
 
 
 def cost_for(model, usage):

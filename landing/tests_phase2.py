@@ -513,10 +513,14 @@ class KnowledgeTests(TestCase):
         self.assertIn('$25', self.client_obj.compiled_prompt())
         self.assertIn('Base manual.', self.client_obj.compiled_prompt())
 
-    def test_org_admin_can_save_and_activate_source(self):
-        # Phase 6: self-publishing is a Pro+ feature (Starter: DOMINIO publishes).
-        Subscription.objects.create(client=self.client_obj, plan='pro', status='active')
-        self.http.login(username='admin@acme.com', password='pw12345!')
+    def staff_login(self):
+        get_user_model().objects.create_user('ops@dominiopr.com', password='pw12345!',
+                                             is_staff=True)
+        self.http.login(username='ops@dominiopr.com', password='pw12345!')
+
+    def test_staff_can_save_and_activate_source(self):
+        # Phase I: knowledge is loaded and published by DOMINIO staff only.
+        self.staff_login()
         resp = self.http.post(reverse('knowledge_save'), {
             'client': 'acme', 'kind': 'text', 'title': 'Horario',
             'content': 'Abrimos de 9 a 5.'})
@@ -538,8 +542,17 @@ class KnowledgeTests(TestCase):
         self.assertEqual(KnowledgeSource.objects.count(), 0)
         self.assertEqual(resp2.status_code, 302)
 
-    def test_empty_source_lands_in_error(self):
+    def test_org_admin_cannot_manage_knowledge_either(self):
         self.http.login(username='admin@acme.com', password='pw12345!')
+        resp = self.http.get(reverse('knowledge'), follow=True)
+        self.assertRedirects(resp, reverse('dashboard'))
+        self.assertContains(resp, 'lo gestiona DOMINIO')
+        self.http.post(reverse('knowledge_save'), {
+            'client': 'acme', 'kind': 'text', 'title': 'X', 'content': 'y'})
+        self.assertEqual(KnowledgeSource.objects.count(), 0)
+
+    def test_empty_source_lands_in_error(self):
+        self.staff_login()
         self.http.post(reverse('knowledge_save'), {
             'client': 'acme', 'kind': 'text', 'title': 'Vacía', 'content': ''})
         src = KnowledgeSource.objects.get()
@@ -836,7 +849,9 @@ class SelfServicePagesTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.context['client'], self.a)
         self.assertEqual(resp.context['status'], 'pending')
-        self.assertIn('key=a', resp.context['embed'])
+        # The client never installs: the snippet is not handed to them.
+        self.assertNotIn('embed', resp.context)
+        self.assertNotContains(resp, 'widget.js?key=a')
         # Asking for another tenant by slug never resolves it.
         resp_b = self.http.get(reverse('install') + '?client=b')
         self.assertEqual(resp_b.status_code, 404)
@@ -1391,14 +1406,19 @@ class InstallPermissionTests(TestCase):
         self.http.login(username='ag@a.com', password='pw12345!')
 
     def test_agent_role_can_read_but_not_submit(self):
-        self.assertEqual(self.http.get(reverse('install')).status_code, 200)
+        self.a.install_notes = 'usuario wp: ana / clave-secreta'
+        self.a.save(update_fields=['install_notes'])
+        resp = self.http.get(reverse('install'))
+        self.assertEqual(resp.status_code, 200)
+        # The access notes are for the org_admin who wrote them, not for agents.
+        self.assertNotContains(resp, 'clave-secreta')
         resp = self.http.post(reverse('install'), {
             'website_url': 'https://a-site.com', 'platform': 'wordpress',
             'mode': 'dominio', 'install_notes': 'usuario temporal'})
         self.assertEqual(resp.status_code, 403)
         self.a.refresh_from_db()
         self.assertEqual(self.a.website_url, '')
-        self.assertEqual(self.a.install_notes, '')
+        self.assertEqual(self.a.install_notes, 'usuario wp: ana / clave-secreta')  # untouched
         self.assertEqual(mail.outbox, [])
 
 
@@ -2111,9 +2131,36 @@ class ReceiptTests(TestCase):
         self.assertEqual(views._charged_from_session({'id': 'cs_x'}), {})
 
 
+class InstallPageNeverOffersDIYTests(TestCase):
+    """The client never installs anything (2026-10-15): the page only asks
+    how we get into their site, and the notes are always required."""
+
+    def setUp(self):
+        self.c = Client.objects.create(slug='acme', name='Acme PR', system_prompt='x',
+                                       notify_email='ana@acme.com')
+        user = get_user_model().objects.create_user('ana', 'ana@acme.com', 'pw')
+        Membership.objects.create(user=user, client=self.c, role='org_admin')
+        self.client.login(username='ana', password='pw')
+
+    def test_page_has_no_self_install_option_or_snippet(self):
+        resp = self.client.get(reverse('install'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, 'Lo instalo yo')
+        self.assertNotContains(resp, 'Pega el snippet')
+        self.assertNotContains(resp, 'widget.js?key=acme')
+        self.assertContains(resp, 'No tienes que instalar nada')
+
+    def test_notes_are_required_even_if_a_mode_is_posted(self):
+        resp = self.client.post(reverse('install'), {'website_url': 'https://acme.com',
+                                                     'platform': '', 'mode': 'yo'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('install_notes', resp.context['errors'])
+        self.assertNotIn('Pega el snippet', resp.content.decode())
+
+
 class WelcomeEmailInstallTests(TestCase):
-    """Someone who just paid $500-$2,500 for installation must not be handed
-    instructions to do it themselves — that reads as us returning the work."""
+    """The client never installs anything: DOMINIO does. No email may hand
+    them the snippet or do-it-yourself instructions, whatever they paid."""
 
     def setUp(self):
         self.c = Client.objects.create(slug='acme', name='Acme PR', system_prompt='x',
@@ -2125,25 +2172,35 @@ class WelcomeEmailInstallTests(TestCase):
             self.c, 'Pro', None, 'https://x/instalar',
             '<script src="https://dominiopr.com/widget.js?key=acme" async></script>',
             setup_fee_charged=setup_fee_charged)
-        return mail.outbox[0].body
+        return mail.outbox[0]
 
-    def test_paid_install_hides_the_do_it_yourself_snippet(self):
-        body = self._send(True)
-        self.assertIn('nosotros la hacemos', body)
-        self.assertNotIn('PLAN B', body)
-        self.assertNotIn('widget.js', body)
+    def test_paid_install_never_shows_the_snippet(self):
+        m = self._send(True)
+        self.assertIn('lo hace DOMINIO', m.body)
+        self.assertNotIn('PLAN B', m.body)
+        self.assertNotIn('widget.js', m.body)
+        self.assertNotIn('widget.js', m.alternatives[0][0])
 
-    def test_without_a_setup_fee_the_snippet_stays(self):
-        body = self._send(False)
-        self.assertIn('PLAN B', body)
-        self.assertIn('widget.js', body)
+    def test_without_a_setup_fee_the_snippet_is_still_hidden(self):
+        m = self._send(False)
+        self.assertIn('lo hace DOMINIO', m.body)
+        self.assertNotIn('PLAN B', m.body)
+        self.assertNotIn('widget.js', m.body)
+        self.assertIn('https://x/instalar', m.body)
 
-    def test_the_snippet_is_pasteable_not_html_escaped(self):
-        """The plain-text part used to render &lt;script ...&gt;, so anyone who
-        copied it from a text-only mail client pasted something inert."""
-        body = self._send(False)
-        self.assertIn('<script src="https://dominiopr.com/widget.js?key=acme"', body)
-        self.assertNotIn('&lt;script', body)
+    def test_onboarding_email_says_dominio_installs(self):
+        mail.outbox = []
+        views._send_onboarding_email(
+            self.c, '<script src="https://dominiopr.com/widget.js?key=acme" async></script>',
+            login={'username': 'ana@acme.com', 'setup_url': None, 'url': 'https://x/dashboard/'},
+            install_url='https://x/dashboard/instalar/')
+        m = mail.outbox[0]
+        self.assertIn('lo instalamos nosotros', m.subject)
+        self.assertIn('Lo instalamos nosotros', m.body)
+        self.assertIn('https://x/dashboard/instalar/', m.body)
+        self.assertNotIn('widget.js', m.body)
+        self.assertNotIn('widget.js', m.alternatives[0][0])
+        self.assertNotIn('</body>', m.body)
 
 
 class CheckoutTaxTests(TestCase):

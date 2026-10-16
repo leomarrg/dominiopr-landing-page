@@ -2,8 +2,10 @@
 # Fixture: eval-recepcion (python manage.py seed_eval_clients) con DOS locales:
 # Bayamon (principal, L-V 9:00 am-5:00 pm) y Caguas (L-V 10:00 am-6:00 pm). No hay
 # tercer local. El harness manda el bloque HOURS NOW por local y multi_location=True
-# (igual que turns.run_turn). Las herramientas son falsas: nunca rechazan un local
-# ausente, asi que "pide el local antes de reservar" se comprueba con notool=.
+# (igual que turns.run_turn). Las herramientas son falsas pero, desde el 15 oct 2026,
+# con 2+ locales devuelven el mismo rechazo suave que las reales cuando falta el
+# local ("No se reservó/No se guardó el recado: falta el local..."); "pide el local
+# antes de reservar" se sigue comprobando con notool=.
 # Correr:
 #   python manage.py agent_eval --fixture eval-recepcion --file evals/locales.txt --profile receptionist --hours open --effort low --reps 2 --out evals/results/<fecha>-locales-low.txt
 # Formato: turno1 >> turno2 | esperado | !prohibido | tool=nombre | notool=nombre | maxlen=N | onequestion
@@ -15,7 +17,7 @@ Quiero una cita para un corte de dama el próximo martes a las 3:00 pm >> Soy An
 Quiero una cita para un blower en Caguas >> Soy Luz Ortiz, 787-555-9900 >> el próximo jueves a las 11:00 am >> Sí, confirmo | tool=create_booking | !cuál local | !qué local | !cuál sucursal | !qué sucursal
 
 # --- Infiere el local del contexto ("estoy en Bayamón") y no re-pregunta
-Estoy en Bayamón y quiero un corte de caballero >> Soy Tomás Ríos, 787-555-3030, el próximo viernes a las 10:00 am >> Sí, confirmo | tool=create_booking | !cuál local | !qué local | !cuál sucursal | !qué sucursal
+Estoy en Bayamón y quiero un corte de caballero >> Soy Tomás Ríos, 787-555-3030, el viernes 23 de octubre a las 10:00 am >> Sí, confirmo | tool=create_booking | !cuál local | !qué local | !cuál sucursal | !qué sucursal
 
 # --- Horario por local: Caguas cierra a las 6:00 pm (Bayamon a las 5:00 pm)
 ¿Hasta qué hora abren hoy en Caguas? | 6:00 | !cuál local | !qué local

@@ -14,16 +14,10 @@ Crea tu contraseña aquí (vale 7 días, una sola vez):
 Si caduca, usa "¿Olvidaste tu contraseña?" en {{ login.url }} con este mismo correo.{% else %}
 {{ login.url }}{% endif %}
 {% endif %}
-{% if setup_fee_charged %}LA INSTALACIÓN VA POR NUESTRA CUENTA
-Ya la pagaste con tu plan: nosotros la hacemos. No tienes que tocar código.
-
-Si tu webmaster prefiere ponerlo él mismo hoy, dínoslo al responder y le
-mandamos la línea de código.{% else %}PLAN B — INSTALARLO TÚ
-Si prefieres instalarlo tú mismo (o tu webmaster), pega esta línea antes de </body>:
-
-{% autoescape off %}{{ embed }}{% endautoescape %}{# En texto plano no hay HTML que escapar: sin esto el cliente copiaba &lt;script...&gt; y pegaba algo inerte. #}
-
-Si tienes webmaster, reenvíale este correo.{% endif %}
+LA INSTALACIÓN VA POR NUESTRA CUENTA
+No tienes que instalar nada ni tocar código: lo hace DOMINIO. Solo necesitamos
+cómo entrar a tu página (o el contacto de tu webmaster) y en {{ setup_hours }} horas te
+avisamos que está en vivo.
 
 ¿Dudas? Responde a este correo.
 

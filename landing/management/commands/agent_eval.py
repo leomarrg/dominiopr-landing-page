@@ -107,14 +107,29 @@ def parse_case(line):
     return case
 
 
-def fake_handlers(called, inputs=None):
+def fake_handlers(called, inputs=None, client=None):
     """Recording stand-ins for the real tool handlers: no DB writes, no email.
-    `inputs` (optional list) receives (name, tool_input) for the transcript."""
+    `inputs` (optional list) receives (name, tool_input) for the transcript.
+    `client` (optional) lets the stand-ins mirror the one rule the real
+    handlers answer with text instead of saving: with 2+ locations a booking or
+    a message without a recognisable location is a soft rejection, so the eval
+    sees the same second turn the visitor would."""
+    locations = list(client.locations.all()) if client is not None else []
+
     def make(name):
         def handler(tool_input):
             called.append(name)
             if inputs is not None:
                 inputs.append((name, dict(tool_input or {})))
+            if name in ('create_booking', 'take_message') and len(locations) > 1:
+                from landing.models import match_location
+                if match_location(client, (tool_input or {}).get('location')) is None:
+                    names = ', '.join(l.name for l in locations)
+                    if name == 'create_booking':
+                        return ('No se reservó: falta el local. Pregunta en cuál local quiere '
+                                f'la cita: {names}.')
+                    return ('No se guardó el recado: falta el local. Pregunta en cuál local '
+                            f'ocurre: {names}.')
             return 'Listo: guardado correctamente.'
         return handler
     return {name: make(name) for name in TOOLS}
@@ -362,7 +377,7 @@ class Command(BaseCommand):
             for rep in range(reps):
                 runs += 1
                 called, inputs, history, replies = [], [], [], []
-                handlers = fake_handlers(called, inputs)
+                handlers = fake_handlers(called, inputs, client=case_client)
                 with hours_injection(line_hours):
                     for turn in case['turns']:
                         history.append({'role': 'user', 'content': turn})

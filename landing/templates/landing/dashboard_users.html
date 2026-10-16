@@ -37,7 +37,7 @@
 
 <div class="dash-card">
     <h2>Invitar usuario</h2>
-    <p class="dash-muted"><b>Administrador</b> gestiona conocimiento, usuarios y configuración; <b>Agente</b> solo trabaja leads y conversaciones; <b>Empleado</b> solo usa el asistente interno (un asiento de tu plan).</p>
+    <p class="dash-muted"><b>Administrador</b> gestiona usuarios y configuración (el conocimiento del agente lo carga y mantiene DOMINIO); <b>Agente</b> solo trabaja leads y conversaciones; <b>Empleado</b> solo usa el asistente interno (un asiento de tu plan).</p>
     {% if has_internal %}
     <p class="dash-sub" id="us-seats">Asientos del asistente interno: <b>{{ seats_used }}</b> de {{ seats_included }} en uso.</p>
     {% else %}

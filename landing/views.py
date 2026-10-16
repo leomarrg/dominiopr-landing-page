@@ -474,10 +474,12 @@ def booking_sms_where(booking):
     return f' en {fold_text(booking.location.name).title()}'
 
 
-def _send_onboarding_email(client, embed_snippet, login=None):
-    """Email the client the DIY install instructions (snippet + dashboard login).
-    Only for clients set up by hand who install the widget themselves; a
-    self-serve buyer gets `_send_welcome_email` (DOMINIO installs for them).
+def _send_onboarding_email(client, embed_snippet, login=None, install_url=None):
+    """Email a hand-activated client that their agent is ready and that DOMINIO
+    installs it (the client never pastes code: `install_url` is where they tell
+    us how to reach their site). `embed_snippet` is kept for the call signature
+    and the audit trail; it is no longer rendered. A self-serve buyer gets
+    `_send_welcome_email` instead.
 
     `login` (optional) is {'username', 'password'|None, 'url'} so the client also
     gets their dashboard credentials — the 'Your own leads dashboard' they're
@@ -485,11 +487,11 @@ def _send_onboarding_email(client, embed_snippet, login=None):
     """
     reply_to = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
     return _send_html_email(
-        subject=f'Instala tu agente de IA — instrucciones ({client.name})',
+        subject=f'Tu agente de IA está listo — lo instalamos nosotros ({client.name})',
         to=[client.notify_email],
         html_template='landing/emails/agent_onboarding.html',
         txt_template='landing/emails/agent_onboarding.txt',
-        context={'client': client, 'embed': embed_snippet, 'login': login},
+        context={'client': client, 'login': login, 'install_url': install_url},
         reply_to=[reply_to] if reply_to else None,
     )
 
@@ -503,8 +505,9 @@ def _embed_snippet(base_url, slug):
 def _send_welcome_email(client, plan_name, login, install_url, embed,
                         setup_fee_charged=False):
     """Post-payment welcome: what was bought, dashboard credentials and the
-    'tell us how to access your site' link. Replaces the old install email for
-    self-serve clients (DOMINIO installs the widget; the 'live' email follows)."""
+    'tell us how to access your site' link. DOMINIO installs the widget, so
+    `embed` is accepted for the call signature but never rendered to the
+    client (the 'live' email follows once operations has installed it)."""
     reply_to = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
     return _send_html_email(
         subject=f'Pago recibido — tu agente de IA está en camino ({client.name})',
@@ -512,7 +515,7 @@ def _send_welcome_email(client, plan_name, login, install_url, embed,
         html_template='landing/emails/agent_welcome.html',
         txt_template='landing/emails/agent_welcome.txt',
         context={'client': client, 'plan_name': plan_name, 'login': login,
-                 'install_url': install_url, 'embed': embed, 'setup_hours': 48,
+                 'install_url': install_url, 'setup_hours': 48,
                  'setup_fee_charged': setup_fee_charged},
         reply_to=[reply_to] if reply_to else None,
     )
@@ -730,7 +733,7 @@ def _chat_lead_handler(request, client_obj=None, page_url='', conversation=None,
         if conversation is not None:
             Conversation.objects.filter(pk=conversation.pk).update(lead=submission)
         _send_lead_emails(submission, notify_to=notify_to)
-        # M-06: optional WhatsApp/SMS ping on top of the email.
+        # M-06: optional SMS ping on top of the email (Twilio is SMS only).
         notify.notify_client(
             client_obj,
             f'DOMINIO Chat: nuevo lead para {business_name} — {name} '
@@ -2937,18 +2940,21 @@ def _no_client_response(request):
 @_rate_limited('install', limit=20, window=300)
 def install(request):
     """Client-facing 'how do we get into your site' page. DOMINIO installs
-    the widget (done-for-you); the client can also paste the snippet themselves."""
+    the widget, always: the client never pastes code (decision 2026-10-15),
+    so the page only collects the site, the platform and the access notes
+    and tells operations."""
     client = _own_client(request)
     if client is None:
         return _no_client_response(request)
     embed = _embed_snippet(request.build_absolute_uri('/'), client.slug)
     # Prefill from what we already have: a returning customer must see their own
     # answers, not empty boxes that overwrite them on submit.
+    # The access notes are the sensitive bit: only an org_admin (who can
+    # submit them) gets them prefilled; an agent sees the page without them.
     form, errors, saved = {
         'website_url': client.website_url,
         'platform': client.platform,
-        'install_notes': client.install_notes,
-        'mode': 'dominio',
+        'install_notes': client.install_notes if _is_org_admin(request.user, client) else '',
     }, {}, False
 
     if request.method == 'POST':
@@ -2958,7 +2964,6 @@ def install(request):
         form = {
             'website_url': (request.POST.get('website_url') or '').strip()[:200],
             'platform': (request.POST.get('platform') or '').strip()[:40],
-            'mode': (request.POST.get('mode') or 'dominio').strip()[:10],
             'install_notes': (request.POST.get('install_notes') or '').strip()[:3000],
         }
         website = _normalize_website(form['website_url'])
@@ -2966,9 +2971,7 @@ def install(request):
             errors['website_url'] = 'Escribe la dirección completa de tu sitio, ej. https://tunegocio.com'
         if form['platform'] and form['platform'] not in dict(Client.PLATFORM_CHOICES):
             errors['platform'] = 'Escoge una plataforma de la lista.'
-        if form['mode'] not in ('dominio', 'yo'):
-            errors['mode'] = 'Escoge una opción.'
-        if form['mode'] == 'dominio' and not form['install_notes'] and not errors:
+        if not form['install_notes'] and not errors:
             errors['install_notes'] = ('Cuéntanos cómo entrar a tu sitio (o con quién '
                                        'coordinar) para instalar el agente.')
         if not errors:
@@ -2982,24 +2985,21 @@ def install(request):
             client.save(update_fields=['website_url', 'platform', 'install_notes',
                                        'allowed_origins'])
             _audit(request, 'install.details', client=client,
-                   target=client.slug, result=form['mode'])
-            if form['mode'] == 'dominio':
-                ops_email = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
-                if ops_email:
-                    _send_plain_email(
-                        subject=f'[Instalación] {client.name} envió datos de acceso',
-                        to=[ops_email],
-                        body=(f'Cliente: {client.name} ({client.slug})\n'
-                              f'Email: {client.notify_email}\n'
-                              f'Sitio: {website or "—"}\n'
-                              f'Plataforma: {dict(Client.PLATFORM_CHOICES).get(form["platform"], "—")}\n\n'
-                              f'Notas de acceso: ver en el Factory (no viajan por email).\n\n'
-                              f'Factory: {settings.SITE_URL}{reverse("client_edit", args=[client.pk])}\n'
-                              f'Snippet: {embed}'),
-                        reply_to=[client.notify_email])
-                messages.success(request, 'Recibido. Instalamos tu agente y te avisamos por email cuando esté en vivo.')
-            else:
-                messages.success(request, 'Guardado. Pega el snippet en tu sitio y avísanos cuando esté listo.')
+                   target=client.slug, result='dominio')
+            ops_email = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
+            if ops_email:
+                _send_plain_email(
+                    subject=f'[Instalación] {client.name} envió datos de acceso',
+                    to=[ops_email],
+                    body=(f'Cliente: {client.name} ({client.slug})\n'
+                          f'Email: {client.notify_email}\n'
+                          f'Sitio: {website or "—"}\n'
+                          f'Plataforma: {dict(Client.PLATFORM_CHOICES).get(form["platform"], "—")}\n\n'
+                          f'Notas de acceso: ver en el Factory (no viajan por email).\n\n'
+                          f'Factory: {settings.SITE_URL}{reverse("client_edit", args=[client.pk])}\n'
+                          f'Snippet: {embed}'),
+                    reply_to=[client.notify_email])
+            messages.success(request, 'Recibido. Instalamos tu agente y te avisamos por email cuando esté en vivo.')
             saved = True
             form = {}
         else:
@@ -3007,7 +3007,7 @@ def install(request):
 
     return render(request, 'landing/dashboard_install.html', {
         'active_tab': 'install', 'active': 'install',
-        'client': client, 'embed': embed, 'form': form, 'errors': errors,
+        'client': client, 'form': form, 'errors': errors,
         'platforms': Client.PLATFORM_CHOICES, 'status': client.setup_status,
         'saved': saved,
     })
@@ -3342,7 +3342,7 @@ def client_resend_onboarding(request, pk):
         sub = getattr(client, 'subscription', None)
         sent = _send_welcome_email(
             client, _plan_name(sub.plan if sub else ''), login,
-            request.build_absolute_uri(reverse('install')), embed,
+            f"{settings.SITE_URL}{reverse('install')}", embed,
             setup_fee_charged=bool(sub and sub.setup_fee_charged))
         label = 'de bienvenida'
     else:
@@ -3422,8 +3422,8 @@ def client_form(request, pk=None):
                 except Exception:
                     logger.exception('Greeting generation failed for %s', obj.slug)
                 usage_ledger.record('greeting', greeting_usage, client=obj)
-            # Mark-as-Active = payment confirmed → auto-email install instructions,
-            # once. (Toggle onboarding_sent off in admin to resend.)
+            # Mark-as-Active = payment confirmed → auto-email "your agent is ready,
+            # DOMINIO installs it", once. (Toggle onboarding_sent off in admin to resend.)
             if obj.is_active and not obj.onboarding_sent:
                 embed = (f'<script src="{request.build_absolute_uri("/widget.js")}'
                          f'?key={obj.slug}" async></script>')
@@ -3449,7 +3449,9 @@ def client_form(request, pk=None):
                 except Exception:
                     logger.exception('Failed to provision login for client %s', obj.slug)
                     login_note = ' (no se pudo crear el acceso al dashboard)'
-                sent = _send_onboarding_email(obj, embed, login=login)
+                sent = _send_onboarding_email(
+                    obj, embed, login=login,
+                    install_url=f"{settings.SITE_URL}{reverse('install')}")
                 Client.objects.filter(pk=obj.pk).update(onboarding_sent=True)
                 if sent:
                     messages.success(

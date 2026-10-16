@@ -144,8 +144,14 @@ class Client(models.Model):
         (`https://acme.com/`, `acme.com:8080`, `www.acme.com`): everything is
         reduced to the hostname, because that is what the widget's Referer and
         the chat API's Origin are compared against. An entry that cannot be
-        parsed is dropped rather than left to silently never match."""
+        parsed is dropped rather than left to silently never match.
+        `localhost` / `127.0.0.1` entries (dev conveniences, the seeded
+        DOMINIO client has them) only count while DEBUG is on: since hosts
+        are compared without the port, they would otherwise open the widget,
+        the chat API and the challenge page to any local page in production."""
         from urllib.parse import urlsplit
+        from django.conf import settings
+        local_ok = bool(settings.DEBUG)
         hosts = []
         for raw in self.allowed_origins.split(','):
             entry = raw.strip().lower()
@@ -157,6 +163,8 @@ class Client(models.Model):
                 host = urlsplit(entry).hostname or ''
             except ValueError:
                 host = ''
+            if host in ('localhost', '127.0.0.1', '::1') and not local_ok:
+                continue
             if host and host not in hosts:
                 hosts.append(host)
         return hosts

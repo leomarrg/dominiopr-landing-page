@@ -444,13 +444,29 @@ DOMINIO_AGENT_MAX_TURNS = int(os.environ.get('DOMINIO_AGENT_MAX_TURNS', '12'))
 # M-12: which model provider the agent engine uses (only 'anthropic' today).
 DOMINIO_AGENT_PROVIDER = os.environ.get('DOMINIO_AGENT_PROVIDER', 'anthropic')
 # Phase 8 knowledge ingest (website scan + uploaded files), run by the
-# process_knowledge cron, never inside a web request. Pages per scan, wall-clock
-# seconds per crawl, and the upload ceiling (the file is read in memory only;
-# the upload view uses its own bounded in-memory handler, so the global
-# DATA_UPLOAD_MAX_MEMORY_SIZE above stays at 1 MB for every other view).
-DOMINIO_INGEST_MAX_PAGES = int(os.environ.get('DOMINIO_INGEST_MAX_PAGES', '30'))
-DOMINIO_INGEST_TIME_BUDGET = int(os.environ.get('DOMINIO_INGEST_TIME_BUDGET', '120'))
-DOMINIO_INGEST_UPLOAD_MAX_MB = int(os.environ.get('DOMINIO_INGEST_UPLOAD_MAX_MB', '5'))
+# process_knowledge cron, never inside a web request. Staff-only since Phase I:
+# DOMINIO loads and maintains every tenant's knowledge, so the ceilings are
+# high. Pages per scan, wall-clock seconds per crawl, and the upload ceiling
+# (the file is read in memory only; the upload view uses its own bounded
+# in-memory handler, so the global DATA_UPLOAD_MAX_MEMORY_SIZE above stays at
+# 1 MB for every other view). Raising the upload size also needs
+# client_max_body_size in nginx (deploy/nginx/dominio.conf).
+DOMINIO_INGEST_MAX_PAGES = int(os.environ.get('DOMINIO_INGEST_MAX_PAGES', '500'))
+DOMINIO_INGEST_TIME_BUDGET = int(os.environ.get('DOMINIO_INGEST_TIME_BUDGET', '1200'))
+DOMINIO_INGEST_UPLOAD_MAX_MB = int(os.environ.get('DOMINIO_INGEST_UPLOAD_MAX_MB', '50'))
+# Document text per source sent to the model (cost ceiling of one scan/upload;
+# ~4 chars per token). landing/ingest.py clamps it to 8,000,000.
+DOMINIO_INGEST_MAX_INPUT_CHARS = int(os.environ.get('DOMINIO_INGEST_MAX_INPUT_CHARS', '4000000'))
+# Model and effort for scanning/distilling (NOT the chat): extraction quality
+# matters and it runs a few times per tenant, so Sonnet at medium. Effort is
+# validated against landing.agent._EFFORT_LEVELS; invalid values fall back to
+# medium. The chat and everything else keep DOMINIO_AGENT_MODEL.
+DOMINIO_INGEST_MODEL = os.environ.get('DOMINIO_INGEST_MODEL') or 'claude-sonnet-5-5'
+DOMINIO_INGEST_EFFORT = os.environ.get('DOMINIO_INGEST_EFFORT', 'medium')
+# Physical ceiling for a tenant's ACTIVE knowledge (all sources). Publishing
+# beyond it is refused: every chat question would carry a prompt that big. The
+# 8k/40k figures on the knowledge page are advice only.
+DOMINIO_KNOWLEDGE_HARD_MAX_CHARS = int(os.environ.get('DOMINIO_KNOWLEDGE_HARD_MAX_CHARS', '160000'))
 
 
 # ============================================================
@@ -482,14 +498,15 @@ STRIPE_TAX_RATE_ID = os.environ.get('STRIPE_TAX_RATE_ID', '')
 
 
 # ============================================================
-# NOTIFICATIONS — Twilio WhatsApp/SMS (M-06). Outbound alerts to tenants only;
-# unset = silent no-op (email remains the always-on channel).
+# NOTIFICATIONS — Twilio SMS (M-06). Outbound alerts to tenants and phone-only
+# booking texts; unset = silent no-op (email remains the always-on channel).
+# Twilio is SMS only: the visitors' WhatsApp channel goes direct through the
+# Cloud API of Meta (META_* below, landing/whatsapp.py), decision 2026-10-14.
 # ============================================================
 
 TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
 TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')
 TWILIO_FROM_SMS = os.environ.get('TWILIO_FROM_SMS', '')
-TWILIO_FROM_WHATSAPP = os.environ.get('TWILIO_FROM_WHATSAPP', '')  # e.g. whatsapp:+1787...
 
 
 # ============================================================

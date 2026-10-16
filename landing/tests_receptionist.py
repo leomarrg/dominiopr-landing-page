@@ -153,7 +153,8 @@ class TakeMessageHandlerTests(TestCase):
         with patch(SEND, return_value=True) as send:
             self._handle()
         self.assertEqual(mail.outbox[0].to, ['cobros@salon.com'])
-        self.assertEqual(send.call_args[0][0], 'whatsapp:+17875559999')
+        # Routed contacts marked 'whatsapp' get an SMS too (Twilio is SMS only).
+        self.assertEqual(send.call_args[0][0], '+17875559999')
 
     def test_routed_contact_without_phone_sends_no_text(self):
         """A routed contact with email only means no SMS: the owner's phone
@@ -620,11 +621,11 @@ class NotifyOverrideTests(TestCase):
 
     def test_send_to_and_overrides(self):
         c = make_client(notify_phone='+17875550000', notify_channel='whatsapp')
-        with patch(SEND, side_effect=[False, True]) as send:
+        with patch(SEND, return_value=True) as send:
             self.assertTrue(notify.notify_client(c, 'hola'))
-        # WhatsApp first, SMS fallback.
-        self.assertEqual([call[0][0] for call in send.call_args_list],
-                         ['whatsapp:+17875550000', '+17875550000'])
+        # Twilio is SMS only (WhatsApp goes through Meta): the legacy
+        # 'whatsapp' preference sends one plain SMS, never a whatsapp: sender.
+        self.assertEqual([call[0][0] for call in send.call_args_list], ['+17875550000'])
         with patch(SEND, return_value=True) as send:
             self.assertTrue(notify.notify_client(c, 'hola', phone='+17875551111', channel='sms'))
             self.assertFalse(notify.notify_client(c, 'hola', phone='', channel='sms'))

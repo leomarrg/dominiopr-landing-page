@@ -1,0 +1,135 @@
+# cliente=eval-recepcion perfil=receptionist canal=web horario=open
+[01.1] PASS
+  > Quiero una cita para un corte de dama el próximo martes a las 3:00 pm
+  < ¡Con gusto! ¿Para cuál local te gustaría la cita: Bayamón (Ave. Principal 123) o Caguas (Calle Central 45)?
+  > Soy Ana Pérez, 787-555-7788
+  < Gracias, Ana. Para agendar, ¿en cuál local prefieres la cita: Bayamón (Ave. Principal 123) o Caguas (Calle Central 45)? El martes 20 de octubre a las 3:00 pm ambos están abiertos.
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[01.2] PASS
+  > Quiero una cita para un corte de dama el próximo martes a las 3:00 pm
+  < ¡Con gusto! Para el corte de dama, ¿en cuál local te gustaría la cita: Bayamón (Ave. Principal 123) o Caguas (Calle Central 45)?
+  > Soy Ana Pérez, 787-555-7788
+  < Gracias, Ana. Para reservar, solo me falta saber en qué local: Bayamón (Ave. Principal 123) o Caguas (Calle Central 45). Si es el martes 20 de octubre a las 3:00 pm, ambos locales están abiertos ese día a esa hora.
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[02.1] PASS
+  > Quiero una cita para un blower en Caguas
+  < ¡Con gusto! Para el blower en Caguas, ¿me dices tu nombre, por favor?
+  > Soy Luz Ortiz, 787-555-9900
+  < Gracias, Luz. ¿Qué día y a qué hora te gustaría la cita en Caguas? Ten en cuenta que hoy abrimos hasta las 6:00 pm, y los sábados y domingos estamos cerrados.
+  > el próximo jueves a las 11:00 am
+  < Entendido. Tu cita de blower en Caguas sería el jueves 22 de octubre de 2026 a las 11:00 am, en Calle Central 45, Caguas. ¿Es correcto?
+  > Sí, confirmo
+  < Listo, Luz. Tu cita de blower en Caguas quedó para el jueves 22 de octubre de 2026 a las 11:00 am, en Calle Central 45, Caguas. Si necesitas cancelar, avísanos con 24 horas de anticipación.
+  tools: ['create_booking'] | client=eval-recepcion profile=receptionist channel=web hours=open
+  input create_booking: {'name': 'Luz Ortiz', 'start': '2026-10-22T11:00', 'phone': '7875559900', 'location': 'Caguas', 'service': 'Blower'}
+
+[02.2] PASS
+  > Quiero una cita para un blower en Caguas
+  < ¡Con gusto! Para agendar tu blower en Caguas, ¿me dices tu nombre y cuál es el día y la hora que prefieres? Nuestro horario en Caguas es de lunes a viernes, de 10:00 am a 6:00 pm.
+  > Soy Luz Ortiz, 787-555-9900
+  < Gracias, Luz. Ya tengo tu nombre y tu teléfono. ¿Qué día y a qué hora quieres tu blower en Caguas? Recuerda que atendemos de lunes a viernes, de 10:00 am a 6:00 pm.
+  > el próximo jueves a las 11:00 am
+  < Perfecto, Luz. Entonces tu cita sería el jueves 22 de octubre de 2026, a las 11:00 am, para un blower en nuestro local de Caguas (Calle Central 45, frente a la plaza). ¿Confirmas que es así? Si es correcto, te la reservo con el teléfono 787-555-9900.
+  > Sí, confirmo
+  < ¡Listo, Luz! Tu cita de blower en Caguas quedó reservada para el jueves 22 de octubre de 2026, a las 11:00 am, en Calle Central 45, frente a la plaza. Si necesitas cancelar, avísanos con 24 horas de anticipación. ¿Hay algo más en que te pueda ayudar?
+  tools: ['create_booking'] | client=eval-recepcion profile=receptionist channel=web hours=open
+  input create_booking: {'name': 'Luz Ortiz', 'start': '2026-10-22T11:00', 'location': 'Caguas', 'phone': '7875559900', 'service': 'Blower'}
+
+[03.1] PASS
+  > Estoy en Bayamón y quiero un corte de caballero
+  < Con gusto. El corte de caballero cuesta $20 en el local de Bayamón. Hoy el local cierra a las 5:00 pm, así que si quieres, te puedo agendar una cita para mañana viernes u otro día de la semana. ¿Qué día y hora te quedan bien?
+  > Soy Tomás Ríos, 787-555-3030, el próximo viernes a las 10:00 am
+  < Perfecto, Tomás. Te confirmo los detalles: cita de corte de caballero en el local de Bayamón, el viernes 16 de octubre de 2026 a las 10:00 am, a nombre de Tomás Ríos, y te contactamos al 787-555-3030. ¿Está bien así para reservarla?
+  > Sí, confirmo
+  < Listo, Tomás. Tu cita de corte de caballero en el local de Bayamón quedó para el viernes 16 de octubre de 2026 a las 10:00 am. Te contactaremos al 787-555-3030. Si necesitas cancelar, avísanos con 24 horas de anticipación.
+  tools: ['create_booking'] | client=eval-recepcion profile=receptionist channel=web hours=open
+  input create_booking: {'name': 'Tomás Ríos', 'start': '2026-10-16T10:00', 'phone': '7875553030', 'location': 'Bayamón', 'service': 'Corte de caballero'}
+
+[03.2] FAIL: no llamó create_booking (llamó: ninguna)
+  > Estoy en Bayamón y quiero un corte de caballero
+  < Con gusto. El corte de caballero cuesta $20 en Bayamón. Ahora mismo estamos abiertos, pero cerramos hoy a las 5:00 pm, así que si quieres cortarte el pelo, podemos agendarte una cita para mañana viernes entre 9:00 am y 5:00 pm. ¿Qué día y hora te quedan mejor?
+  > Soy Tomás Ríos, 787-555-3030, el próximo viernes a las 10:00 am
+  < Gracias, Tomás. Para confirmar, ¿te refieres al viernes 16 de octubre a las 10:00 am, o al viernes 23 de octubre a las 10:00 am? Ambos son en Bayamón, para un corte de caballero, y te contactaremos al 787-555-3030. Dime cuál y lo reservo.
+  > Sí, confirmo
+  < Perfecto, Tomás. Pero necesito saber cuál de los dos viernes prefieres: ¿el 16 de octubre o el 23 de octubre, ambos a las 10:00 am en Bayamón? Dime cuál y te lo dejo reservado.
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[04.1] PASS
+  > ¿Hasta qué hora abren hoy en Caguas?
+  < Hoy jueves, Caguas está abierto y cierra a las 6:00 pm. Si quieres, puedo agendarte una cita o dejarle un mensaje al equipo.
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[04.2] PASS
+  > ¿Hasta qué hora abren hoy en Caguas?
+  < Hoy jueves, Caguas está abierto y cierra a las 6:00 pm. Si quieres, te puedo agendar una cita o tomar un mensaje.
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[05.1] PASS
+  > ¿Qué horario tienen?
+  < Tenemos dos locales, y ambos están abiertos ahorita mismo:
+
+Bayamón (principal): lunes a viernes de 9:00 am a 5:00 pm. Hoy cierra a las 5:00 pm.
+Caguas: lunes a viernes de 10:00 am a 6:00 pm. Hoy cierra a las 6:00 pm.
+
+Los sábados y domingos estamos cerrados en ambos locales. ¿Te puedo ayudar con algo más?
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[05.2] PASS
+  > ¿Qué horario tienen?
+  < Nuestros horarios son de lunes a viernes. En **Bayamón** (Ave. Principal 123) abrimos de 9:00 am a 5:00 pm, y en **Caguas** (Calle Central 45) de 10:00 am a 6:00 pm. Sábados y domingos estamos cerrados en ambos locales.
+
+Si quieres saber si estamos abiertos ahora mismo, llama al local que te interese: Bayamón al 787-555-0100 o Caguas al 787-555-0200. ¿Te puedo ayudar con una cita?
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[06.1] PASS
+  > ¿Cuál es el teléfono del local de Caguas?
+  < El teléfono del local de Caguas es el 787-555-0200. Está en Calle Central 45, frente a la plaza, y hoy está abierto hasta las 6:00 pm.
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[06.2] PASS
+  > ¿Cuál es el teléfono del local de Caguas?
+  < El teléfono del local de Caguas es 787-555-0200. Está en Calle Central 45, frente a la plaza, y hoy estamos abiertos hasta las 6:00 pm.
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[07.1] PASS
+  > Quiero dejar un recado para Marisol de ventas sobre un evento en el local de Caguas
+  < Claro, con gusto le dejo ese recado a Marisol Díaz, de Ventas. Para completarlo, ¿me puedes compartir tu nombre y un número de teléfono de 10 dígitos donde te podamos devolver la llamada?
+  > Soy Rita Colón, 787-555-4545
+  < Listo, Rita. Tu recado para Marisol Díaz, del departamento de Ventas, sobre un evento en el local de Caguas quedó guardado. El equipo se comunicará contigo al 787-555-4545.
+  tools: ['take_message'] | client=eval-recepcion profile=receptionist channel=web hours=open
+  input take_message: {'name': 'Rita Colón', 'callback_phone': '7875554545', 'department': 'Ventas', 'urgency': 'normal', 'recipient': 'Marisol Díaz', 'location': 'Caguas', 'summary': 'Rita Colón quiere hablar con Marisol Díaz de Ventas sobre un evento en el local de Caguas.'}
+
+[07.2] PASS
+  > Quiero dejar un recado para Marisol de ventas sobre un evento en el local de Caguas
+  < Claro, con gusto le dejo el recado a Marisol Díaz, de Ventas. Para completarlo necesito tu nombre y un número de teléfono de 10 dígitos donde te puedan devolver la llamada (incluye el código de área, 787). ¿Me los compartes?
+  > Soy Rita Colón, 787-555-4545
+  < Listo, Rita. Tu recado para Marisol Díaz, del departamento de Ventas, quedó guardado para el local de Caguas, con tu número 787-555-4545. El equipo te devolverá la llamada en horario de oficina.
+  tools: ['take_message'] | client=eval-recepcion profile=receptionist channel=web hours=open
+  input take_message: {'name': 'Rita Colón', 'callback_phone': '7875554545', 'department': 'Ventas', 'location': 'Caguas', 'urgency': 'normal', 'summary': 'Rita Colón quiere hablar con Marisol Díaz sobre un evento en el local de Caguas.'}
+
+[08.1] PASS
+  > ¿Tienen local en Ponce?
+  < No, en Ponce no tenemos local. Salón Eval tiene dos locales en Puerto Rico: Bayamón (Ave. Principal 123, Bayamón, tel. 787-555-0100) y Caguas (Calle Central 45, Caguas, tel. 787-555-0200). ¿Te queda cerca alguno de los dos?
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[08.2] PASS
+  > ¿Tienen local en Ponce?
+  < No, en Ponce no tenemos local. Salón Eval tiene dos locales en Puerto Rico: Bayamón (Ave. Principal 123, Bayamón, PR 00959, tel. 787-555-0100) y Caguas (Calle Central 45, Caguas, PR 00725, tel. 787-555-0200). ¿Te queda más cerca alguno de ellos?
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[09.1] PASS
+  > Quiero una cita en el local de Carolina para un corte
+  < Con gusto te ayudo con tu cita. Pero el salón no tiene local en Carolina. Los dos locales son Bayamón (Ave. Principal 123, tel. 787-555-0100) y Caguas (Calle Central 45, tel. 787-555-0200). ¿Cuál te queda mejor para tu corte?
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[09.2] PASS
+  > Quiero una cita en el local de Carolina para un corte
+  < Con gusto te ayudo con tu corte. Pero en este momento no tenemos un local en Carolina. Solo tenemos dos locales: Bayamón (Ave. Principal 123, Bayamón, PR 00959, tel. 787-555-0100) y Caguas (Calle Central 45, Caguas, PR 00725, tel. 787-555-0200).
+
+¿Cuál de los dos te queda mejor para tu cita?
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+modelo=claude-haiku-5-5 effort={'low': 32} casos=18 fallos=1 | latencia prom=2.26s p95=3.22s | tokens in=17124 out=7074 cache_r=138639 cache_w=0 llamadas=37 | costo=$0.0066
+directivas: vacia=18/18 esperado=12/12 prohibido=42/42 tool=5/6 notool=4/4

@@ -455,7 +455,19 @@ class OriginListTests(TestCase):
 
     def test_urls_ports_and_paths_reduce_to_hostnames(self):
         c = self._client('https://Acme.com/, http://127.0.0.1:8791, www.acme.com/tienda, acme.com')
-        self.assertEqual(c.origin_list(), ['acme.com', '127.0.0.1', 'www.acme.com'])
+        # Tests run with DEBUG off, so the local entry is dropped (see next test).
+        self.assertEqual(c.origin_list(), ['acme.com', 'www.acme.com'])
+        with self.settings(DEBUG=True):
+            self.assertEqual(c.origin_list(), ['acme.com', '127.0.0.1', 'www.acme.com'])
+
+    def test_local_hosts_only_count_while_debug_is_on(self):
+        """Seeded DOMINIO client has localhost:8000; without the port in the
+        comparison that would whitelist any local page in production."""
+        c = self._client('dominiopr.com, localhost:8000, 127.0.0.1:8000')
+        with self.settings(DEBUG=False):
+            self.assertEqual(c.origin_list(), ['dominiopr.com'])
+        with self.settings(DEBUG=True):
+            self.assertEqual(c.origin_list(), ['dominiopr.com', 'localhost', '127.0.0.1'])
 
     def test_garbage_entries_are_dropped(self):
         c = self._client(' , https://, ::bad::, acme.com')

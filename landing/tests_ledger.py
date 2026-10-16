@@ -114,10 +114,11 @@ class CallSiteRecordingTests(TestCase):
         self.assertEqual((ev.kind, ev.client, ev.client_slug), ('demo', None, ''))
 
     def test_knowledge_test_records_for_its_client(self):
-        user = get_user_model().objects.create_user('admin@acme.com', password='pw12345!')
-        Membership.objects.create(user=user, client=self.acme, role='org_admin')
+        # Phase I: the knowledge test console is staff-only; the event still
+        # belongs to the tenant being tested.
+        get_user_model().objects.create_user('ops@dominiopr.com', password='pw12345!', is_staff=True)
         http = HttpClient()
-        http.login(username='admin@acme.com', password='pw12345!')
+        http.login(username='ops@dominiopr.com', password='pw12345!')
         with patch.object(agent, 'answer', side_effect=fake_answer()):
             resp = http.post(reverse('knowledge_test'),
                              {'client': 'acme', 'question': '¿Cuánto cuesta?'})

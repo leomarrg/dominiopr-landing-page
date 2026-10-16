@@ -22,7 +22,7 @@ from django.utils import timezone
 
 from . import agent, notify
 from .forms import ClientForm
-from .models import Booking, ChatMessage, Client, ContactSubmission, Conversation, Membership
+from .models import Booking, ChatMessage, Client, ContactSubmission, Conversation
 from .views import (
     CLINIC_DASHBOARD_NOTE, CLINIC_ESCALATION_REASON,
     _booking_handler, _chat_lead_handler, _human_handler,
@@ -165,10 +165,10 @@ class ChatApiClinicTests(TestCase):
         self.assertNotEqual(before, self.shop.config_version())
 
     def test_knowledge_test_passes_clinic(self):
-        user = get_user_model().objects.create_user('admin@dental.com', password='pw12345!')
-        Membership.objects.create(user=user, client=self.clinic, role='org_admin')
+        # Phase I: the knowledge test console is staff-only.
+        get_user_model().objects.create_user('ops@dominiopr.com', password='pw12345!', is_staff=True)
         http = HttpClient()
-        http.login(username='admin@dental.com', password='pw12345!')
+        http.login(username='ops@dominiopr.com', password='pw12345!')
         spy, calls = _spy()
         with patch.object(agent, 'answer', side_effect=spy):
             resp = http.post(reverse('knowledge_test'),

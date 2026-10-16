@@ -8,9 +8,15 @@ Two entry points, both producing a KnowledgeSource in 'pending':
     (bounded, in memory; the file itself is never stored).
 
 The heavy part (crawl + model calls) runs in the `process_knowledge` cron,
-never inside a web request (sync gunicorn workers on a 512MB box). Its result
-lands as a DRAFT: the tenant reviews, tests and activates it through the
-existing knowledge flow. Nothing here ever activates a source.
+never inside a web request (gunicorn on a 1GB box). Its result lands as a
+DRAFT: DOMINIO staff reviews, tests and activates it through the knowledge
+page (Phase I: tenants no longer manage their own knowledge). Nothing here
+ever activates a source.
+
+The distill step uses its own model and effort (DOMINIO_INGEST_MODEL /
+DOMINIO_INGEST_EFFORT, Sonnet medium by default): it runs a few times per
+tenant and extraction quality matters more than latency. The chat keeps
+DOMINIO_AGENT_MODEL.
 
 Everything read from a site or file is untrusted DATA: it goes to the model
 inside <document> tags that the content cannot close, under instructions to
@@ -24,6 +30,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 import unicodedata
 import urllib.robotparser
@@ -53,15 +60,28 @@ MAX_SITEMAPS = 6              # sitemap files read per crawl (index + children)
 ROBOTS_MAX_BYTES = 100 * 1024
 
 MAX_RAW_CHARS = extract_worker.MAX_RAW_CHARS  # raw file text kept while pending
-EXTRACT_TIMEOUT = 25          # hard wall-clock limit of the PDF/DOCX child process
+# Hard wall-clock limit of the PDF/DOCX child process. Runs inside the upload
+# request: nginx gives the proxied request 65 s (proxy_read_timeout), so this
+# plus parsing the body must stay under that. The child's own soft budget
+# (extract_worker.PDF_TIME_BUDGET) returns partial text before this kills it.
+EXTRACT_TIMEOUT = 45
 EXTRACT_WORKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'extract_worker.py')
 
-BATCH_CHARS = 60_000          # document text per model request
-MAX_DISTILL_INPUT_CHARS = 400_000  # cost ceiling per source (~100k tokens)
+BATCH_CHARS = 60_000          # document text per model request (~15k tokens)
+# Total document text sent to the model per source: DOMINIO_INGEST_MAX_INPUT_CHARS
+# (default = 500 pages x ~8,000 chars, so a full default scan is not cut),
+# never above INPUT_CHARS_CEILING whatever the setting says.
+DEFAULT_MAX_INPUT_CHARS = 4_000_000
+INPUT_CHARS_CEILING = 8_000_000
 MAX_OUTPUT_CHARS = 8_000      # final knowledge text per source
 ITEM_CHARS = 400
-DISTILL_MAX_TOKENS = 4096
-LLM_TIMEOUT = 90.0
+# Reply cap per distill call. On Sonnet/Haiku 5.5 the model's thinking counts
+# against it and a 'max_tokens' stop throws the whole batch away (_parse), so
+# it needs headroom above the ~3k tokens of facts a 60k-char batch yields.
+DISTILL_MAX_TOKENS = 12_000
+LLM_TIMEOUT = 180.0           # per call; Sonnet medium on a full batch can take >90 s
+DEFAULT_INGEST_MODEL = 'claude-sonnet-5-5'
+DEFAULT_INGEST_EFFORT = 'medium'
 
 STALE_AFTER = timedelta(minutes=30)
 MAX_ATTEMPTS = 2              # first run + one retry after a crash/timeout
@@ -78,15 +98,39 @@ _CONTROL_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f​-‏‪-‮⁠
 
 
 def setting_max_pages():
-    return max(1, int(getattr(settings, 'DOMINIO_INGEST_MAX_PAGES', 30)))
+    return max(1, int(getattr(settings, 'DOMINIO_INGEST_MAX_PAGES', 500)))
 
 
 def setting_time_budget():
-    return max(5, int(getattr(settings, 'DOMINIO_INGEST_TIME_BUDGET', 120)))
+    return max(5, int(getattr(settings, 'DOMINIO_INGEST_TIME_BUDGET', 1200)))
 
 
 def upload_max_bytes():
-    return max(1, int(getattr(settings, 'DOMINIO_INGEST_UPLOAD_MAX_MB', 5))) * 1024 * 1024
+    return max(1, int(getattr(settings, 'DOMINIO_INGEST_UPLOAD_MAX_MB', 50))) * 1024 * 1024
+
+
+def max_input_chars():
+    """Document text per source sent to the model, clamped to the ceiling."""
+    try:
+        value = int(getattr(settings, 'DOMINIO_INGEST_MAX_INPUT_CHARS', DEFAULT_MAX_INPUT_CHARS))
+    except (TypeError, ValueError):
+        value = DEFAULT_MAX_INPUT_CHARS
+    return max(BATCH_CHARS, min(value, INPUT_CHARS_CEILING))
+
+
+def ingest_model():
+    return getattr(settings, 'DOMINIO_INGEST_MODEL', DEFAULT_INGEST_MODEL) or DEFAULT_INGEST_MODEL
+
+
+def ingest_effort():
+    """Effort for the distill calls, validated against agent._EFFORT_LEVELS.
+    A typo in the setting would 400 every ingest; fall back to medium."""
+    effort = (getattr(settings, 'DOMINIO_INGEST_EFFORT', DEFAULT_INGEST_EFFORT) or '').strip().lower()
+    if effort not in agent._EFFORT_LEVELS:
+        if effort:
+            logger.warning('Invalid DOMINIO_INGEST_EFFORT %r; using %s', effort, DEFAULT_INGEST_EFFORT)
+        effort = DEFAULT_INGEST_EFFORT
+    return effort
 
 
 # ============================================================
@@ -364,11 +408,28 @@ def _worker_argv(kind):
     return [sys.executable, '-I', EXTRACT_WORKER, kind]
 
 
+# One extraction child per gunicorn worker at a time: each child may take up
+# to 350 MB, and the box has 1 GB for everything (2 workers -> at most 2
+# children). A second upload waits briefly, then gets a clear message.
+_EXTRACT_SLOT = threading.BoundedSemaphore(1)
+EXTRACT_WAIT_SECONDS = 2
+EXTRACT_BUSY_MESSAGE = 'Hay otra subida procesándose en este momento. Intenta de nuevo en un minuto.'
+
+
 def _extract_in_child(kind, data, timeout=None):
     """Run extract_worker in a separate process with a hard timeout (and, on
     Linux, memory/CPU limits set by the child). A hostile PDF that spins or
     balloons kills the child, never the gunicorn worker. ValueError on any
     failure, with the worker's own message when it has one for the tenant."""
+    if not _EXTRACT_SLOT.acquire(timeout=EXTRACT_WAIT_SECONDS):
+        raise ValueError(EXTRACT_BUSY_MESSAGE)
+    try:
+        return _extract_in_child_locked(kind, data, timeout)
+    finally:
+        _EXTRACT_SLOT.release()
+
+
+def _extract_in_child_locked(kind, data, timeout=None):
     try:
         proc = subprocess.run(
             _worker_argv(kind), input=data, capture_output=True,
@@ -511,15 +572,16 @@ def _split(text, size):
     return pieces
 
 
-def _batches(chunks):
+def _batches(chunks, limit=None):
     """Group (label, text) chunks into requests of < BATCH_CHARS of content,
-    stopping at MAX_DISTILL_INPUT_CHARS in total."""
+    stopping at `limit` (default max_input_chars()) in total."""
+    limit = limit or max_input_chars()
     batch, size, total = [], 0, 0
     for label, text in chunks:
         for piece in _split(text, BATCH_CHARS - 1000):
-            if total >= MAX_DISTILL_INPUT_CHARS:
+            if total >= limit:
                 break
-            piece = piece[:MAX_DISTILL_INPUT_CHARS - total]
+            piece = piece[:limit - total]
             cost = len(piece) + len(label) + 40
             if batch and size + cost > BATCH_CHARS:
                 yield batch
@@ -531,10 +593,12 @@ def _batches(chunks):
         yield batch
 
 
-def _request_kwargs(model, batch):
+def _request_kwargs(model, batch, effort=None):
+    """Request for one batch. Effort = DOMINIO_INGEST_EFFORT (validated) on
+    models that accept it; nothing is sent for the older ones (it 400s)."""
     output_config = {'format': {'type': 'json_schema', 'schema': SCHEMA}}
     if not (model or '').startswith(agent._NO_EFFORT_MODELS):
-        output_config['effort'] = 'low'
+        output_config['effort'] = effort or ingest_effort()
     documents = '\n\n'.join(
         f'<document source="{_label(label)}">\n{_neutralize(text)}\n</document>'
         for label, text in batch)
@@ -637,21 +701,23 @@ def _llm():
 
 def distill(client, chunks, source_label='', on_batch=None):
     """Turn raw page/file text into concise factual knowledge (Spanish), via
-    the configured Haiku model with a JSON-schema output and effort low.
-    `chunks` = [(label, text)] or [text]. Every billed call is recorded as a
-    'knowledge_ingest' UsageEvent for `client`. Returns the rendered text
-    (<= MAX_OUTPUT_CHARS). Raises ValueError when nothing usable came back,
-    agent.AgentNotConfigured without an API key, anthropic.APIError on API
-    failure (calls already made stay recorded). `on_batch(done, total)` runs
-    before each model call (the cron uses it as the row's heartbeat)."""
+    the ingest model (DOMINIO_INGEST_MODEL, Sonnet by default) with a
+    JSON-schema output and DOMINIO_INGEST_EFFORT. `chunks` = [(label, text)]
+    or [text]. Every billed call is recorded as a 'knowledge_ingest'
+    UsageEvent for `client` with that model (so its cost uses that model's
+    prices). Returns the rendered text (<= MAX_OUTPUT_CHARS). Raises
+    ValueError when nothing usable came back, agent.AgentNotConfigured
+    without an API key, anthropic.APIError on API failure (calls already made
+    stay recorded). `on_batch(done, total)` runs before each model call (the
+    cron uses it as the row's heartbeat)."""
     pairs = [(c if isinstance(c, tuple) else (source_label, c)) for c in chunks]
     pairs = [(str(label or source_label), str(text)) for label, text in pairs if str(text).strip()]
     if not pairs:
         raise ValueError('No hay contenido para resumir.')
     provider = _llm()
-    model = agent._model()
+    model = ingest_model()
     results = []
-    batches = list(_batches(pairs))  # bounded by MAX_DISTILL_INPUT_CHARS
+    batches = list(_batches(pairs))  # bounded by max_input_chars()
     for index, batch in enumerate(batches):
         if on_batch is not None:
             on_batch(index + 1, len(batches))
@@ -1046,7 +1112,7 @@ def process_pending(limit=3, kinds=BACKGROUND_KINDS):
         source = KnowledgeSource.objects.select_related('client').get(pk=pk)
         status = run_source(source)
         if status == 'draft':
-            # Phase 6: a tenant who can't publish needs DOMINIO to review it.
+            # Tell DOMINIO the draft is ready to review and publish.
             publishing.notify_ingest_draft(source)
         done.append((source, status))
     return done

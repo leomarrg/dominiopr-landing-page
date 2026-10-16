@@ -322,7 +322,7 @@ def location_save(request):
     a refused creation is audited as location.denied. A downgrade never
     deletes existing locations: it only stops new ones."""
     from .phone import normalize_phone
-    client = _knowledge_client(request)
+    client = _admin_client(request)
     if client is None:
         messages.error(request, 'Solo un administrador puede gestionar locales.')
         return redirect('bookings')
@@ -605,14 +605,42 @@ def export_leads_csv(request):
 # M-15 / M-19 — Knowledge base + test-before-publish console
 # ============================================================
 
-def _knowledge_client(request):
-    """Resolve which organization's knowledge is being managed. org_admin only."""
+KNOWLEDGE_CLIENT_MESSAGE = ('El conocimiento de tu agente lo gestiona DOMINIO. Escríbenos a '
+                            'hola@dominiopr.com si quieres añadir o corregir algo.')
+
+
+def _admin_client(request):
+    """Resolve the organization an org_admin (or staff) is operating on:
+    ?client=<slug> / POST client, else the first one. The gate for users,
+    contacts and locations, which tenants keep managing themselves."""
     qs = clients_for(request.user)
     slug = request.GET.get('client') or request.POST.get('client') or ''
     client = qs.filter(slug=slug).first() if slug else qs.first()
     if client is None or not is_org_admin(request.user, client):
         return None
     return client
+
+
+def _knowledge_client(request):
+    """Resolve which organization's knowledge is being managed. Staff only
+    (Phase I): DOMINIO loads and maintains every tenant's knowledge; tenants
+    (org_admin, agent, employee) never see these views. Staff pick the tenant
+    with ?client=<slug> / POST client; without it, the first one."""
+    if not request.user.is_staff:
+        return None
+    qs = clients_for(request.user)
+    slug = request.GET.get('client') or request.POST.get('client') or ''
+    return qs.filter(slug=slug).first() if slug else qs.first()
+
+
+def _knowledge_denied(request):
+    """A non-staff user reached a knowledge URL: back to their dashboard with
+    the one message that matters to them (who to write to)."""
+    if request.user.is_staff:
+        messages.error(request, 'No hay ningún agente con ese identificador (o ninguno configurado).')
+    else:
+        messages.info(request, KNOWLEDGE_CLIENT_MESSAGE)
+    return redirect('dashboard')
 
 
 def _knowledge_context(request, client, **extra):
@@ -641,7 +669,6 @@ def _knowledge_context(request, client, **extra):
         'upload_max_mb': ingest.upload_max_bytes() // (1024 * 1024),
         'test_question': '', 'test_answer': None,
         'can_publish': publishing.can_publish(request.user, client),
-        'review_message': publishing.REVIEW_MESSAGE,
         'sizes': publishing.size_report(client),
     }
     context.update(extra)
@@ -656,8 +683,7 @@ def _knowledge_redirect(client):
 def knowledge_list(request):
     client = _knowledge_client(request)
     if client is None:
-        messages.error(request, 'Solo un administrador puede gestionar el conocimiento.')
-        return redirect('dashboard')
+        return _knowledge_denied(request)
     return render(request, 'landing/dashboard_knowledge.html',
                   _knowledge_context(request, client))
 
@@ -670,8 +696,7 @@ def knowledge_scan(request):
     model calls run in the process_knowledge cron; the result lands as a draft."""
     client = _knowledge_client(request)
     if client is None:
-        messages.error(request, 'Solo un administrador puede gestionar el conocimiento.')
-        return redirect('dashboard')
+        return _knowledge_denied(request)
     try:
         url = ingest.validate_scan(client, request.POST.get('url'),
                                    any_host=request.user.is_staff)
@@ -701,7 +726,13 @@ def knowledge_upload(request):
 
     The upload handlers must be replaced before anything reads request.POST,
     and CsrfViewMiddleware reads it, so CSRF is enforced on the inner view
-    (the documented Django pattern) instead of by the middleware."""
+    (the documented Django pattern) instead of by the middleware.
+
+    Staff only, decided BEFORE the body is parsed: a tenant login must not be
+    able to make a worker buffer DOMINIO_INGEST_UPLOAD_MAX_MB in memory just
+    to be told no."""
+    if not request.user.is_staff:
+        return _knowledge_denied(request)
     handler = ingest.BoundedMemoryUploadHandler(request)
     request.upload_handlers = [handler]
     request.ingest_upload_handler = handler
@@ -714,8 +745,7 @@ def knowledge_upload(request):
 def _knowledge_upload(request):
     client = _knowledge_client(request)
     if client is None:
-        messages.error(request, 'Solo un administrador puede gestionar el conocimiento.')
-        return redirect('dashboard')
+        return _knowledge_denied(request)
     handler = getattr(request, 'ingest_upload_handler', None)
     uploaded = request.FILES.get('file')
     if uploaded is None:
@@ -742,13 +772,6 @@ def _knowledge_upload(request):
     messages.success(request, f'"{source.title}" se leyó bien y quedó en cola. Se procesa en '
                               'segundo plano: recarga en unos minutos.')
     return _knowledge_redirect(client)
-
-
-def _after_draft_saved(request, client, source):
-    """Starter / no plan: say who publishes, and tell DOMINIO (once a day)."""
-    if not publishing.can_publish(request.user, client):
-        messages.info(request, publishing.REVIEW_MESSAGE)
-        publishing.request_review(source, request)
 
 
 def _process_as_draft(source):
@@ -783,8 +806,7 @@ def knowledge_save(request):
     version keeps answering until that draft is activated."""
     client = _knowledge_client(request)
     if client is None:
-        messages.error(request, 'Solo un administrador puede gestionar el conocimiento.')
-        return redirect('dashboard')
+        return _knowledge_denied(request)
     pk = request.POST.get('pk') or None
     source = (get_object_or_404(client.knowledge_sources, pk=pk) if pk
               else KnowledgeSource(client=client))
@@ -822,8 +844,6 @@ def knowledge_save(request):
         ingest.enqueue_url(source)
         messages.success(request, URL_QUEUED_MESSAGE + (
             f' La versión activa de "{live.title}" sigue publicada.' if live is not None else ''))
-        if not publishing.can_publish(request.user, client):
-            messages.info(request, publishing.REVIEW_MESSAGE)
     elif _process_as_draft(source).status == 'error':
         # Text/FAQ: extract → fragments now; failures land visibly in 'error'.
         messages.error(request, f'La fuente quedó en error: {source.error}')
@@ -835,22 +855,9 @@ def knowledge_save(request):
         else:
             messages.success(
                 request, 'Fuente procesada y en borrador. Pruébala y luego actívala.')
-        _after_draft_saved(request, client, source)
     _audit(request, 'knowledge.save', client=client, target=source.title,
            result=source.status + (f' (nueva versión de #{live.pk})' if live else ''))
     return redirect(reverse('knowledge') + f'?client={client.slug}')
-
-
-def _publish_denied(request, client, source, action):
-    """Server-side plan gate: 403 with the page and the reason."""
-    if action == 'activate' and source.status == 'draft':
-        publishing.request_review(source, request)
-    messages.error(request, 'Tu plan no incluye publicar cambios desde tu cuenta. '
-                   + publishing.REVIEW_MESSAGE)
-    _audit(request, f'knowledge.{action}', client=client, target=source.title,
-           result='denegado: plan')
-    return render(request, 'landing/dashboard_knowledge.html',
-                  _knowledge_context(request, client), status=403)
 
 
 @login_required
@@ -860,15 +867,11 @@ def _publish_denied(request, client, source, action):
 def knowledge_action(request, pk):
     client = _knowledge_client(request)
     if client is None:
-        messages.error(request, 'Solo un administrador puede gestionar el conocimiento.')
-        return redirect('dashboard')
+        return _knowledge_denied(request)
     source = get_object_or_404(client.knowledge_sources, pk=pk)
     action = request.POST.get('action', '')
-    # Phase 6: anything that changes what the live agent says is publishing.
-    publishes = action in ('activate', 'restore') or (
-        action in ('archive', 'audience') and source.status == 'active')
-    if publishes and not publishing.can_publish(request.user, client):
-        return _publish_denied(request, client, source, action)
+    # Phase 6: anything that changes what the live agent says is publishing;
+    # since Phase I only staff reach this view, so the plan gate is gone.
     result = 'ok'
     audience = request.POST.get('audience', '')
     if action == 'audience' and audience in dict(KnowledgeSource.AUDIENCE_CHOICES):
@@ -884,10 +887,8 @@ def knowledge_action(request, pk):
         messages.error(request, 'Audiencia no válida.')
         result = 'no permitida'
     elif action in ('activate', 'restore'):
-        override = request.user.is_staff and request.POST.get('override_caps') == '1'
         try:
-            retired = publishing.publish(source, restoring=(action == 'restore'),
-                                         override_caps=override)
+            retired = publishing.publish(source, restoring=(action == 'restore'))
         except publishing.PublishError as exc:
             messages.error(request, str(exc))
             result = f'rechazada: {exc}'
@@ -895,8 +896,7 @@ def knowledge_action(request, pk):
             verb = 'restaurada' if action == 'restore' else 'activa'
             note = ' La versión anterior quedó archivada.' if retired else ''
             messages.success(request, f'"{source.title}" está {verb} — el agente ya la usa.{note}')
-            result = 'activa' + (' (límites ignorados por staff)' if override else '') + (
-                f'; archivadas: {", ".join(retired)}' if retired else '')
+            result = 'activa' + (f'; archivadas: {", ".join(retired)}' if retired else '')
     elif action == 'archive' and source.in_progress:
         messages.error(request, 'Esa fuente se está procesando. Espera a que termine o cancélalo.')
     elif action == 'archive':
@@ -936,8 +936,6 @@ def knowledge_action(request, pk):
             _process_as_draft(target)
             messages.success(request, f'"{target.title}" reprocesada '
                                       f'({target.get_status_display()}).' + live_note)
-            if target.status == 'draft':
-                _after_draft_saved(request, client, target)
     elif action == 'delete' and source.status in ('pending', 'draft', 'error', 'archived'):
         publishing.delete_source(source)
         messages.success(request, 'Fuente eliminada.')
@@ -990,8 +988,7 @@ def knowledge_test(request):
     Each test is a paid model call: per-IP throttle plus a per-tenant daily cap."""
     client = _knowledge_client(request)
     if client is None:
-        messages.error(request, 'Solo un administrador puede gestionar el conocimiento.')
-        return redirect('dashboard')
+        return _knowledge_denied(request)
     question = (request.POST.get('question') or '').strip()[:2000]
     draft_pk = request.POST.get('draft') or None
     # Phase E: test as a visitor (public knowledge, web rules) or as an
@@ -1046,7 +1043,7 @@ def _seats_used(client):
 
 @login_required
 def users_list(request):
-    client = _knowledge_client(request)  # same org_admin gate
+    client = _admin_client(request)
     if client is None:
         messages.error(request, 'Solo un administrador puede gestionar usuarios.')
         return redirect('dashboard')
@@ -1075,7 +1072,7 @@ def staff_contact_add(request):
     """Phase D: add a StaffContact (who gets the messages for a department or
     by name). org_admin of the client only; the phone is normalized server-side."""
     from .phone import normalize_phone
-    client = _knowledge_client(request)
+    client = _admin_client(request)
     if client is None:
         messages.error(request, 'Solo un administrador puede gestionar contactos.')
         return redirect('dashboard')
@@ -1132,7 +1129,7 @@ def staff_contact_add(request):
 @login_required
 @require_POST
 def staff_contact_delete(request, pk):
-    client = _knowledge_client(request)
+    client = _admin_client(request)
     if client is None:
         messages.error(request, 'Solo un administrador puede gestionar contactos.')
         return redirect('dashboard')
@@ -1147,7 +1144,7 @@ def staff_contact_delete(request, pk):
 @require_POST
 def user_invite(request):
     from .views import _provision_client_login  # late import: avoids cycle at load
-    client = _knowledge_client(request)
+    client = _admin_client(request)
     if client is None:
         messages.error(request, 'Solo un administrador puede gestionar usuarios.')
         return redirect('dashboard')
@@ -1229,7 +1226,7 @@ def user_invite(request):
 @login_required
 @require_POST
 def user_remove(request, pk):
-    client = _knowledge_client(request)
+    client = _admin_client(request)
     if client is None:
         messages.error(request, 'Solo un administrador puede gestionar usuarios.')
         return redirect('dashboard')

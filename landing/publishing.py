@@ -1,5 +1,5 @@
 """
-Phase 6 — knowledge versioning + plan-gated publishing.
+Phase 6 — knowledge versioning + publishing (staff only since Phase I).
 
 Canonical rules (views and the ingest cron call these; nothing else decides):
 
@@ -8,34 +8,35 @@ Canonical rules (views and the ingest cron call these; nothing else decides):
   every other active version of the same lineage, in one transaction.
 * Editing an active source never touches it: the edit lands in a draft copy
   (replaces=<active>) that goes live only when it is activated.
-* Size caps on publish: MAX_SOURCE_CHARS per source and MAX_TOTAL_CHARS for
-  all active sources after the swap. Sources already over the cap keep
-  working (the page warns); staff can override.
-* Who may publish (activate / restore / archive something live): staff, or an
-  org_admin whose subscription is Pro/Scale/Custom and active or past_due.
-  Everyone else saves drafts and DOMINIO is notified to review and publish.
+* Sizes: RECOMMENDED_SOURCE_CHARS / RECOMMENDED_TOTAL_CHARS are advice (the
+  page warns and shows what the live knowledge costs per question). The only
+  thing that blocks a publish is the hard ceiling DOMINIO_KNOWLEDGE_HARD_MAX_CHARS
+  for all active sources after the swap: beyond it every chat request would
+  carry a prompt the model cannot take, so nobody may override it.
+* Who may publish: DOMINIO staff. Tenants do not manage their own knowledge;
+  DOMINIO loads and maintains it (the knowledge views are staff-only).
 """
 import logging
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.cache import cache
-from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import AuditEvent, Client, KnowledgeFragment, KnowledgeSource, Membership
+from . import usage as usage_ledger
+from .models import AuditEvent, Client, KnowledgeFragment, KnowledgeSource
 
 logger = logging.getLogger(__name__)
 
-# Starter and Small: DOMINIO reviews and publishes. Medium and up (and the
-# older Pro/Scale/Custom) publish their own knowledge.
-SELF_PUBLISH_PLANS = frozenset({'pro', 'scale', 'custom', 'medium', 'large', 'premium'})
-SELF_PUBLISH_STATUSES = frozenset({'active', 'past_due'})
-MAX_SOURCE_CHARS = 8_000
-MAX_TOTAL_CHARS = 40_000
-REVIEW_MESSAGE = ('En tu plan, DOMINIO revisa y publica tus cambios '
-                  '(normalmente en 1 día laborable).')
+# Advice thresholds: answers get sharper from short, focused sources. They do
+# NOT block anything; see hard_max_chars() for what does.
+RECOMMENDED_SOURCE_CHARS = 8_000
+RECOMMENDED_TOTAL_CHARS = 40_000
+DEFAULT_HARD_MAX_CHARS = 160_000  # ~40-50k tokens of business knowledge per prompt
+MAX_HARD_MAX_CHARS = 400_000      # a .env cannot push past ~100k tokens: the chat would 400
+CHARS_PER_TOKEN = 4               # rough estimate used for the per-question cost
 NOTIFY_TTL = 24 * 3600
 CLIENT_DAILY_REVIEW_EMAILS = 5
 
@@ -45,32 +46,32 @@ class PublishError(Exception):
 
 
 # ------------------------------------------------------------------
-# Plan gate
+# Who publishes
 # ------------------------------------------------------------------
 
-def plan_allows_self_publish(client):
-    try:
-        sub = client.subscription
-    except ObjectDoesNotExist:
-        return False
-    return sub.plan in SELF_PUBLISH_PLANS and sub.status in SELF_PUBLISH_STATUSES
-
-
 def can_publish(user, client):
-    """Staff always; an org_admin of `client` only on a self-publish plan.
-    Agents and members of other tenants never."""
+    """Only DOMINIO staff. Kept as a function because views, templates and
+    tests of other modules ask this question."""
     if not getattr(user, 'is_authenticated', False) or client is None:
         return False
-    if user.is_staff:
-        return True
-    if not Membership.objects.filter(user=user, client=client, role='org_admin').exists():
-        return False
-    return plan_allows_self_publish(client)
+    return bool(user.is_staff)
 
 
 # ------------------------------------------------------------------
 # Sizes
 # ------------------------------------------------------------------
+
+def hard_max_chars():
+    """Physical ceiling for the active knowledge of one tenant (all sources,
+    public and internal). Configurable between 1,000 and MAX_HARD_MAX_CHARS:
+    above that the business block alone would crowd the model's context and
+    multiply the cost of every question of that tenant."""
+    try:
+        value = int(getattr(settings, 'DOMINIO_KNOWLEDGE_HARD_MAX_CHARS', DEFAULT_HARD_MAX_CHARS))
+    except (TypeError, ValueError):
+        value = DEFAULT_HARD_MAX_CHARS
+    return min(MAX_HARD_MAX_CHARS, max(1_000, value))
+
 
 def compiled_texts(sources):
     """{pk: compiled_text()} for many sources with ONE fragments query
@@ -86,29 +87,66 @@ def compiled_texts(sources):
             for s in sources}
 
 
+def _money(value):
+    """'$0.0012' style; amounts under a hundredth of a cent show as '<$0.0001'."""
+    if value <= 0:
+        return '$0.0000'
+    if value < Decimal('0.0001'):
+        return '<$0.0001'
+    return f'${value:.4f}'
+
+
+def cost_per_question(chars, model=None):
+    """What `chars` of knowledge add to ONE chat question, in USD, at the
+    input price of the chat model: (without cache, with the prefix read from
+    cache). Tokens are estimated as chars / CHARS_PER_TOKEN. The rest of the
+    prompt (rules, tools, history) is not included."""
+    model = model or getattr(settings, 'DOMINIO_AGENT_MODEL', '') or ''
+    tokens = chars // CHARS_PER_TOKEN
+    prices = usage_ledger.prices_for(model) or {}
+    blended = Decimal(str(getattr(settings, 'DOMINIO_COST_PER_MTOK', 0.10)))
+    rate_in = Decimal(str(prices.get('input', blended)))
+    rate_cached = Decimal(str(prices.get('cache_read', prices.get('input', blended))))
+    million = Decimal(1_000_000)
+    plain = (Decimal(tokens) * rate_in / million).quantize(Decimal('0.000001'))
+    cached = (Decimal(tokens) * rate_cached / million).quantize(Decimal('0.000001'))
+    return {'model': model, 'tokens': tokens, 'usd': plain, 'usd_cached': cached,
+            'usd_display': _money(plain), 'usd_cached_display': _money(cached)}
+
+
 def size_report(client):
-    """Warning data for the page: active sources over the per-source cap and
-    the total size of what is live."""
+    """Data for the page: how big the live knowledge is, what it costs per
+    question, which sources are above the recommended size, and how close
+    the tenant is to the hard ceiling."""
     active = list(client.knowledge_sources.filter(status='active'))
     texts = compiled_texts(active)
     total = sum(len(t) for t in texts.values())
-    over = [s for s in active if len(texts[s.pk]) > MAX_SOURCE_CHARS]
-    return {'total_chars': total, 'over_total': total > MAX_TOTAL_CHARS,
-            'over_sources': over, 'max_source': MAX_SOURCE_CHARS, 'max_total': MAX_TOTAL_CHARS}
+    over = [s for s in active if len(texts[s.pk]) > RECOMMENDED_SOURCE_CHARS]
+    hard = hard_max_chars()
+    report = {
+        'total_chars': total,
+        'over_total': total > RECOMMENDED_TOTAL_CHARS,
+        'over_sources': over,
+        'recommended_source': RECOMMENDED_SOURCE_CHARS,
+        'recommended_total': RECOMMENDED_TOTAL_CHARS,
+        'hard_max': hard,
+        'hard_pct': min(100, round(total * 100 / hard)) if hard else 0,
+        'over_hard': total > hard,
+    }
+    report.update(cost_per_question(total))
+    return report
 
 
-def _check_caps(client, source, text, retiring_pks):
-    if len(text) > MAX_SOURCE_CHARS:
-        raise PublishError(
-            f'"{source.title}" tiene {len(text):,} caracteres; el máximo por fuente es '
-            f'{MAX_SOURCE_CHARS:,}. Divídela en fuentes más pequeñas.')
+def _check_hard_cap(client, source, text, retiring_pks):
     others = (client.knowledge_sources.filter(status='active')
               .exclude(pk__in=set(retiring_pks) | {source.pk}))
     total = len(text) + sum(len(t) for t in compiled_texts(others).values())
-    if total > MAX_TOTAL_CHARS:
+    hard = hard_max_chars()
+    if total > hard:
         raise PublishError(
-            f'Con esta fuente el conocimiento activo sumaría {total:,} caracteres; el máximo '
-            f'es {MAX_TOTAL_CHARS:,}. Archiva o recorta otras fuentes primero.')
+            f'Con esta fuente el conocimiento activo sumaría {total:,} caracteres '
+            f'(≈ {total // CHARS_PER_TOKEN:,} tokens por pregunta); el techo técnico es '
+            f'{hard:,}. Archiva o recorta otras fuentes primero.')
 
 
 # ------------------------------------------------------------------
@@ -140,11 +178,12 @@ def _guess_replaced(source):
     return matches[0] if len(matches) == 1 else None
 
 
-def publish(source, *, restoring=False, override_caps=False):
+def publish(source, *, restoring=False):
     """Make `source` the live version of its lineage. Draft -> active (or
     archived -> active when restoring); every other active version of the
     lineage is archived in the same transaction. Returns the titles retired.
-    Raises PublishError with a user-facing message."""
+    Raises PublishError with a user-facing message (bad state, empty text,
+    or the hard size ceiling)."""
     allowed_from = 'archived' if restoring else 'draft'
     with transaction.atomic():
         # Serializes publishing per tenant (PostgreSQL): two concurrent
@@ -161,14 +200,13 @@ def publish(source, *, restoring=False, override_caps=False):
             guessed = _guess_replaced(src)
             if guessed:
                 # Persisted before the lineage walk (it reads edges from the
-                # DB); rolled back with everything else if a cap rejects it.
+                # DB); rolled back with everything else if the cap rejects it.
                 src.replaces_id = guessed
                 KnowledgeSource.objects.filter(pk=src.pk).update(replaces=guessed)
         lineage = src.lineage_ids()
         retiring = list(src.client.knowledge_sources.filter(
             status='active', pk__in=lineage - {src.pk}))
-        if not override_caps:
-            _check_caps(src.client, src, text, [r.pk for r in retiring])
+        _check_hard_cap(src.client, src, text, [r.pk for r in retiring])
         now = timezone.now()
         if retiring:
             # Kept intact (content included, even for files): it is a version
@@ -213,7 +251,7 @@ def history_for(sources, archived):
 
 
 # ------------------------------------------------------------------
-# Review requests (Starter / no plan)
+# "Draft ready" notices to DOMINIO
 # ------------------------------------------------------------------
 
 def _incr(key, ttl):
@@ -228,10 +266,11 @@ def _incr(key, ttl):
 
 
 def request_review(source, request=None):
-    """Email DOMINIO that `source` waits for review/publication. At most one
-    email per source per day, and at most CLIENT_DAILY_REVIEW_EMAILS per
-    client per day (a Starter tenant creating draft after draft must not turn
-    this into a mail cannon). Best-effort: never raises. Returns True if sent."""
+    """Email DOMINIO that `source` waits for review/publication (a finished
+    scan or upload, a draft left by staff). At most one email per source per
+    day, and at most CLIENT_DAILY_REVIEW_EMAILS per client per day, so a
+    burst of drafts never turns this into a mail cannon. Best-effort: never
+    raises. Returns True if sent."""
     try:
         to = getattr(settings, 'CONTACT_NOTIFY_EMAIL', '')
         if not to:
@@ -244,8 +283,8 @@ def request_review(source, request=None):
         key = f'kpub:{source.pk}:{day}'
         if not cache.add(key, 1, NOTIFY_TTL):
             return False
-        # Counted only for an email we are about to send, so re-clicking the
-        # same draft does not use up the budget of the next one.
+        # Counted only for an email we are about to send, so re-asking for
+        # the same draft does not use up the budget of the next one.
         if _incr(client_key, NOTIFY_TTL) > CLIENT_DAILY_REVIEW_EMAILS:
             return False
         client = source.client
@@ -270,10 +309,9 @@ def request_review(source, request=None):
 
 
 def notify_ingest_draft(source):
-    """Called by the ingest cron when a scan/upload lands as a draft: tenants
-    who can't publish themselves get DOMINIO notified. Never raises."""
+    """Called by the ingest cron when a scan/upload lands as a draft: tell
+    DOMINIO it is ready to review and publish. Never raises."""
     try:
-        if not plan_allows_self_publish(source.client):
-            request_review(source)
+        request_review(source)
     except Exception:
         logger.exception('Knowledge publish check failed for source %s', source.pk)

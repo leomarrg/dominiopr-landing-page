@@ -25,17 +25,20 @@ import xml.etree.ElementTree as ET
 import zipfile
 from xml.parsers import expat
 
-MAX_RAW_CHARS = 200_000          # same ceiling the parent keeps
+MAX_RAW_CHARS = 1_000_000        # same ceiling the parent keeps (~300 dense pages)
 MAX_OUTPUT_CHARS = MAX_RAW_CHARS * 2  # before cleaning; the parent truncates after
 DOCX_MAX_UNCOMPRESSED = 10 * 1024 * 1024  # sum of declared member sizes
 DOCX_DOCUMENT_MAX = 4 * 1024 * 1024       # word/document.xml actually inflated
 DOCX_MAX_MEMBERS = 1000
-PDF_MAX_PAGES = 100
-PDF_TIME_BUDGET = 20             # soft per-file budget; the parent's timeout is the hard one
+PDF_MAX_PAGES = 300
+PDF_TIME_BUDGET = 35             # soft per-file budget; the parent's timeout (45 s) is the hard one
 PDF_STREAM_LIMIT = 20_000_000    # per-stream decompression ceiling (pypdf default 75MB)
 
+# Memory stays at 350 MB: a 50 MB upload is held once by the child plus
+# pypdf's objects; a file that needs more is refused with a clear message
+# (exit 3 -> generic error), never allowed to swap the box.
 CHILD_MEMORY_LIMIT = 350 * 1024 * 1024
-CHILD_CPU_SECONDS = 30
+CHILD_CPU_SECONDS = 45
 
 
 class ExtractError(ValueError):

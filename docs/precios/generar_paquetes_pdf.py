@@ -134,7 +134,7 @@ def footer(canvas, doc):
 
 
 S = [Paragraph('Paquetes DOMINIO Chat 24/7', H1),
-     Paragraph('Documento interno de decisión · actualizado el 14 de octubre de 2026 · Borrador', SUB)]
+     Paragraph('Documento interno de decisión · actualizado el 15 de octubre de 2026 · Borrador', SUB)]
 
 S.append(callout(
     'Cuatro paquetes, cada uno con un <b>precio de entrada</b> y un <b>tope</b>. El precio sube por escalones según '
@@ -170,6 +170,11 @@ GLOSS = [
      'nombre que ven los clientes.'),
     ('Instalación', 'Pago único por el trabajo de DOMINIO para dejar el agente funcionando: leer el sitio y los '
      'documentos, configurarlo, probarlo con preguntas reales y ponerlo en la página (y en WhatsApp en Premium).'),
+    ('Conocimiento del agente', 'Lo que el agente sabe del negocio (servicios, precios, horarios, políticas, '
+     'preguntas frecuentes). <b>DOMINIO lo carga y lo mantiene</b>: escanea el sitio, lee los documentos que el '
+     'cliente envía, prueba las respuestas y publica. El cliente no entrena su agente desde el dashboard: envía los '
+     'cambios (precios nuevos, horario, un documento) y DOMINIO los publica, normalmente en 1 día laborable. Los '
+     '"documentos" de cada paquete son un límite de servicio, no un botón de autoservicio.'),
     ('Conectar un CRM', 'CRM = el sistema donde el negocio guarda a sus clientes (HubSpot, Zoho, Salesforce, '
      'GoHighLevel…). Conectarlo hace que cada lead o cita que capta el agente entre solo a ese sistema. Es trabajo a '
      'la medida: desde $750, con cotización.'),
@@ -218,7 +223,7 @@ S.append(table(rows, [1.35 * inch, 1.2 * inch, 1.6 * inch, 1.35 * inch, 1.4 * in
 
 FEATURES = {
     'S': ['Agente de IA en la página web, español e inglés, 24/7',
-          'Aprende del sitio web (escaneo automático) y de 1 documento',
+          'Conocimiento cargado por DOMINIO desde el sitio web y 1 documento del cliente',
           'Contesta preguntas frecuentes y capta leads (nombre + email o teléfono verificado)',
           'Aviso de cada lead por email; correos falsos o desechables se rechazan',
           'Dashboard: leads, conversaciones y uso del plan',
@@ -228,7 +233,7 @@ FEATURES = {
           'Toma recados (para quién, urgencia y número para devolver la llamada)',
           'Sabe si estás abierto o cerrado y lo dice; fuera de horario agenda o toma recado',
           'Pasa a una persona y te avisa por SMS o WhatsApp al instante',
-          'Hasta 5 documentos y versiones del conocimiento; ficha de cada lead con notas',
+          'Hasta 5 documentos cargados por DOMINIO, con versiones del conocimiento; ficha de cada lead con notas',
           'Modo clínica (no pide ni guarda datos de salud)',
           'Afinación mensual del agente por DOMINIO'],
     'L': ['Todo lo de Medium',
@@ -236,7 +241,7 @@ FEATURES = {
           'Hasta 3 locales, cada uno con su horario y su agenda',
           'Avisos por departamento o local (quién recibe cada recado)',
           'Reportes de temas: qué preguntan los clientes y los empleados',
-          'Hasta 15 documentos; soporte prioritario'],
+          'Hasta 15 documentos cargados por DOMINIO; soporte prioritario'],
     'P': ['Todo lo de Large',
           'WhatsApp Business con número propio verificado y el nombre del negocio',
           'El mismo agente contesta en WhatsApp y en la web (un solo dashboard)',
@@ -249,6 +254,11 @@ for p in PACKAGES:
              Paragraph(f'<i>Para quién:</i> {p["for"]}', BODY)]
     block += bullets(FEATURES[p['id']])
     S.append(KeepTogether(block))
+S += bullets([
+    '<b>Quién mantiene el conocimiento, en todos los paquetes:</b> DOMINIO. El módulo de conocimiento del dashboard '
+    'es solo del equipo de DOMINIO; el cliente envía los cambios (por correo o WhatsApp) y DOMINIO los publica. Así el '
+    'agente nunca queda con datos a medias y el cliente no tiene que aprender una herramienta.',
+])
 
 # ---- 3. Escalones
 S.append(CondPageBreak(3 * inch))
@@ -369,8 +379,10 @@ COEXIST = [
      'Medium al mismo precio da más: si conviven, vender Medium en directo y no empujar Starter.'),
     ('Pro $299/mes · $1,000', 'Citas, calificación de leads, marca, afinación; 500 mensajes/día',
      'Medium tope ($299)', 'Equivalentes; Medium suma recados y horario cuando se construyan.'),
-    ('Scale $499/mes · $2,500', 'Promete WhatsApp, 3 locales, CRM y calendario', 'Large ($349–599) / Premium',
-     'Promete funciones que NO existen: quitarlas o marcarlas "próximamente" ya, aunque convivan.'),
+    ('Scale $499/mes · $2,500', 'Pro + hasta 3 locales con su horario y 1,500 mensajes/día; WhatsApp Business '
+     'como añadido; CRM a la medida', 'Large ($349–599) / Premium',
+     'Desde el 15 de octubre es coherente con el código: los locales existen y WhatsApp está construido; el '
+     'añadido de WhatsApp se cotiza como Premium.'),
 ]
 for r in COEXIST:
     rows.append(list(r))
@@ -458,6 +470,8 @@ S.append(Paragraph(
 rows = [['Función', 'Paquete', 'Estado', 'Trabajo estimado']]
 AVAIL = [
     ('Chat web, escaneo de sitio y archivos, leads, emails verificados, anti-bots, dashboards', 'S', 'Listo', '—'),
+    ('Conocimiento gestionado por DOMINIO (módulo solo staff; hasta 500 páginas y 50 MB por carga; Sonnet 5.5 para '
+     'ingerir, Haiku 5.5 para contestar)', 'Todos', 'Listo', '—'),
     ('Citas con horario, recordatorio por email, escalación con aviso SMS/WhatsApp', 'M', 'Listo', '—'),
     ('Versiones del conocimiento, ficha del lead con notas, modo clínica', 'M', 'Listo', '—'),
     ('Tomar recados (herramienta take_message) y contactos del equipo por departamento', 'M', 'Listo', '—'),

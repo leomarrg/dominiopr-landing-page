@@ -1,7 +1,9 @@
 {% extends 'landing/dashboard_base.html' %}
+{% load landing_extras %}
 {% block title %}Conocimiento{% endblock %}
 {% block content %}
 <h1 class="dash-h1">Base de conocimiento — {{ client_obj.name }}</h1>
+<p class="dash-muted" style="margin-top:-6px">Solo staff de DOMINIO ve esta página: aquí se carga y mantiene el conocimiento del agente de cada cliente.</p>
 
 {% if all_clients|length > 1 %}
 <form class="dash-inline-form" method="get" action="{% url 'knowledge' %}">
@@ -16,18 +18,14 @@
 
 <div class="dash-card">
     <h2>Fuentes</h2>
-    <p class="dash-muted">Solo las fuentes <b>activas</b> participan en las respuestas del agente. Una fuente nueva queda en borrador: pruébala abajo y actívala cuando la respuesta sea correcta. Editar una fuente activa crea un borrador con tus cambios; la versión activa sigue respondiendo hasta que actives el borrador.</p>
-    {% if not can_publish %}
-    <p class="kn-plan-note" style="border:1px solid #c9d6ee;background:#f2f6fd;border-radius:8px;padding:8px 10px;font-size:14px">{{ review_message }}</p>
-    {% endif %}
-    {% if sizes.over_total or sizes.over_sources %}
-    <div class="kn-size-warning" style="border:1px solid #e0b84c;background:#fff8e6;border-radius:8px;padding:8px 10px;margin:0 0 8px;font-size:13px">
-        <b>Conocimiento activo por encima del límite recomendado.</b> Sigue funcionando, pero respuestas más precisas salen de fuentes cortas.
-        {% if sizes.over_total %}<div>Total activo: {{ sizes.total_chars }} caracteres (máximo {{ sizes.max_total }}).</div>{% endif %}
-        {% for o in sizes.over_sources %}<div>"{{ o.title }}" supera {{ sizes.max_source }} caracteres por fuente.</div>{% endfor %}
-        <div>Para publicar algo nuevo tendrás que estar dentro del límite.</div>
+    <p class="dash-muted">Solo las fuentes <b>activas</b> participan en las respuestas del agente. Una fuente nueva queda en borrador: pruébala abajo y actívala cuando la respuesta sea correcta. Editar una fuente activa crea un borrador con los cambios; la versión activa sigue respondiendo hasta que actives el borrador.</p>
+    <div class="kn-size" style="border:1px solid {% if sizes.over_hard %}#d26a6a{% elif sizes.over_total or sizes.over_sources %}#e0b84c{% else %}#c9d6ee{% endif %};background:{% if sizes.over_hard %}#fdf0f0{% elif sizes.over_total or sizes.over_sources %}#fff8e6{% else %}#f2f6fd{% endif %};border-radius:8px;padding:8px 10px;margin:0 0 8px;font-size:13px">
+        <div><b>Conocimiento activo:</b> {{ sizes.total_chars|thousands }} caracteres ≈ {{ sizes.tokens|thousands }} tokens → ~{{ sizes.usd_display }} por pregunta sin caché ({{ sizes.usd_cached_display }} con caché leída), con {{ sizes.model }}. Solo cuenta la parte del conocimiento; reglas, herramientas e historial van aparte.</div>
+        <div class="dash-sub">Techo técnico: {{ sizes.hard_max|thousands }} caracteres ({{ sizes.hard_pct }}% usado). Recomendado: hasta {{ sizes.recommended_source|thousands }} por fuente y {{ sizes.recommended_total|thousands }} en total; respuestas más precisas salen de fuentes cortas.</div>
+        {% if sizes.over_hard %}<div style="color:#a12626"><b>Por encima del techo técnico.</b> El agente sigue respondiendo con lo que hay, pero no se puede publicar nada más hasta archivar o recortar fuentes.</div>{% endif %}
+        {% if sizes.over_total %}<div><b>Por encima de lo recomendado en total</b> ({{ sizes.total_chars|thousands }} &gt; {{ sizes.recommended_total|thousands }}). Se puede seguir publicando; cada pregunta cuesta lo indicado arriba.</div>{% endif %}
+        {% for o in sizes.over_sources %}<div>"{{ o.title }}" supera los {{ sizes.recommended_source|thousands }} caracteres recomendados por fuente.</div>{% endfor %}
     </div>
-    {% endif %}
     <table class="dash-table">
         <thead><tr><th>Título</th><th>Tipo</th><th>Estado</th><th>Actualizada</th><th>Acciones</th></tr></thead>
         <tbody>
@@ -45,12 +43,12 @@
                         <p class="dash-sub" style="margin:0 0 6px"><b>Revisa este contenido antes de activarlo: el agente lo usará como información oficial del negocio.</b></p>
                         {% with rv=s.review %}{% if rv %}
                         <div class="kn-review__contacts" style="border:1px solid #e0b84c;background:#fff8e6;border-radius:8px;padding:8px 10px;margin:0 0 6px;font-size:13px">
-                            <b>Datos de contacto detectados — confirma que son tuyos</b>
+                            <b>Datos de contacto detectados — confirma con el cliente que son suyos</b>
                             {% if rv.phones %}<div>Teléfonos: {{ rv.phones|join:", " }}</div>{% endif %}
                             {% if rv.emails %}<div>Emails: {{ rv.emails|join:", " }}</div>{% endif %}
-                            {% if rv.foreign_emails %}<div>Emails con un dominio que no es el tuyo: {{ rv.foreign_emails|join:", " }}</div>{% endif %}
+                            {% if rv.foreign_emails %}<div>Emails con un dominio que no es el del cliente: {{ rv.foreign_emails|join:", " }}</div>{% endif %}
                             {% if rv.urls %}<div>Enlaces: {{ rv.urls|join:", " }}</div>{% endif %}
-                            {% if rv.removed_urls %}<div>Enlaces fuera de tu dominio, quitados del borrador (si son tuyos, añádelos a mano en una fuente de texto): {{ rv.removed_urls|join:", " }}</div>{% endif %}
+                            {% if rv.removed_urls %}<div>Enlaces fuera del dominio del cliente, quitados del borrador (si son suyos, añádelos a mano en una fuente de texto): {{ rv.removed_urls|join:", " }}</div>{% endif %}
                         </div>
                         {% endif %}{% endwith %}
                         <pre style="white-space:pre-wrap;font:inherit;font-size:13px;margin:0;max-height:420px;overflow:auto;border:1px solid #dde;border-radius:8px;padding:8px 10px">{{ s.compiled_text }}</pre>
@@ -83,9 +81,9 @@
                         <ul style="margin:6px 0 0;padding-left:18px;font-size:13px">
                             {% for h in s.history %}
                             <li>{{ h.title }} <span class="dash-sub">· versión del {{ h.created_at|date:"M d, Y g:i A" }} · archivada {{ h.updated_at|date:"M d, Y" }}</span>
-                                {% if can_publish %}{% if h.content or h.kind != 'file' %}
-                                <form method="post" action="{% url 'knowledge_action' h.pk %}" style="display:inline">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="restore">{% if user.is_staff %}<label class="dash-sub"><input type="checkbox" name="override_caps" value="1"> ignorar límites</label> {% endif %}<button class="save-btn save-btn--sm">Restaurar</button></form>
-                                {% endif %}{% endif %}
+                                {% if h.content or h.kind != 'file' %}
+                                <form method="post" action="{% url 'knowledge_action' h.pk %}" style="display:inline">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="restore"><button class="save-btn save-btn--sm">Restaurar</button></form>
+                                {% endif %}
                             </li>
                             {% endfor %}
                         </ul>
@@ -97,46 +95,44 @@
                 <td class="dash-sub">{{ s.updated_at|date:"M d, g:i A" }}</td>
                 <td>
                     <div class="dash-actions-row" style="margin:0">
-                        {% if s.status == 'draft' and can_publish %}
-                        <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="activate">{% if user.is_staff %}<label class="dash-sub"><input type="checkbox" name="override_caps" value="1"> ignorar límites</label> {% endif %}<button class="save-btn save-btn--sm">Activar</button></form>
-                        {% elif s.status == 'draft' %}
-                        <span class="dash-sub">DOMINIO lo publica</span>
+                        {% if s.status == 'draft' %}
+                        <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="activate"><button class="save-btn save-btn--sm">Activar</button></form>
                         {% endif %}
                         {% if s.kind == 'url' and not s.in_progress %}
                         <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="reprocess"><button class="save-btn save-btn--sm">Reprocesar</button></form>
                         {% elif s.status == 'error' and s.kind == 'site' or s.status == 'error' and s.kind == 'file' and s.content %}
                         <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="reprocess"><button class="save-btn save-btn--sm">Reintentar</button></form>
                         {% endif %}
-                        {% if not s.in_progress %}{% if s.status != 'active' or can_publish %}
+                        {% if not s.in_progress %}
                         <form method="post" action="{% url 'knowledge_action' s.pk %}" class="kn-audience-form">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="audience"><select name="audience" aria-label="Cambiar audiencia">{% for val, label in audience_choices %}<option value="{{ val }}" {% if val == s.audience %}selected{% endif %}>{{ label }}</option>{% endfor %}</select> <button class="save-btn save-btn--sm">Audiencia</button></form>
-                        {% endif %}{% endif %}
+                        {% endif %}
                         {% if s.status == 'processing' %}
-                        {% elif s.status == 'active' %}{% if can_publish %}
+                        {% elif s.status == 'active' %}
                         <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="archive"><button class="save-btn save-btn--sm">Archivar</button></form>
-                        {% endif %}{% else %}
+                        {% else %}
                         <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="delete"><button class="save-btn save-btn--sm">Borrar</button></form>
                         {% endif %}
                     </div>
                 </td>
             </tr>
             {% empty %}
-            <tr><td colspan="5"><div class="dash-empty">Sin fuentes todavía — el agente usa el conocimiento base configurado por DOMINIO. Añade tu primera fuente abajo.</div></td></tr>
+            <tr><td colspan="5"><div class="dash-empty">Sin fuentes todavía — el agente usa el conocimiento base configurado por DOMINIO. Añade la primera fuente abajo.</div></td></tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
 
 <div class="dash-card">
-    <h2>Aprender de tu sitio web y tus documentos</h2>
-    <p class="dash-muted">La IA lee tu sitio o tu documento y resume lo que un cliente pregunta: servicios y precios, horarios, ubicación y contacto, políticas y preguntas frecuentes. Solo usa lo que está escrito; no inventa datos. El resultado queda en <b>borrador</b>: revísalo, pruébalo y actívalo cuando esté correcto.</p>
+    <h2>Aprender del sitio web y los documentos del cliente</h2>
+    <p class="dash-muted">La IA lee el sitio o el documento y resume lo que un cliente pregunta: servicios y precios, horarios, ubicación y contacto, políticas y preguntas frecuentes. Solo usa lo que está escrito; no inventa datos. El resultado queda en <b>borrador</b>: revísalo, pruébalo y actívalo cuando esté correcto. Cada escaneo o archivo se cobra en el libro de uso del cliente como <code>knowledge_ingest</code>.</p>
     {% if any_in_progress %}<p class="dash-sub">Hay fuentes procesándose en segundo plano. Recarga esta página en unos minutos para ver el resultado.</p>{% endif %}
 
     <form method="post" action="{% url 'knowledge_scan' %}" class="dash-inline-form" style="margin-bottom:12px">
         {% csrf_token %}
         <input type="hidden" name="client" value="{{ client_obj.slug }}">
-        <label for="kn-scan-url">Tu sitio:</label>
-        <input type="url" id="kn-scan-url" name="url" value="{{ scan_url }}" placeholder="https://tunegocio.com" maxlength="500" required style="flex:1;min-width:240px">
-        <button type="submit" class="save-btn save-btn--sm" {% if scan_running %}disabled title="Ya hay un escaneo en curso"{% endif %}>Escanear mi sitio</button>
+        <label for="kn-scan-url">Sitio del cliente:</label>
+        <input type="url" id="kn-scan-url" name="url" value="{{ scan_url }}" placeholder="https://negocio.com" maxlength="500" required style="flex:1;min-width:240px">
+        <button type="submit" class="save-btn save-btn--sm" {% if scan_running %}disabled title="Ya hay un escaneo en curso"{% endif %}>Escanear el sitio</button>
     </form>
 
     <form method="post" action="{% url 'knowledge_upload' %}" enctype="multipart/form-data" class="dash-inline-form">
@@ -168,7 +164,7 @@
                 {% for val, label in audience_choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
             </select>
         </div>
-        <p class="dash-sub" style="margin:0 0 8px">"Solo equipo interno" nunca llega al agente del sitio web: es para el asistente interno de tus empleados (manuales, políticas, procedimientos).{% if not has_internal %} Tu plan actual no incluye el asistente interno; esas fuentes se guardan pero no se usan.{% endif %}</p>
+        <p class="dash-sub" style="margin:0 0 8px">"Solo equipo interno" nunca llega al agente del sitio web: es para el asistente interno de los empleados del cliente (manuales, políticas, procedimientos).{% if not has_internal %} El plan actual del cliente no incluye el asistente interno; esas fuentes se guardan pero no se usan.{% endif %}</p>
         <input type="url" name="origin" placeholder="https://… (solo para tipo URL)" maxlength="500" style="width:100%;margin-bottom:8px;padding:8px 10px;border:1px solid #ccd;border-radius:8px;font:inherit">
         <textarea name="content" rows="6" placeholder="Contenido (texto libre, o pares P: pregunta / R: respuesta). Para URL se llena solo al procesar." style="width:100%;padding:8px 10px;border:1px solid #ccd;border-radius:8px;font:inherit"></textarea>
         <div style="margin-top:8px"><button type="submit" class="save-btn">Guardar y procesar</button></div>
@@ -208,9 +204,9 @@
         {% for s in archived %}
         <tr><td>{{ s.title }}</td><td class="dash-sub">versión del {{ s.created_at|date:"M d, Y" }} · archivada {{ s.updated_at|date:"M d, Y" }}</td>
             <td><div class="dash-actions-row" style="margin:0">
-                {% if can_publish %}{% if s.content or s.kind != 'file' %}
-                <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="restore">{% if user.is_staff %}<label class="dash-sub"><input type="checkbox" name="override_caps" value="1"> ignorar límites</label> {% endif %}<button class="save-btn save-btn--sm">Restaurar</button></form>
-                {% endif %}{% endif %}
+                {% if s.content or s.kind != 'file' %}
+                <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="restore"><button class="save-btn save-btn--sm">Restaurar</button></form>
+                {% endif %}
                 <form method="post" action="{% url 'knowledge_action' s.pk %}">{% csrf_token %}<input type="hidden" name="client" value="{{ client_obj.slug }}"><input type="hidden" name="action" value="delete"><button class="save-btn save-btn--sm">Borrar</button></form>
             </div></td></tr>
         {% endfor %}

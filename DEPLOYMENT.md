@@ -327,11 +327,14 @@ python manage.py preflight   # Stripe, SMTP, IA y Django reales (--stripe|--emai
 # M-20: publicar en redes los posts aprobados que ya vencieron, cada 5 min
 */5 * * * * cd /ruta/app && venv/bin/python manage.py publish_due
 # Fase 8: escaneos de sitio y archivos subidos -> conocimiento en BORRADOR (nunca activa solo).
-# Máx 3 fuentes por corrida; un candado evita dos corridas a la vez. Sale con error sin ANTHROPIC_API_KEY.
-# `timeout 900` es el tope duro de la corrida (cada página y cada llamada a la IA ya tienen su
-# límite; esto cubre lo imprevisto). Si lo mata, la fila queda "procesando" y se reintenta sola
-# a los 30 min (luego queda en error); el candado expira solo.
-* * * * * cd /ruta/app && timeout 900 venv/bin/python manage.py process_knowledge >> /home/ubuntu/dominio-cron.log 2>&1
+# Una fuente por corrida (`--limit 1`): un escaneo completo puede tardar hasta 20 min de rastreo
+# (DOMINIO_INGEST_TIME_BUDGET) más el destilado con Sonnet (hasta ~70 llamadas de ~15k tokens),
+# y así nunca se mata una segunda fuente a medias. Un candado (65 min) evita dos corridas a la vez.
+# Sale con error sin ANTHROPIC_API_KEY. `timeout 3600` es el tope duro de la corrida (cada página
+# y cada llamada a la IA ya tienen su límite; esto cubre lo imprevisto). Si lo mata, la fila queda
+# "procesando" sin latido y se reintenta sola a los 30 min (luego queda en error); el candado
+# expira solo.
+* * * * * cd /ruta/app && timeout 3600 venv/bin/python manage.py process_knowledge --limit 1 >> /home/ubuntu/dominio-cron.log 2>&1
 # M-01: reconciliación de suscripciones contra Stripe, diario
 45 4 * * * cd /ruta/app && venv/bin/python manage.py reconcile_stripe
 # Fase C: el día 1 de cada mes factura el exceso de conversaciones del mes anterior como
@@ -342,22 +345,31 @@ python manage.py preflight   # Stripe, SMTP, IA y Django reales (--stripe|--emai
 10 3 1 * * cd /ruta/app && venv/bin/python manage.py bill_overage >> /home/ubuntu/dominio-cron.log 2>&1
 ```
 
-**Conocimiento desde el sitio y archivos (Fase 8):** en el dashboard → Conocimiento, el
-administrador del cliente puede "Escanear mi sitio" (solo dominios de su `allowed_origins`; staff
-puede cualquier URL pública) o "Subir archivo" (PDF, .docx, TXT, MD, CSV, máx. 5 MB, se lee en
-memoria y no se guarda). El trabajo pesado lo hace el cron `process_knowledge` de arriba (hasta
-30 páginas / 120 s por sitio, Haiku con salida estructurada, costo en el libro de uso como
-`knowledge_ingest`). El resultado queda en borrador para probarlo y activarlo. Para escanear el
-sitio de DOMINIO desde el servidor: `venv/bin/python manage.py process_knowledge --scan-site dominio https://dominiopr.com`.
+**Conocimiento desde el sitio y archivos (Fase 8; solo staff desde la Fase I):** el módulo
+Conocimiento del dashboard (`/dashboard/knowledge/`) es exclusivo del staff de DOMINIO
+(`is_staff`): DOMINIO carga y mantiene el conocimiento de cada agente; un administrador de
+cliente que entre a esas URLs vuelve a su dashboard con el aviso de escribir a hola@dominiopr.com.
+El staff elige el cliente con `?client=<slug>`, puede "Escanear el sitio" (cualquier URL pública)
+o "Subir archivo" (PDF, .docx, TXT, MD, CSV, máx. 50 MB, se lee en memoria y no se guarda). El
+trabajo pesado lo hace el cron `process_knowledge` de arriba (hasta 500 páginas / 1,200 s de
+rastreo por sitio y hasta 4,000,000 caracteres de texto por fuente, `DOMINIO_INGEST_MAX_INPUT_CHARS`;
+destila con `DOMINIO_INGEST_MODEL` = Sonnet 5.5 a effort `medium` y salida estructurada; el chat
+sigue en Haiku 5.5). Cada llamada queda en el libro de uso como `knowledge_ingest` con el modelo
+y su costo. El resultado queda en borrador y DOMINIO recibe un correo para probarlo y activarlo.
+La página muestra el tamaño del conocimiento activo, los tokens aproximados y el costo por
+pregunta del chat (sin caché y con caché); 8,000 caracteres por fuente y 40,000 en total son
+avisos, y solo `DOMINIO_KNOWLEDGE_HARD_MAX_CHARS` (400,000) bloquea una publicación. Para escanear
+el sitio de DOMINIO desde el servidor: `venv/bin/python manage.py process_knowledge --scan-site dominio https://dominiopr.com`.
 Requiere `pip install -r requirements.txt` (añade `pypdf`), `migrate` (0032, 0033) y recargar nginx
 con el `dominio.conf` y el `dominio-limits.conf` actualizados (location
-`/dashboard/knowledge/upload/` con `client_max_body_size 6m`, máx. 2 subidas por IP y 4 en total
+`/dashboard/knowledge/upload/` con `client_max_body_size 51m`, máx. 2 subidas por IP y 1 en total (414 MB de RAM)
 con la zona `dominio_upload_total`; sin eso nginx responde 413 a cualquier archivo de más de
 256 KB). Copiar ambos archivos juntos y probar con `sudo nginx -t` antes de recargar: el
 `dominio.conf` nuevo usa una zona que solo existe en el `dominio-limits.conf` nuevo.
-La lectura de PDF/Word corre en un proceso aparte (`landing/extract_worker.py`) con 25 s de tope
-y, en Linux, 350 MB de memoria y 30 s de CPU; si se pasa, el inquilino ve un mensaje y el worker
-de gunicorn sigue sano.
+La lectura de PDF/Word corre en un proceso aparte (`landing/extract_worker.py`) con 45 s de tope
+(nginx da 65 s al request completo) y, en Linux, 350 MB de memoria y 45 s de CPU; un PDF que no
+quepa en eso se rechaza con un mensaje claro y el worker de gunicorn sigue sano. En memoria, una
+subida de 50 MB ocupa ~100-150 MB en el worker mientras se lee (nginx permite 4 a la vez).
 
 **Verificación humana (hCaptcha, Fase 5):** apagada mientras `HCAPTCHA_SITEKEY` y
 `HCAPTCHA_SECRET` estén vacíos (el sitio se comporta igual que antes; `preflight --ai` avisa en

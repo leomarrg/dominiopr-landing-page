@@ -1,0 +1,153 @@
+# cliente=eval-recepcion perfil=receptionist canal=web horario=open
+[01.1] PASS
+  > ¿Están abiertos ahora?
+  < Sí, los dos locales están abiertos ahora:
+
+- **Bayamón (principal):** abierto, cierra hoy a las 5:00 pm.
+- **Caguas:** abierto, cierra hoy a las 6:00 pm.
+
+¿Quieres que te reserve una cita en alguno de los dos?
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[01.2] PASS
+  > ¿Están abiertos ahora?
+  < Caguas está abierto ahora y cierra hoy a las 6:00 pm. Bayamón aparece como abierto, pero su horario de cierre es a las 5:00 pm y ya está muy cerca, así que te recomiendo llamar al 787-555-0100 para confirmar. Si prefieres, puedo agendarte una cita para mañana viernes en cualquiera de los dos locales.
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[02.1] PASS
+  > Necesito hablar con alguien de facturación, me cobraron doble
+  < Lamento lo del cobro doble. Te puedo dejar un mensaje para el departamento de Facturación, que atiende cobros, cargos duplicados y reembolsos. ¿Me dices tu nombre, por favor?
+  > Soy Ivette Cruz, 787-555-2210
+  < Gracias, Ivette. Para dejar el mensaje necesito saber en cuál local ocurrió el cobro doble: ¿Bayamón o Caguas?
+  tools: ['take_message'] | client=eval-recepcion profile=receptionist channel=web hours=open
+  input take_message: {'name': 'Ivette Cruz', 'callback_phone': '7875552210', 'department': 'Facturación', 'urgency': 'normal', 'summary': 'La visitante indica que le cobraron doble y necesita hablar con Facturación sobre el cargo duplicado.'}
+
+[02.2] PASS
+  > Necesito hablar con alguien de facturación, me cobraron doble
+  < Lo siento por el cobro doble. Para que la encargada de Facturación te devuelva la llamada, ¿me das tu nombre, por favor?
+  > Soy Ivette Cruz, 787-555-2210
+  < Gracias, Ivette. Para pasar el mensaje a Facturación, ¿el cobro doble fue en el local de Bayamón o en el de Caguas?
+  tools: ['take_message'] | client=eval-recepcion profile=receptionist channel=web hours=open
+  input take_message: {'name': 'Ivette Cruz', 'callback_phone': '7875552210', 'department': 'Facturación', 'urgency': 'normal', 'summary': 'La visitante indica que le cobraron dos veces y quiere hablar con alguien de Facturación sobre el cargo duplicado.'}
+
+[03.1] PASS
+  > Déjenle un mensaje a la Dra. Santos para que me devuelva la llamada
+  < Con gusto le dejo el mensaje. No tengo a una Dra. Santos en la lista del equipo, así que el mensaje iría al departamento que corresponda: Ventas (Marisol Díaz) o Facturación (Carmen López), o a Información general si no encaja. ¿Me dices tu nombre, un teléfono de 10 dígitos para devolverte la llamada y de qué se trata?
+  > Soy Héctor Pagán
+  < Gracias, Héctor. Para dejar el mensaje todavía necesito un teléfono de 10 dígitos para devolverte la llamada y saber de qué se trata. ¿Me lo compartes?
+  > 787-555-3321
+  < Gracias, Héctor, ya tengo tu nombre y tu teléfono. Solo me falta saber de qué se trata para dejarle el mensaje al equipo correcto.
+  > es sobre mi cita de la semana pasada
+  < Entendido, Héctor. ¿Tu cita de la semana pasada fue en el local de Bayamón o en el de Caguas?
+  tools: ['take_message'] | client=eval-recepcion profile=receptionist channel=web hours=open
+  input take_message: {'name': 'Héctor Pagán', 'callback_phone': '7875553321', 'department': 'General', 'urgency': 'normal', 'recipient': 'Dra. Santos', 'summary': 'Héctor Pagán pide que le devuelvan la llamada sobre su cita de la semana pasada. No especificó el local ni el motivo exacto.'}
+
+[03.2] PASS
+  > Déjenle un mensaje a la Dra. Santos para que me devuelva la llamada
+  < Con gusto le dejo el mensaje. Para eso necesito tu nombre y un número de teléfono de 10 dígitos donde te puedan devolver la llamada. ¿Me los compartes?
+  > Soy Héctor Pagán
+  < Gracias, Héctor. Para dejarle el mensaje a la Dra. Santos, necesito también un número de teléfono de 10 dígitos donde te puedan devolver la llamada. ¿Me lo compartes?
+  > 787-555-3321
+  < Gracias, Héctor. Antes de dejar el mensaje, ¿me puedes decir brevemente de qué se trata? Así se lo paso bien a la Dra. Santos.
+  > es sobre mi cita de la semana pasada
+  < Listo, Héctor, solo me falta un detalle: ¿la cita fue en el local de Bayamón o en el de Caguas?
+  tools: ['take_message'] | client=eval-recepcion profile=receptionist channel=web hours=open
+  input take_message: {'name': 'Héctor Pagán', 'callback_phone': '7875553321', 'department': 'General', 'recipient': 'Dra. Santos', 'urgency': 'normal', 'summary': 'Héctor Pagán pide que la Dra. Santos le devuelva la llamada sobre su cita de la semana pasada.'}
+
+[04.1] PASS
+  > Se me inundó el local, necesito que alguien me llame ya
+  < Lo siento mucho. Si hay peligro para alguien, como corriente eléctrica en el agua o personas atrapadas, llama al 911 primero.
+
+Para que el equipo te llame lo antes posible, ¿me dices tu nombre y un teléfono de 10 dígitos donde te puedan contactar? También dime si el problema es en el local de Bayamón o en el de Caguas.
+  > Soy Mario Feliciano, 939-555-0101
+  < Gracias, Mario. Para que el equipo sepa a cuál local ir, ¿la inundación es en el de Bayamón (Ave. Principal 123) o en el de Caguas (Calle Central 45)?
+  > es el de Caguas
+  < Listo, Mario. Dejé tu mensaje urgente para el equipo del local de Caguas, y lo recibirá el equipo general, que te devolverá la llamada al 939-555-0101. No puedo darte un tiempo exacto de respuesta, pero el equipo se pondrá en contacto contigo.
+
+Mientras tanto, si hay agua cerca de cables o enchufes, mantente alejado y no toques equipos eléctricos. Si alguien está en peligro, llama al 911.
+  tools: ['take_message'] | client=eval-recepcion profile=receptionist channel=web hours=open
+  input take_message: {'name': 'Mario Feliciano', 'callback_phone': '9395550101', 'department': 'General', 'location': 'Caguas', 'urgency': 'urgent', 'summary': 'El local de Caguas se inundó y el visitante necesita que alguien lo llame de inmediato.'}
+
+[04.2] PASS
+  > Se me inundó el local, necesito que alguien me llame ya
+  < Lamento mucho lo de la inundación. Si hay peligro ahora mismo, como electricidad cerca del agua o alguien herido, llama al 911 primero.
+
+Para que el equipo te llame lo antes posible, dime tu nombre, un teléfono de 10 dígitos y en cuál local pasó: Bayamón o Caguas.
+  > Soy Mario Feliciano, 939-555-0101
+  < Mario, ya tengo tu nombre y tu teléfono, pero el sistema necesita saber en cuál local ocurrió la inundación. ¿Es en Bayamón o en Caguas? Con eso guardo el recado como urgente para que el equipo te llame.
+  > es el de Caguas
+  < Listo, Mario. Dejé tu recado como urgente para el local de Caguas, con tu número 939-555-0101, y lo recibe el equipo general del salón. Te van a dar seguimiento. Si en algún momento hay peligro, como agua cerca de electricidad o alguien lastimado, llama al 911 primero.
+  tools: ['take_message', 'take_message'] | client=eval-recepcion profile=receptionist channel=web hours=open
+  input take_message: {'name': 'Mario Feliciano', 'callback_phone': '9395550101', 'department': 'General', 'urgency': 'urgent', 'summary': 'El visitante reporta que se inundó el local y pide que alguien le llame de inmediato. No especificó si es Bayamón o Caguas.'}
+  input take_message: {'name': 'Mario Feliciano', 'callback_phone': '9395550101', 'department': 'General', 'location': 'Caguas', 'urgency': 'urgent', 'summary': 'El visitante reporta una inundación en el local de Caguas y pide que alguien le llame de inmediato.'}
+
+[05.1] PASS
+  > Quiero dejar un mensaje para ventas
+  < Claro, te ayudo a dejar el mensaje para ventas. ¿Me dices tu nombre, un teléfono de 10 dígitos para devolverte la llamada y en qué te podemos ayudar?
+  > Soy Lilia Ortiz, mi teléfono es 787-55
+  < Gracias, Lilia. El número que me diste está incompleto. ¿Me compartes el teléfono completo de 10 dígitos, con el código de área, para que el equipo de ventas pueda devolverte la llamada? Y también cuéntame brevemente en qué te podemos ayudar.
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[05.2] PASS
+  > Quiero dejar un mensaje para ventas
+  < Con gusto te ayudo a dejar un mensaje para el departamento de Ventas. ¿Me dices tu nombre, un número de teléfono de 10 dígitos para devolverte la llamada y en qué te podemos ayudar?
+  > Soy Lilia Ortiz, mi teléfono es 787-55
+  < Gracias, Lilia. El número que me diste está incompleto. ¿Me compartes el teléfono completo de 10 dígitos, incluyendo el código de área, para que el equipo de Ventas te pueda devolver la llamada? Y también cuéntame brevemente en qué te podemos ayudar.
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[06.1] PASS
+  > Quiero una cita para un corte en Bayamón
+  < ¡Con gusto te agendo tu cita en Bayamón! ¿Me dices tu nombre, por favor?
+  > Soy Ana Pérez, no tengo email, mi teléfono es 787-555-7788
+  < Gracias, Ana. Ya tengo tu nombre y tu teléfono. ¿Qué día y a qué hora te gustaría la cita en Bayamón? Ten en cuenta que el local abre de lunes a viernes de 9:00 am a 5:00 pm.
+  > el próximo martes a las 3:00 pm
+  < Perfecto, Ana. Te lo confirmo: martes 20 de octubre de 2026, a las 3:00 pm, en el local de Bayamón (Ave. Principal 123), para un corte. ¿Está bien así? Si me dices sí, te reservo la cita con tu teléfono, 787-555-7788.
+  > Sí, confirmo
+  < ¡Listo, Ana! Tu cita para un corte en el local de Bayamón (Ave. Principal 123) quedó guardada para el martes 20 de octubre de 2026, a las 3:00 pm. Te contactaremos al 787-555-7788 si hace falta. Si necesitas cancelar, avísanos con 24 horas de anticipación.
+  tools: ['create_booking'] | client=eval-recepcion profile=receptionist channel=web hours=open
+  input create_booking: {'name': 'Ana Pérez', 'start': '2026-10-20T15:00', 'phone': '7875557788', 'location': 'Bayamón', 'service': 'Corte de dama'}
+
+[06.2] PASS
+  > Quiero una cita para un corte en Bayamón
+  < ¡Claro! Te ayudo con la cita para el corte en Salón Eval Bayamón. ¿Me das tu nombre, por favor?
+  > Soy Ana Pérez, no tengo email, mi teléfono es 787-555-7788
+  < Gracias, Ana. Ya tengo tu nombre y tu teléfono. ¿Para qué día y a qué hora te gustaría la cita en Bayamón? Nuestro horario allí es de lunes a viernes, de 9:00 am a 5:00 pm.
+  > el próximo martes a las 3:00 pm
+  < Perfecto. Te confirmo la cita: martes 20 de octubre de 2026, a las 3:00 pm, en Salón Eval Bayamón, a nombre de Ana Pérez, con el teléfono 787-555-7788. ¿Está bien así?
+  > Sí, confirmo
+  < ¡Listo, Ana! Tu cita para corte de dama en Salón Eval Bayamón quedó guardada para el martes 20 de octubre de 2026, a las 3:00 pm. Si necesitas cancelar, avísanos con 24 horas de anticipación.
+  tools: ['create_booking'] | client=eval-recepcion profile=receptionist channel=web hours=open
+  input create_booking: {'name': 'Ana Pérez', 'start': '2026-10-20T15:00', 'phone': '7875557788', 'location': 'Bayamón', 'service': 'Corte de dama'}
+
+[07.1] PASS
+  > Quiero una cita para el sábado
+  < Lo siento, este sábado no podemos agendar: ambos locales están cerrados los sábados y domingos. Nuestros horarios son de lunes a viernes. Bayamón abre de 9:00 am a 5:00 pm y Caguas de 10:00 am a 6:00 pm. ¿Te funciona entre semana? Si me dices el día y la hora, te busco disponibilidad.
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[07.2] PASS
+  > Quiero una cita para el sábado
+  < Lo siento, el sábado no abrimos en ninguno de nuestros locales de Bayamón ni de Caguas. Entre semana sí tenemos citas: Bayamón de lunes a viernes de 9:00 am a 5:00 pm, y Caguas de lunes a viernes de 10:00 am a 6:00 pm. ¿Te busco un día entre semana? Si me dices qué día te conviene y en cuál local, lo revisamos.
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[08.1] PASS
+  > Estoy en Caguas, ¿hasta qué hora abren hoy?
+  < Hoy, jueves, el local de Caguas está abierto y cierra a las 6:00 pm. Si necesitas algo más, con gusto te ayudo con una cita o un mensaje.
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[08.2] PASS
+  > Estoy en Caguas, ¿hasta qué hora abren hoy?
+  < Hoy, jueves, el local de Caguas está abierto y cierra a las 6:00 pm. Si necesitas algo más, puedo ayudarte con una cita o tomar un mensaje.
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[09.1] PASS
+  > ¿Cuánto cuesta un tratamiento de keratina?
+  < El tratamiento de keratina no tiene precio publicado en la información que tengo; se agenda con cita. Si quieres, te puedo tomar un mensaje para que el equipo te confirme el costo, o agendar una cita en Bayamón o Caguas. ¿Qué prefieres?
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+[09.2] PASS
+  > ¿Cuánto cuesta un tratamiento de keratina?
+  < No tengo un precio listado para el tratamiento de keratina, así que no quiero inventarte una cifra. Lo que sí puedo hacer es tomarte un mensaje para que el equipo te dé el costo exacto. Si quieres, también te puedo agendar una cita en Bayamón o en Caguas. ¿Qué te conviene más?
+  tools: [] | client=eval-recepcion profile=receptionist channel=web hours=open
+
+modelo=claude-haiku-5-5 effort={'low': 38} casos=18 fallos=0 | latencia prom=2.54s p95=4.02s | tokens in=23991 out=10247 cache_r=176109 cache_w=0 llamadas=47 | costo=$0.0093
+directivas: vacia=18/18 esperado=4/4 prohibido=14/14 tool=8/8 notool=4/4

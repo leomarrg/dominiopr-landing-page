@@ -187,9 +187,7 @@ class AudienceLeakGuardTests(TestCase):
 class AudienceUiTests(InternalBase):
     def setUp(self):
         super().setUp()
-        # A self-publish plan so the org_admin can activate/restore.
-        Subscription.objects.filter(client=self.acme).update(plan='pro')
-        self.login(self.admin)
+        self.login(self.staff)  # Phase I: the knowledge page is staff-only
 
     def save(self, pk=None, title='Manual', content='Vacaciones: 15 dias.', **extra):
         data = {'client': 'acme', 'kind': 'text', 'title': title, 'content': content}
@@ -284,24 +282,24 @@ class AudienceUiTests(InternalBase):
         upload.refresh_from_db()
         self.assertEqual(upload.audience, 'internal')
 
-    def test_audience_change_on_a_live_source_needs_publish_rights(self):
-        Subscription.objects.filter(client=self.acme).update(plan='starter')
+    def test_org_admin_cannot_change_audience_or_open_the_page(self):
+        """Phase I: an audience change on a live source is publishing, and
+        publishing (like the whole page) is DOMINIO's."""
         live = source(self.acme, 'Manual', INTERNAL_TEXT, 'internal')
+        self.login(self.admin)
         resp = self.http.post(reverse('knowledge_action', args=[live.pk]),
                               {'client': 'acme', 'action': 'audience', 'audience': 'public'})
-        self.assertEqual(resp.status_code, 403)
+        self.assertRedirects(resp, reverse('dashboard'), fetch_redirect_response=False)
         live.refresh_from_db()
         self.assertEqual(live.audience, 'internal')
         self.assertNotIn(INTERNAL_TEXT, self.acme.compiled_prompt())
-        # A draft may be re-targeted freely (nothing is live yet).
-        draft = source(self.acme, 'Borrador', 'x', 'internal', status='draft')
-        self.http.post(reverse('knowledge_action', args=[draft.pk]),
-                       {'client': 'acme', 'action': 'audience', 'audience': 'both'})
-        draft.refresh_from_db()
-        self.assertEqual(draft.audience, 'both')
+        resp = self.http.get(reverse('knowledge') + '?client=acme', follow=True)
+        self.assertContains(resp, 'lo gestiona DOMINIO')
+        self.assertNotContains(resp, '>Conocimiento<')
 
-    def test_internal_sources_count_toward_the_same_caps(self):
-        source(self.acme, 'Grande', 'x' * (publishing.MAX_TOTAL_CHARS - 10), 'internal')
+    @override_settings(DOMINIO_KNOWLEDGE_HARD_MAX_CHARS=1_000)
+    def test_internal_sources_count_toward_the_same_hard_ceiling(self):
+        source(self.acme, 'Grande', 'x' * 950, 'internal')
         draft = source(self.acme, 'Otra', 'y' * 100, 'public', status='draft')
         with self.assertRaises(publishing.PublishError):
             publishing.publish(draft)
@@ -865,7 +863,7 @@ class NoInternalDocumentsTests(InternalBase):
 
     @override_settings(ANTHROPIC_API_KEY='test-key')
     def test_console_as_employee_returns_the_notice_without_calling_the_model(self):
-        self.login(self.admin)
+        self.login(self.staff)
         with patch.object(agent, 'answer') as answer:
             resp = self.http.post(reverse('knowledge_test'),
                                   {'client': 'acme', 'question': 'vacaciones?', 'as': 'internal'})
@@ -879,7 +877,7 @@ class NoInternalDocumentsTests(InternalBase):
     @override_settings(ANTHROPIC_API_KEY='test-key')
     def test_console_previewing_an_internal_draft_does_consult_the_model(self):
         draft = source(self.acme, 'Manual', INTERNAL_TEXT, 'internal', status='draft')
-        self.login(self.admin)
+        self.login(self.staff)
         calls = []
         with patch.object(agent, 'answer', side_effect=fake_answer(calls=calls)):
             self.http.post(reverse('knowledge_test'),

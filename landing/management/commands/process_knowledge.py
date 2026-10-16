@@ -3,19 +3,23 @@
     python manage.py process_knowledge [--limit 3]
 
 Picks pending KnowledgeSource rows (kind 'site' = website scan, 'file' =
-uploaded document, 'url' = one page, fetched without the model), oldest first, claims each one atomically (two overlapping
-runs never process the same row; a run lock also keeps a second run from
-starting at all), crawls/reads it, distills it with the model and leaves the
-result as a DRAFT for the tenant to test and activate. Never activates.
+uploaded document, 'url' = one page, fetched without the model), oldest
+first, claims each one atomically (two overlapping runs never process the
+same row; a run lock also keeps a second run from starting at all),
+crawls/reads it, distills it with the ingest model and leaves the result as
+a DRAFT for DOMINIO staff to test and activate. Never activates.
 
     python manage.py process_knowledge --scan-site dominio https://dominiopr.com
 
 enqueues a website scan for a client from the CLI (any public host allowed,
 it is the operator) and processes it in the same run.
 
-Rows stuck in 'processing' for 30+ minutes are retried once, then marked error
-(only by the run holding the lock). Run it under `timeout 900` in cron (see
-DEPLOYMENT.md): every fetch and model call is bounded, this is the backstop.
+Rows stuck in 'processing' for 30+ minutes (no heartbeat: a live run touches
+the row per page and per model call) are retried once, then marked error
+(only by the run holding the lock). Run it under `timeout 3600 ... --limit 1`
+in cron (see DEPLOYMENT.md): one source can take the whole crawl budget
+(DOMINIO_INGEST_TIME_BUDGET, 20 min) plus up to ~70 model calls for a full
+scan; every fetch and model call is bounded, the timeout is the backstop.
 """
 import os
 
@@ -27,7 +31,9 @@ from landing import ingest
 from landing.models import Client
 
 LOCK_KEY = 'lock:process_knowledge'
-LOCK_TTL = 30 * 60  # outlives one run (3 sources x ~3 min); expires if a run is killed
+# Must outlive the cron `timeout` (3600 s): a run killed by it cannot release
+# the lock, so the queue waits for this expiry at most.
+LOCK_TTL = 65 * 60
 
 
 class Command(BaseCommand):

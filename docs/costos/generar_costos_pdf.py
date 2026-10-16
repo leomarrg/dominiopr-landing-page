@@ -65,7 +65,7 @@ def cost(model, calls, cache=False):
 THINK_LOW = 150  # estimado de tokens de razonamiento por llamada con effort=low
 
 scen = [
-    ('Haiku 4.5 (actual, sin cache)', 'Haiku 4.5', conversation_calls(), False),
+    ('Haiku 4.5 (anterior, sin cache)', 'Haiku 4.5', conversation_calls(), False),
     ('Haiku 5.5, effort bajo, sin cache', 'Haiku 5.5', conversation_calls(1.3, THINK_LOW), False),
     ('Haiku 5.5, effort bajo, con cache', 'Haiku 5.5', conversation_calls(1.3, THINK_LOW), True),
     ('Sonnet 5.5 (referencia)', 'Sonnet 5.5', conversation_calls(1.0, THINK_LOW), True),
@@ -179,6 +179,23 @@ S += bullets([
     'instrucciones; la prueba real está en la sección 11.',
 ])
 
+S.append(Paragraph('Glosario: los términos que usa este documento', H2))
+S += bullets([
+    '<b>Token:</b> el pedazo de texto que cobra el modelo; en español, unas 3–4 letras. 1,000 tokens ≈ 700 palabras.',
+    '<b>Entrada / salida:</b> lo que se le manda al modelo (reglas, negocio, conversación) y lo que responde. '
+    'La salida cuesta 5 veces más por token que la entrada.',
+    '<b>Caché:</b> la parte fija del prompt (reglas y datos del negocio) que el modelo recuerda entre llamadas y '
+    'cobra a una décima parte. Se pierde si cambia cualquier letra de esa parte.',
+    '<b>Effort:</b> cuánto razona el modelo antes de contestar (low, medium, high). No cambia el precio por token; '
+    'cambia cuántos tokens de razonamiento genera, y esos se cobran como salida.',
+    '<b>Conversación:</b> una persona hablando con el agente de corrido; una conversación típica son 3–4 '
+    'respuestas del agente, cada una con 1 o 2 llamadas al modelo.',
+    '<b>Mensaje:</b> cada respuesta del agente; es la unidad de los topes diarios por plan.',
+    '<b>Rango o escalón:</b> el precio dentro de un paquete según el volumen del cliente (ver el PDF de paquetes).',
+    '<b>Asiento:</b> un empleado con acceso al asistente interno; los asientos se venden por paquete.',
+    '<b>Ingesta o escaneo:</b> leer el sitio o los documentos del cliente y convertirlos en conocimiento del agente; '
+    'se hace pocas veces y con un modelo más capaz (sección 14).',
+])
 S.append(Paragraph('1. Cómo se calcula', H2))
 S.append(Paragraph(
     'La IA cobra por <i>tokens</i> (pedazos de texto, ~3.5–4 caracteres en español). En cada mensaje del '
@@ -200,9 +217,9 @@ S.append(table([
 S.append(Paragraph('2. Precios de los modelos', H2))
 S.append(table([
     ['Modelo', 'Entrada / 1M', 'Salida / 1M', 'Lectura de caché', 'Nota'],
-    ['Haiku 4.5 (actual)', '$1.00', '$5.00', '$0.10', 'Caché mínimo 4,096 tokens: no se activa'],
+    ['Haiku 4.5 (anterior)', '$1.00', '$5.00', '$0.10', 'Caché mínimo 4,096 tokens: no se activa'],
     ['Haiku 5.5', '$0.10', '$0.50', '$0.01', 'Prompts de hasta 100K tokens; caché desde 512'],
-    ['Sonnet 5.5', '$2.00', '$10.00', '$0.20', 'Más capaz; solo como referencia'],
+    ['Sonnet 5.5', '$2.00', '$10.00', '$0.20', 'Más capaz; referencia en chat y modelo de escaneo (sección 14)'],
 ], [1.4 * inch, 1.0 * inch, 1.0 * inch, 1.2 * inch, 2.3 * inch]))
 S.append(Paragraph('Precios de lista de la API de Anthropic, octubre 2026. Escritura de caché = 1.25× la entrada.',
                    SMALL))
@@ -261,7 +278,7 @@ S.append(Paragraph('No incluye los cargos de instalación ($500–1,000 por clie
 
 S.append(Paragraph('7. Haiku 4.5 vs Haiku 5.5 en conversación', H2))
 S.append(table([
-    ['Aspecto', 'Haiku 4.5 (actual)', 'Haiku 5.5'],
+    ['Aspecto', 'Haiku 4.5 (anterior)', 'Haiku 5.5'],
     ['Seguir instrucciones', 'Bueno', 'Bastante mejor, según Anthropic: respeta más las reglas del negocio'],
     ['Razonamiento', 'No razona antes de responder', 'Razona antes de responder (on por defecto); se controla con "effort"'],
     ['Velocidad percibida', 'Responde directo', 'Con effort bajo, similar; con medio o alto, más pausa antes de la respuesta'],
@@ -289,7 +306,7 @@ _eff.append(Paragraph(
     'confirman con la prueba recomendada.', BODY))
 rows = [['Effort', 'Razonamiento / respuesta', 'Haiku 5.5 / conv.', 'Haiku 5.5 / mes*',
          'Sonnet 5.5 / conv.', 'Sonnet 5.5 / mes*']]
-rows.append(['— (Haiku 4.5 actual)', '0', f'${H45:.3f}', money(300 * H45), '—', '—'])
+rows.append(['— (Haiku 4.5 anterior)', '0', f'${H45:.3f}', money(300 * H45), '—', '—'])
 for name, th, note in [('Low', 150, ''), ('Medium', 400, ' (defecto Haiku 5.5)'), ('High', 1000, ' (defecto Sonnet 5.5)')]:
     h = cost('Haiku 5.5', conversation_calls(1.3, th), True)[0]
     s = cost('Sonnet 5.5', conversation_calls(1.0, th), True)[0]
@@ -368,7 +385,7 @@ _cmp.append(table([
      '<b>Recomendado.</b> El más barato y el más nuevo; sigue mejor las reglas; el caché sí funciona.'],
     ['2', 'Haiku 5.5, effort medium', 'Disponible', money(300 * _h55[400]),
      'Si en las pruebas el agente en low se salta reglas del negocio (citas, captar el lead).'],
-    ['3', 'Haiku 4.5 (actual)', 'Disponible', money(300 * H45),
+    ['3', 'Haiku 4.5 (anterior)', 'Disponible', money(300 * H45),
      'Solo como respaldo mientras se prueba el 5.5: cuesta ~10× más sin ventaja.'],
     ['4', 'Sonnet 5.5', 'Disponible', f'{money(300 * _s55[0], 0)}–{money(300 * _s55[1], 0)}',
      'Solo si Haiku 5.5 falla en conversaciones complejas (p. ej. despacho legal). Para atención normal es pagar de más.'],
@@ -448,6 +465,13 @@ _pe.append(Paragraph(
     'recepcionista con dos locales la entrada no cacheada sube porque la fecha y el bloque de horario por local van '
     'fuera del caché en cada llamada, pero sigue por debajo de $0.0005 por conversación.', SMALL))
 S.append(KeepTogether(_pe))
+S.append(Paragraph(
+    '<b>Repetición del 15–16 de octubre.</b> Tras dos ajustes del prompt (el asistente interno cita "Fuente:" solo '
+    'cuando la respuesta sale del documento; un recado sin local en un negocio con 2+ locales se rechaza con suavidad '
+    'y el agente pregunta el local), y con las herramientas falsas del eval aplicando ya esa misma regla: '
+    'interno 14/14 ($0.0025, 1.73 s), recepción 18/18 ($0.0093, 2.54 s) y locales 17/18 ($0.0066, 2.26 s). El único '
+    'fallo fue "el próximo viernes" pedido un jueves: el agente preguntó si era mañana o en ocho días y no reservó; '
+    'no es regresión y el caso quedó con fecha absoluta. Costo de la repetición: $0.018.', SMALL))
 
 # Precios de los planes (landing/views.py PLANS / PLAN_LIMITS) contra el costo de IA.
 MSG_COST = 0.00017  # medido, sección 11
@@ -554,10 +578,76 @@ S.append(Paragraph('Cifras con los precios de Haiku 5.5 (entrada $0.10, salida $
                    'lectura $0.01 por millón de tokens). En el centro de control (/dashboard/control/) se ven estos mismos '
                    'tokens por cliente y por mes, separados en entrada, salida y caché.', SMALL))
 
+# ---- Ingesta (escaneo del sitio y documentos): Haiku 5.5 vs Sonnet 5.5
+# Supuestos (indicados en el PDF): ~2,000 tokens de entrada por página (~8,000 caracteres); lotes de
+# 60,000 caracteres (landing/ingest.py BATCH_CHARS) = ~15,000 tokens de documento + ~450 de
+# instrucciones/esquema por llamada; salida ~1,200 tokens de hechos en JSON por lote (el esquema
+# limita cada hecho a una oración) más el razonamiento del modelo: Haiku low ~150, Sonnet medium ~1,500.
+ING_TOK_PER_PAGE = 2000
+ING_CHARS_PER_TOK = 4
+ING_BATCH_CHARS = 60_000
+ING_OVERHEAD = 450
+ING_FACTS_OUT = 1200
+ING_THINK = {'Haiku 5.5': 150, 'Sonnet 5.5': 1500}
+ING_MAX_INPUT_CHARS = 4_000_000  # DOMINIO_INGEST_MAX_INPUT_CHARS (techo de una ingesta)
+
+
+def ingest_cost(model, pages):
+    chars = pages * ING_TOK_PER_PAGE * ING_CHARS_PER_TOK
+    calls = -(-chars // ING_BATCH_CHARS)
+    tok_in = calls * ING_OVERHEAD + chars / ING_CHARS_PER_TOK
+    tok_out = calls * (ING_FACTS_OUT + ING_THINK[model])
+    pr = PRICES[model]
+    return calls, tok_in, tok_out, tok_in * pr['in'] / 1e6 + tok_out * pr['out'] / 1e6
+
+
+_ING_CASES = [('Sitio pequeño: 30 páginas', 30), ('Sitio grande: 300 páginas', 300),
+              ('PDF de 100 páginas', 100)]
+_ing = [Paragraph('14. Escaneo y documentos: Haiku 5.5 vs Sonnet 5.5', H2)]
+_ing.append(Paragraph(
+    'El conocimiento del agente lo carga DOMINIO (módulo solo staff): la IA lee el sitio o el documento y extrae '
+    'servicios, precios, horarios, contacto y políticas en un JSON con esquema fijo. Esa ingesta corre pocas veces '
+    'por cliente (instalación y reentrenamientos) y usa su propio modelo (<b>DOMINIO_INGEST_MODEL</b>, '
+    '<b>DOMINIO_INGEST_EFFORT</b>), distinto del chat. Costo estimado por ingesta completa:', BODY))
+_rows = [['Escenario', 'Llamadas', 'Tokens entrada', 'Tokens salida (H / S)', 'Haiku 5.5 low', 'Sonnet 5.5 medium',
+          'Diferencia']]
+for label, pages in _ING_CASES:
+    ch, hin, hout, husd = ingest_cost('Haiku 5.5', pages)
+    cs, sin_, sout, susd = ingest_cost('Sonnet 5.5', pages)
+    _rows.append([label, str(ch), f'{hin:,.0f}', f'{hout:,} / {sout:,}', money(husd), money(susd),
+                  f'+{money(susd - husd)}'])
+_ing.append(table(_rows, [1.4 * inch, 0.8 * inch, 0.9 * inch, 1.15 * inch, 0.8 * inch, 0.95 * inch,
+                          0.9 * inch]))
+_cap_calls, _cap_in, _cap_out, _cap_usd = ingest_cost('Sonnet 5.5', ING_MAX_INPUT_CHARS // (ING_TOK_PER_PAGE * ING_CHARS_PER_TOK))
+_ing.append(Paragraph(
+    f'Supuestos: ~{ING_TOK_PER_PAGE:,} tokens de entrada por página ({ING_TOK_PER_PAGE * ING_CHARS_PER_TOK:,} '
+    f'caracteres); lotes de {ING_BATCH_CHARS:,} caracteres como en el código (landing/ingest.py), más ~{ING_OVERHEAD} '
+    f'tokens de instrucciones y esquema por llamada; salida de ~{ING_FACTS_OUT:,} tokens de hechos por lote más el '
+    f'razonamiento ({ING_THINK["Haiku 5.5"]} en Haiku low, {ING_THINK["Sonnet 5.5"]:,} en Sonnet medium). Sin caché: '
+    f'cada lote es texto nuevo. Techo por ingesta: {ING_MAX_INPUT_CHARS:,} caracteres (~{ING_MAX_INPUT_CHARS // ING_CHARS_PER_TOK:,} '
+    f'tokens, {_cap_calls} llamadas) = como mucho {money(_cap_usd)} con Sonnet. Precios de la sección 2.', SMALL))
+_ing.append(Spacer(1, 4))
+_ing += bullets([
+    '<b>Decisión: Sonnet 5.5 a effort medium para ingerir.</b> La extracción decide lo que el agente dirá miles de '
+    'veces; un precio o un horario mal copiado cuesta más en soporte que los centavos (o un par de dólares en un sitio '
+    'grande) que cuesta cada ingesta, y se hace pocas veces por cliente. El reentrenamiento completo se cobra $149.',
+    '<b>Haiku 5.5 a effort low para contestar.</b> Son miles de llamadas al mes por cliente, con latencia visible '
+    'para el visitante, y responden sobre un conocimiento ya curado; la prueba de la sección 11 lo confirmó.',
+    'Cada llamada de ingesta queda en el libro de uso como <b>knowledge_ingest</b> con el modelo y su costo, por '
+    'cliente, así que el centro de control muestra lo que costó cargar cada agente.',
+    '<b>Medición real (16 oct 2026):</b> escaneo de 40 páginas de un sitio de restaurantes de PR con Sonnet 5.5 '
+    'medium: 2 lotes, 52,580 tokens de entrada y 5,663 de salida, <b>$0.16</b> en total y unos 50 segundos de '
+    'principio a fin; el borrador salió con menú, categorías, pedidos en línea y café, listo para revisar. '
+    'Encaja con la estimación de la tabla ($0.23 por 30 páginas con supuestos conservadores).',
+])
+S.append(KeepTogether(_ing))
+
 S.append(CondPageBreak(2.2 * inch))  # don't strand the heading at a page bottom
-S.append(Paragraph('14. Recomendaciones', H2))
+S.append(Paragraph('15. Recomendaciones', H2))
 S += bullets([
     '<b>Hecho:</b> la prueba real (sección 11) confirmó Haiku 5.5 con effort low; el agente ya corre en ese modelo.',
+    '<b>Hecho:</b> el escaneo del sitio y los documentos (sección 14) usan Sonnet 5.5 con effort medium, '
+    'configurable por DOMINIO_INGEST_MODEL / DOMINIO_INGEST_EFFORT; el chat sigue en Haiku 5.5.',
     '<b>Hecho:</b> cada llamada a la IA queda en el libro de uso por cliente (entrada, salida y caché por separado); '
     'el costo real por cliente y por mes se ve en el centro de control, y cada cliente ve su uso contra el plan '
     '(sin costos) en su dashboard.',

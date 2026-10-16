@@ -21,18 +21,11 @@
     .ins-status{display:flex;align-items:center;gap:10px;padding:13px 16px;border-radius:10px;font-size:.88rem;margin:0 0 18px;max-width:760px}
     .ins-status--pending{background:rgba(246,169,107,.12);border:1px solid rgba(246,169,107,.4);color:#f6c98a}
     .ins-status--live{background:rgba(46,168,87,.12);border:1px solid rgba(46,168,87,.4);color:#8be0a4}
-    .snippet{display:flex;gap:8px;align-items:center}
-    .ins-code{flex:1;min-width:0;background:var(--primary);border:1px solid var(--line);border-radius:8px;padding:14px 16px;color:#b9c9d8;font-family:Menlo,Consolas,monospace;font-size:.8rem;overflow-x:auto;white-space:nowrap}
-    .copy-btn{flex:0 0 auto;border:1px solid #ccd;background:#fff;color:var(--primary);padding:9px 14px;border-radius:8px;font:inherit;font-size:.82rem;cursor:pointer;white-space:nowrap}
-    .copy-btn:hover{border-color:var(--accent);color:#1e938a}
     .ins-platforms{display:flex;flex-direction:column;gap:8px;margin-top:18px}
     .ins-platforms summary{cursor:pointer;font-weight:600;color:var(--primary);padding:10px 4px;list-style:revert}
     .ins-platforms p{margin:4px 4px 10px;font-size:.86rem;color:#33475b;line-height:1.5}
     @media (max-width:600px){
         .ins-field input[type=url],.ins-field select,.ins-field textarea,.dash-card .save-btn{font-size:16px}
-        .snippet{flex-direction:column;align-items:stretch}
-        .ins-code{white-space:pre-wrap;word-break:break-all}
-        .copy-btn{padding:12px;text-align:center}
     }
 </style>
 
@@ -66,15 +59,6 @@
             </select>
         </div>
         <div class="ins-field">
-            <fieldset style="border:none;padding:0;margin:0">
-                <legend class="ins-hint" style="padding:0;margin-bottom:8px">¿Quién lo instala?</legend>
-                <div class="ins-radios">
-                    <label class="ins-radio"><input type="radio" name="mode" value="dominio" {% if form.mode != 'yo' %}checked{% endif %}> Que DOMINIO lo instale (recomendado)</label>
-                    <label class="ins-radio"><input type="radio" name="mode" value="yo" {% if form.mode == 'yo' %}checked{% endif %}> Lo instalo yo o mi webmaster</label>
-                </div>
-            </fieldset>
-        </div>
-        <div class="ins-field">
             <label for="in-notes">Notas de instalación</label>
             <textarea id="in-notes" name="install_notes" rows="4" placeholder="No pegues contraseñas aquí. Crea un usuario temporal para DOMINIO (o invítanos como colaborador) y bórralo cuando terminemos; o dinos el email de tu webmaster.">{{ form.install_notes|default:'' }}</textarea>
             <p class="ins-hint">No pegues contraseñas aquí. Crea un usuario temporal para DOMINIO (o invítanos como colaborador) y bórralo cuando terminemos; o dinos el email de tu webmaster.</p>
@@ -84,51 +68,8 @@
 </div>
 
 <div class="dash-card">
-    <h2>Plan B — instalarlo tú</h2>
-    <p>Si prefieres instalarlo tú mismo (o tu webmaster), pega esta línea antes de <code>&lt;/body&gt;</code>:</p>
-    <div class="snippet">
-        <code id="embed-snippet" class="ins-code">{{ embed }}</code>
-        <button type="button" class="copy-btn" data-copy="embed-snippet">Copiar</button>
-    </div>
+    <h2>¿Y el código?</h2>
+    <p>No tienes que instalar nada: DOMINIO pone el agente en tu página y lo deja funcionando. Si tu webmaster quiere coordinar directamente con nosotros, que nos escriba respondiendo al correo de bienvenida.</p>
     <p class="ins-hint" style="margin:14px 0 4px">El widget solo funciona en los dominios que autorizamos para tu cuenta.</p>
-
-    <div class="ins-platforms">
-        <details>
-            <summary>WordPress</summary>
-            <p>Instala un plugin de "header/footer" (como Insert Headers and Footers) y pega la línea en el footer, o edítala directamente en <code>footer.php</code> de tu tema, antes de <code>&lt;/body&gt;</code>.</p>
-        </details>
-        <details>
-            <summary>Wix</summary>
-            <p>Ve a Settings &rarr; Custom Code &rarr; Add Code, pégala y elige "Body — end" como ubicación.</p>
-        </details>
-        <details>
-            <summary>Squarespace</summary>
-            <p>Ve a Settings &rarr; Advanced &rarr; Code Injection y pégala en el campo "Footer".</p>
-        </details>
-        <details>
-            <summary>Shopify</summary>
-            <p>Edita <code>theme.liquid</code> y pega la línea justo antes de <code>&lt;/body&gt;</code>.</p>
-        </details>
-        <details>
-            <summary>GoDaddy Website Builder</summary>
-            <p>Ve a Settings &rarr; HTML/Custom code. El editor de GoDaddy limita el uso de scripts personalizados — te recomendamos dejarnos instalarlo a nosotros para evitar problemas.</p>
-        </details>
-        <details>
-            <summary>HTML plano</summary>
-            <p>Pega la línea directamente en tu archivo HTML, justo antes de <code>&lt;/body&gt;</code>.</p>
-        </details>
-    </div>
 </div>
-{% endblock %}
-{% block scripts %}
-<script>
-    document.querySelectorAll('.copy-btn').forEach(function (b) {
-        b.addEventListener('click', function () {
-            var el = document.getElementById(b.getAttribute('data-copy'));
-            navigator.clipboard.writeText(el.textContent).then(function () {
-                var t = b.textContent; b.textContent = 'Copiado'; setTimeout(function () { b.textContent = t; }, 1500);
-            });
-        });
-    });
-</script>
 {% endblock %}

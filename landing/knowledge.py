@@ -21,6 +21,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import zlib
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
@@ -285,6 +286,7 @@ def fetch_resource(url, allowed_types=PAGE_TYPES, max_bytes=MAX_FETCH_BYTES, dea
                 raise too_slow
             if not any(t in ctype for t in allowed_types):
                 raise ValueError(f'Tipo de contenido no soportado: {ctype[:60]}')
+            encoding = (resp.headers.get('Content-Encoding', '') or '').lower()
             raw = _read_bounded(resp, max_bytes, ends_at)
     except ValueError:
         if timed_out:
@@ -304,7 +306,34 @@ def fetch_resource(url, allowed_types=PAGE_TYPES, max_bytes=MAX_FETCH_BYTES, dea
         raise too_slow
     if len(raw) > max_bytes:
         raise ValueError(f'La página es demasiado grande (máx. {max_bytes // 1024} KB).')
+    raw = _inflate(raw, encoding, max_bytes)
     return ctype, raw
+
+
+def _inflate(raw, encoding, max_bytes):
+    """Undo gzip/deflate. We never send Accept-Encoding, but some CDNs
+    (Fastly in front of python.org, for one) compress anyway; feeding the
+    bytes to the parser as text yielded garbage with no links and a wasted
+    model call. Bounded: the inflated body may not exceed max_bytes either,
+    so a tiny gzip bomb cannot balloon in memory. Brotli is not in the
+    stdlib, so 'br' is reported as unreadable instead of guessed at."""
+    gzip_magic = raw[:2] == b'\x1f\x8b'
+    if encoding in ('gzip', 'x-gzip') or gzip_magic:
+        wbits = zlib.MAX_WBITS | 16
+    elif encoding == 'deflate':
+        wbits = zlib.MAX_WBITS | 32  # zlib or raw deflate, auto-detected
+    elif encoding in ('', 'identity'):
+        return raw
+    else:
+        raise ValueError(f'Contenido comprimido no soportado ({encoding[:12]}).')
+    inflater = zlib.decompressobj(wbits)
+    try:
+        out = inflater.decompress(raw, max_bytes + 1)
+    except zlib.error:
+        raise ValueError('La página llegó comprimida en un formato ilegible.')
+    if len(out) > max_bytes or inflater.unconsumed_tail:
+        raise ValueError(f'La página es demasiado grande (máx. {max_bytes // 1024} KB).')
+    return out
 
 
 def _clean(text):
