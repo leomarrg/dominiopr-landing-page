@@ -1275,7 +1275,9 @@ def _assistant_client(request, slug=''):
     ids = list(Membership.objects.filter(user=user, role__in=Membership.INTERNAL_ROLES)
                .values_list('client_id', flat=True))
     qs = Client.objects.filter(id__in=ids) if ids else Client.objects.none()
-    if user.is_staff and slug:
+    if user.is_staff:
+        # Staff open any client's assistant: by slug, or (no slug) the first
+        # one whose plan includes it, instead of a dead end in the factory.
         qs = Client.objects.all()
     qs = qs.filter(is_active=True).select_related('subscription')
     if slug:
@@ -1329,12 +1331,16 @@ def assistant_page(request):
     conv = (Conversation.objects.filter(
         client=client, channel='internal',
         external_id=_assistant_external_id(request.user)).first() if enabled else None)
-    # A login with several memberships picks the business (staff pick by slug).
-    options = list(Client.objects.filter(
-        id__in=Membership.objects.filter(
-            user=request.user, role__in=Membership.INTERNAL_ROLES)
-        .values_list('client_id', flat=True), is_active=True)
-        .order_by('name').values_list('slug', 'name'))
+    # A login with several memberships picks the business; staff pick any.
+    if request.user.is_staff:
+        options = list(Client.objects.filter(is_active=True)
+                       .order_by('name').values_list('slug', 'name'))
+    else:
+        options = list(Client.objects.filter(
+            id__in=Membership.objects.filter(
+                user=request.user, role__in=Membership.INTERNAL_ROLES)
+            .values_list('client_id', flat=True), is_active=True)
+            .order_by('name').values_list('slug', 'name'))
     return render(request, 'landing/dashboard_assistant.html', {
         'active_tab': 'asistente',
         'client_obj': client, 'enabled': enabled,

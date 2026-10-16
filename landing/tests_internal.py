@@ -495,7 +495,11 @@ class AssistantPageTests(InternalBase):
 
     def test_staff_picks_a_client_by_slug(self):
         self.login(self.staff)
-        self.assertEqual(self.http.get(reverse('asistente')).status_code, 302)
+        # No slug: staff land on the first client whose plan has the assistant
+        # (not on the factory), here Acme.
+        first = self.http.get(reverse('asistente'))
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.context['client_obj'], self.acme)
         resp = self.http.get(reverse('asistente') + '?client=acme')
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, 'Asistente interno — Acme')
@@ -1007,3 +1011,29 @@ class AssistantPageJsTests(InternalBase):
         resp = self.http.get(reverse('asistente'))
         self.assertContains(resp, 'Tu sesión cambió. Recarga la página.')
         self.assertContains(resp, 'Sin conexión. Intenta de nuevo.')
+
+
+class StaffAssistantEntryTests(TestCase):
+    """Staff clicking "Asistente" must land on a client's assistant (first one
+    whose plan includes it), with a selector of every client, not on the
+    factory with "escoge un agente"."""
+
+    def setUp(self):
+        self.staff = get_user_model().objects.create_user('st@d.com', password='pw12345!', is_staff=True)
+        self.low = Client.objects.create(slug='low', name='Low', system_prompt='x', notify_email='l@l.com')
+        self.big = Client.objects.create(slug='big', name='Big', system_prompt='x', notify_email='b@b.com')
+        Subscription.objects.create(client=self.big, plan='large', status='active')
+        self.http = HttpClient()
+        self.http.login(username='st@d.com', password='pw12345!')
+
+    def test_staff_without_slug_opens_first_enabled_client(self):
+        resp = self.http.get(reverse('asistente'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['client_obj'], self.big)
+        # Every active client (the seeded 'dominio' included), by name.
+        self.assertEqual([s for s, _ in resp.context['client_options']], ['big', 'dominio', 'low'])
+
+    def test_staff_can_pick_any_client_by_slug(self):
+        resp = self.http.get(reverse('asistente') + '?client=low')
+        self.assertEqual(resp.context['client_obj'], self.low)
+        self.assertEqual(resp.status_code, 403)  # plan without the assistant: explained, not hidden
