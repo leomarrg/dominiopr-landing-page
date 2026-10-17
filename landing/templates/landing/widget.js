@@ -29,6 +29,11 @@
     };
 
     var messages = [], greeted = false, busy = false;
+    // Neutral copy: this runs on customers' sites. Only DOMINIO's own widget
+    // adds a way to reach DOMINIO.
+    var ERR_TAIL = CFG.slug === 'dominio' ? ' También puedes escribirnos a hola@dominiopr.com.' : '';
+    var ERR_REPLY = 'No pude responder en este momento. Intenta de nuevo en un minuto.' + ERR_TAIL;
+    var ERR_NETWORK = 'No pude conectar en este momento. Revisa tu conexión e intenta de nuevo en un minuto.' + ERR_TAIL;
     var rated = false, ratingOffered = false, gotReply = false;
 
     // M-02: random session id so the server can persist this conversation.
@@ -288,7 +293,11 @@
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ client: CFG.slug, token: CFG.token, messages: messages, page: location.href,
                                    session: SESSION, visitor: VISITOR, human: getPass() })
-        }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, d: d }; }); })
+        }).then(function (r) {
+            // A proxy error page (HTML 502/504) is not JSON: keep the status, drop the body.
+            return r.json().catch(function () { return {}; })
+                .then(function (d) { return { ok: r.ok, status: r.status, d: d || {} }; });
+        })
             .then(function (x) {
                 typing(false);
                 if (x.status === 403 && x.d && x.d.challenge && !retried) {
@@ -296,9 +305,9 @@
                     return;
                 }
                 if (x.ok && x.d.reply) { bubble('assistant', x.d.reply); messages.push({ role: 'assistant', content: x.d.reply }); gotReply = true; }
-                else { bubble('assistant', x.d.error || 'Perdona, algo salió mal.'); }
+                else { bubble('assistant', x.d.error || ERR_REPLY); }
             })
-            .catch(function () { typing(false); bubble('assistant', 'Problema de conexión — trata de nuevo.'); })
+            .catch(function () { typing(false); bubble('assistant', ERR_NETWORK); })
             .then(function () { setBusy(false); if (!hv) input.focus(); });
     }
 

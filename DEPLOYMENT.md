@@ -7,7 +7,7 @@ Deployment a AWS Lightsail con dominio en GoDaddy y CI/CD vía GitHub Actions.
 ## Arquitectura
 
 ```
-GoDaddy DNS  ───────────►  AWS Lightsail Instance (Ubuntu 22.04)si pude entrar
+GoDaddy DNS  ───────────►  AWS Lightsail Instance (Ubuntu 24.04)
    *.dominiopr.com               │
                                  ├── Nginx (reverse proxy + SSL)
                                  │     ├── dominiopr.com         → gunicorn-dominio.sock
@@ -34,7 +34,7 @@ GitHub Actions: on push to main → SSH al servidor → ./deploy/scripts/deploy.
 2. **Create instance**:
    - Región: **us-east-1** (Virginia) — más cercana a PR.
    - Platform: **Linux/Unix**
-   - Blueprint: **OS Only → Ubuntu 22.04 LTS**
+   - Blueprint: **OS Only → Ubuntu 24.04 LTS** (la instancia actual corre 24.04 con Python 3.12)
    - Plan: **$5/mes** (1 vCPU, 1 GB RAM, 40 GB SSD) — suficiente para landing + 3 productos pequeños.
    - Identifier: `dominio-prod`
 3. **Create instance** y espera ~2 min.
@@ -216,6 +216,8 @@ Añade esta línea:
 ```
 ubuntu ALL=(ALL) NOPASSWD: /bin/systemctl restart gunicorn-dominio
 ```
+(`rollback.sh` además usa `systemctl stop/start` cuando restaura la BD; se corre a mano por SSH y
+en Lightsail el usuario `ubuntu` ya tiene sudo sin contraseña.)
 
 Guarda (`Ctrl+O`, Enter, `Ctrl+X`).
 
@@ -233,7 +235,7 @@ Crea estos 3 secrets:
 
 | Nombre               | Valor                                                    |
 |----------------------|----------------------------------------------------------|
-| `LIGHTSAIL_HOST`     | IP estática de Lightsail (ej. `54.123.45.67`)            |
+| `LIGHTSAIL_HOST`     | `dominiopr.com` o `52.54.98.28` (ambos fijados en el `known_hosts` del workflow) |
 | `LIGHTSAIL_USER`     | `ubuntu`                                                 |
 | `LIGHTSAIL_SSH_KEY`  | Contenido COMPLETO de `~/.ssh/dominio-deploy` (privada)  |
 
@@ -251,7 +253,7 @@ git commit --allow-empty -m "test: trigger first deploy"
 git push origin main
 ```
 
-Ve a tu repo → **Actions** tab → debe correr el workflow "Deploy to AWS Lightsail". Si pasa verde, todo está conectado.
+Ve a tu repo → **Actions** tab → debe correr el workflow "CI y deploy a AWS Lightsail" (jobs `test`, `audit` y `deploy`). Si pasa verde, todo está conectado.
 
 A partir de aquí: **push a `main` = deploy automático**.
 
@@ -292,7 +294,9 @@ El DNS wildcard `*.dominiopr.com` ya cubre cualquier subdominio nuevo — no toc
 | Forzar deploy manual           | `bash /var/www/dominio/deploy/scripts/deploy.sh`   |
 | Renovar SSL manualmente        | `sudo certbot renew`                               |
 | Re-cargar Nginx tras editar    | `sudo nginx -t && sudo systemctl reload nginx`     |
-| Backup SQLite                  | `cp /var/www/dominio/db.sqlite3 ~/backup-$(date +%F).sqlite3` |
+| Backup SQLite (consistente)    | `bash /var/www/dominio/deploy/backup_db.sh`        |
+| Rollback al deploy anterior    | `bash /var/www/dominio/deploy/scripts/rollback.sh` |
+| Ver fallos de cron             | `grep FALLO /home/ubuntu/dominio-cron.log` (+ `tail`) |
 
 ---
 
@@ -302,52 +306,49 @@ El DNS wildcard `*.dominiopr.com` ya cubre cualquier subdominio nuevo — no toc
 - **CSS no carga (404)** → Faltó `collectstatic`. Corre `python manage.py collectstatic --noinput` en el servidor.
 - **CSRF errors al enviar el form** → revisa `DJANGO_CSRF_TRUSTED_ORIGINS` en `.env` incluye el dominio HTTPS.
 - **SSL expirado** → certbot debería renovar solo. Verifica con `sudo certbot renew --dry-run`.
-- **El workflow de GitHub falla** → revisa los Actions logs; el problema más común es el SSH key mal pegado en secrets (debe incluir las líneas BEGIN/END).
+- **El workflow de GitHub falla** → revisa los Actions logs. Job `test` o `audit` rojo: el deploy no corrió (arregla y vuelve a hacer push). Job `deploy` rojo en el smoke test: el código nuevo ya está en el servidor, decide entre arreglar o `rollback.sh` (sección "Operación"). `Host key verification failed`: el servidor cambió de clave de host (reinstalación) o `LIGHTSAIL_HOST` no es `dominiopr.com`/`52.54.98.28`. Errores de autenticación: el SSH key mal pegado en secrets (debe incluir las líneas BEGIN/END).
 
 ## Phase 2 — operación de la plataforma
 
-**Antes de cada deploy** (bloquea si falla — M-09):
+**Antes de cada deploy** (bloquea si falla — M-09). Tests, `check --deploy` y
+`makemigrations --check` ya los corre el job `test` de GitHub Actions y el deploy no arranca si
+fallan (ver "Operación"); `preflight` sigue siendo manual porque necesita las llaves reales:
 ```bash
 python manage.py test landing social
 python manage.py preflight   # Stripe, SMTP, IA y Django reales (--stripe|--email|--ai|--django para uno solo)
 ```
 
-**Cron del sistema** (usuario de la app):
+**Cron del sistema** (crontab del usuario `ubuntu`, `crontab -e`). Todas las líneas pasan por
+`deploy/scripts/cron_run.sh NOMBRE [--timeout SEG] -- comando`: corre el comando desde
+`/var/www/dominio`, escribe la salida en `/home/ubuntu/dominio-cron.log` con hora y nombre, y si
+falla (o lo corta el timeout) manda **un** correo a `ADMINS` por nombre y por hora con las últimas
+40 líneas (detalle en "Operación"). Se invoca con `bash` para no depender del bit de ejecución.
+Pega el bloque tal cual (la ruta real es `/var/www/dominio`):
 ```cron
-# M-05: recordatorios de citas (~24h antes), cada hora
-0 * * * * cd /ruta/app && venv/bin/python manage.py send_booking_reminders
-# CRM: resumen diario de seguimientos (vencidos, de hoy y leads nuevos sin atender >24 h) a cada
-# org_admin/agent con Membership.daily_digest. Debe salir a las 8:00 a. m. de Puerto Rico: con el
-# servidor en UTC es `0 12`; si el servidor corre en hora de PR, `0 8`. Idempotente por dia
-# (AuditEvent 'digest.followup'); --dry-run muestra sin enviar, --force reenvia, --date YYYY-MM-DD repite.
-0 12 * * * cd /ruta/app && venv/bin/python manage.py send_followup_digest >> /home/ubuntu/dominio-cron.log 2>&1
+# Conocimiento (Fase 8): escaneos y archivos -> conocimiento en BORRADOR (nunca activa solo).
+# Una fuente por corrida; candado propio de 65 min; si el timeout la mata, la fila se reintenta
+# sola a los 30 min. Sale con error sin ANTHROPIC_API_KEY.
+* * * * * bash /var/www/dominio/deploy/scripts/cron_run.sh process_knowledge --timeout 3600 -- venv/bin/python manage.py process_knowledge --limit 1
+# M-20: publicar en redes los posts aprobados que ya vencieron
+*/5 * * * * bash /var/www/dominio/deploy/scripts/cron_run.sh publish_due --timeout 600 -- venv/bin/python manage.py publish_due
+# M-05: recordatorios de citas (~24 h antes)
+0 * * * * bash /var/www/dominio/deploy/scripts/cron_run.sh send_booking_reminders --timeout 900 -- venv/bin/python manage.py send_booking_reminders
+# Alerta de gasto diario de IA (comando cost_alert; mail_admins una vez por día por umbral)
+5 * * * * bash /var/www/dominio/deploy/scripts/cron_run.sh cost_alert --timeout 300 -- venv/bin/python manage.py cost_alert
 # Fase 3a: etiquetar intención/tema de conversaciones inactivas (Haiku, máx 300 por noche).
-# Corre ANTES de purge_expired para no gastar en conversaciones que se van a borrar.
-# --dry-run lista las candidatas sin llamar al modelo. Sale con error si la API falla.
-45 2 * * * cd /ruta/app && venv/bin/python manage.py tag_conversations >> /home/ubuntu/dominio-cron.log 2>&1
-# M-10: retención por tenant (conversaciones, leads salvo 'signup', citas), diario; --dry-run solo cuenta
-30 3 * * * cd /ruta/app && venv/bin/python manage.py purge_expired
+# Corre ANTES de purge_expired. Sale con error si la API falla.
+45 2 * * * bash /var/www/dominio/deploy/scripts/cron_run.sh tag_conversations --timeout 3600 -- venv/bin/python manage.py tag_conversations
+# M-10: retención por tenant (conversaciones, leads salvo 'signup', citas); --dry-run solo cuenta
+30 3 * * * bash /var/www/dominio/deploy/scripts/cron_run.sh purge_expired --timeout 1800 -- venv/bin/python manage.py purge_expired
+# Fase C: día 1 de cada mes, factura el exceso del mes anterior (idempotente; --dry-run, --month YYYY-MM)
+10 3 1 * * bash /var/www/dominio/deploy/scripts/cron_run.sh bill_overage --timeout 1800 -- venv/bin/python manage.py bill_overage
 # M-10: backup de SQLite (API .backup, integridad verificada) + copia externa cifrada opcional (ver abajo)
-15 4 * * * /var/www/dominio/deploy/backup_db.sh >> /home/ubuntu/dominio-cron.log 2>&1
-# M-20: publicar en redes los posts aprobados que ya vencieron, cada 5 min
-*/5 * * * * cd /ruta/app && venv/bin/python manage.py publish_due
-# Fase 8: escaneos de sitio y archivos subidos -> conocimiento en BORRADOR (nunca activa solo).
-# Una fuente por corrida (`--limit 1`): un escaneo completo puede tardar hasta 20 min de rastreo
-# (DOMINIO_INGEST_TIME_BUDGET) más el destilado con Sonnet (hasta ~70 llamadas de ~15k tokens),
-# y así nunca se mata una segunda fuente a medias. Un candado (65 min) evita dos corridas a la vez.
-# Sale con error sin ANTHROPIC_API_KEY. `timeout 3600` es el tope duro de la corrida (cada página
-# y cada llamada a la IA ya tienen su límite; esto cubre lo imprevisto). Si lo mata, la fila queda
-# "procesando" sin latido y se reintenta sola a los 30 min (luego queda en error); el candado
-# expira solo.
-* * * * * cd /ruta/app && timeout 3600 venv/bin/python manage.py process_knowledge --limit 1 >> /home/ubuntu/dominio-cron.log 2>&1
-# M-01: reconciliación de suscripciones contra Stripe, diario
-45 4 * * * cd /ruta/app && venv/bin/python manage.py reconcile_stripe
-# Fase C: el día 1 de cada mes factura el exceso de conversaciones del mes anterior como
-# InvoiceItems de Stripe (bloques de +100 web $15, +500 WhatsApp $149, asiento extra $9).
-# Idempotente (Idempotency-Key + AuditEvent 'billing.overage'); los clientes sin Stripe se
-# listan en la salida y por correo para cobrarlos a mano. --dry-run muestra sin cobrar;
-# --month YYYY-MM repite un mes. Nunca corta el servicio.
-10 3 1 * * cd /ruta/app && venv/bin/python manage.py bill_overage >> /home/ubuntu/dominio-cron.log 2>&1
+15 4 * * * bash /var/www/dominio/deploy/scripts/cron_run.sh backup --timeout 1800 -- bash deploy/backup_db.sh
+# M-01: reconciliación de suscripciones contra Stripe
+45 4 * * * bash /var/www/dominio/deploy/scripts/cron_run.sh reconcile_stripe --timeout 1800 -- venv/bin/python manage.py reconcile_stripe
+# OPCIONAL (CRM): resumen diario de seguimientos a cada org_admin/agent con Membership.daily_digest,
+# 8:00 a. m. de Puerto Rico (servidor en UTC = `0 12`; en hora de PR = `0 8`). Idempotente por día.
+# 0 12 * * * bash /var/www/dominio/deploy/scripts/cron_run.sh send_followup_digest --timeout 900 -- venv/bin/python manage.py send_followup_digest
 ```
 
 **Conocimiento desde el sitio y archivos (Fase 8; solo staff desde la Fase I):** el módulo
@@ -514,6 +515,112 @@ plantilla no se envía; el agente deja de responder) y `START`/`ALTA` lo borra. 
 contador y el tope global `DOMINIO_AGENT_DAILY_CAP` compartido con el widget. Un token
 caducado o revocado (401/190) aparece en la auditoría como `whatsapp.send_failed` (una vez
 por hora por cliente) y en `preflight --whatsapp`.
+
+---
+
+## Operación
+
+### CI que bloquea el deploy
+`.github/workflows/deploy.yml` corre en cada push y PR contra `main` (incluidos los de Dependabot):
+
+- `test` (Python 3.12, el de Ubuntu 24.04 del servidor): `pip install -r requirements.txt`,
+  `manage.py check --deploy` con `DJANGO_DEBUG=False` (falla con cualquier aviso salvo
+  `security.W021`, HSTS preload, que es decisión consciente), `makemigrations --check --dry-run` y
+  `manage.py test landing social --noinput` en serie (SQLite + hilos: `--parallel` da fallos
+  intermitentes que bloquearían deploys sanos).
+- `audit`: `pip-audit -r requirements.txt`. Bloquea solo si hay una vulnerabilidad **con versión
+  corregida** (el arreglo es subir el pin o fusionar el PR de Dependabot). Sin fix publicado queda
+  como aviso amarillo; si OSV/PyPI no responden, también aviso. Emergencia: Actions → "CI y deploy"
+  → Run workflow (rama `main`) → marcar `skip_audit` (los tests siguen siendo obligatorios).
+- `deploy`: solo en `main`, solo si `test` pasó y `audit` pasó o se omitió a propósito. Despliega
+  exactamente el commit probado (`deploy.sh <sha>`), con la clave de host del servidor fijada en el
+  workflow (sin `ssh-keyscan`). Si el servidor se reinstala, actualiza esas dos líneas con la salida
+  de `cat /etc/ssh/ssh_host_ed25519_key.pub`.
+
+`.github/dependabot.yml`: PRs semanales (lunes) de pip y GitHub Actions, máximo 5 abiertos. **Fusionar
+un PR de Dependabot = desplegarlo a producción** (pasa por los mismos tests).
+
+### Qué hace `deploy.sh`
+1. Guarda el commit que estaba corriendo en `/var/www/dominio/.deploy_prev`.
+2. Hace checkout del commit nuevo (solo si está en `origin/main`) y se vuelve a ejecutar desde él,
+   así un cambio en el propio script aplica en ese mismo deploy.
+3. `pip install`, **backup de la BD antes de `migrate`** en `/var/backups/dominio/predeploy/`
+   (nombre con fecha, hora y commit; se guardan los 5 últimos; la ruta queda en
+   `.deploy_prev_backup`), `migrate`, `createcachetable`, `collectstatic`, reinicio de gunicorn.
+4. Smoke test contra el nginx local: 5 intentos a `/healthz/` (si da 404 porque aún no existe, usa
+   `/`) y a `/widget.js?key=dominio`. Si falla, sale con 1 y el job de Actions queda rojo con el
+   comando de rollback en el log. No hace rollback automático: restaurar la BD pierde datos y eso
+   lo decide una persona.
+
+### Rollback
+```bash
+ssh -t ubuntu@dominiopr.com 'bash /var/www/dominio/deploy/scripts/rollback.sh'
+```
+- Vuelve al commit de `.deploy_prev` (o al que pases: `rollback.sh <sha>`).
+- Si el commit que se deshace trajo migraciones **ya aplicadas** en la BD, restaura la BD desde el
+  backup predeploy de ese deploy, previa copia de la BD actual en `/var/backups/dominio/prerollback/`.
+  Pide escribir `RESTAURAR` (o `--yes`): se pierde lo escrito desde ese deploy.
+- `--no-db`: solo código (migraciones aditivas que el código viejo tolera, o ya revertidas a mano
+  con el código actual: `venv/bin/python manage.py migrate landing 00NN`).
+- Sin migraciones nuevas: solo código, sin preguntar. Idempotente: si ya estás en el destino solo
+  verifica el sitio. No mueve `.deploy_prev`, así que repetirlo nunca "vuelve" al commit malo.
+- Después: `git revert` del commit malo y push; si no, el siguiente push lo vuelve a desplegar.
+
+### Monitoreo de disponibilidad
+`.github/workflows/uptime.yml` cada 10 min: `https://dominiopr.com/healthz/` (respaldo `/` mientras
+`/healthz/` dé 404) y `https://dominiopr.com/widget.js?key=dominio` (además comprueba que sirve el
+widget y no el aviso de clave inactiva). Dos intentos separados 30 s; si falla, el job queda rojo y
+GitHub manda correo a quien editó por última vez el `schedule` del archivo (comprobar en GitHub →
+Settings → Notifications → Actions que esté activo el correo para fallos). GitHub puede retrasar los
+`schedule` unos minutos y los apaga tras 60 días sin actividad en el repo; si llega ese aviso,
+reactívalo en la pestaña Actions. Para alertas por SMS o de segundos, un monitor dedicado
+(UptimeRobot, Better Stack) sobre las mismas dos URLs.
+
+### Páginas de error de nginx
+Si gunicorn está caído o tarda demasiado, nginx responde 502/503/504 con
+`landing/static/landing/50x.html` (marca, español, sin JS ni recursos externos), leída directo del
+checkout para que exista aunque falle `collectstatic`. Bajo `/api/`, los 429/502/503/504 que genera
+nginx salen como JSON `{"error": "..."}` (con `Access-Control-Allow-Origin` del Origin) para que el
+widget muestre el mensaje también en sitios de clientes. Los errores que devuelve Django pasan sin
+cambios (por ejemplo el 503 de `/healthz/`). `/healthz/` tiene su propio `location`, sin access log.
+Se aplica con `apply_infra.sh`.
+
+### Alertas de cron (`cron_run.sh`)
+`bash deploy/scripts/cron_run.sh NOMBRE [--timeout SEG] -- comando...`
+- Salida al log con `AAAA-MM-DD HH:MM:SS [NOMBRE]`; una corrida exitosa sin salida no escribe nada.
+- Código distinto de 0 (124/137 = timeout): línea `FALLO` en el log y correo a `ADMINS`
+  (`DJANGO_ADMINS`, o `DJANGO_CONTACT_NOTIFY_EMAIL` si está vacío) vía `mail_admins`, asunto
+  `Cron NOMBRE: ...`, con las últimas 40 líneas. Máximo uno por nombre por hora (marca en
+  `/tmp/dominio-cron-alert-NOMBRE`; `CRON_ALERT_EVERY=minutos` lo cambia). Si el correo falla, lo
+  anota en el log y reintenta en el siguiente fallo.
+- Probarlo: `bash /var/www/dominio/deploy/scripts/cron_run.sh prueba -- false` debe dejar `FALLO`
+  en el log y llegar un correo; luego `rm /tmp/dominio-cron-alert-prueba`.
+- Ver fallos: `grep FALLO /home/ubuntu/dominio-cron.log | tail -20`.
+
+### Rotación del log de cron
+`deploy/logrotate/dominio-cron` → `/etc/logrotate.d/dominio-cron` (lo instala `apply_infra.sh`):
+semanal, 8 rotaciones, gzip, `copytruncate`. Comprobar: `sudo logrotate -d /etc/logrotate.d/dominio-cron`.
+
+### Simulacro de restauración (mensual; anota la fecha)
+Un backup que nunca se restauró no cuenta. Sin tocar la BD en uso:
+```bash
+B=$(ls -1t /var/backups/dominio/db-*.sqlite3.gz | head -1); echo "$B"
+gunzip -c "$B" > /tmp/drill.sqlite3
+sqlite3 /tmp/drill.sqlite3 'PRAGMA integrity_check; SELECT COUNT(*) FROM landing_client; SELECT COUNT(*) FROM landing_contactsubmission; SELECT MAX(created_at) FROM landing_contactsubmission;'
+cd /var/www/dominio && DJANGO_DB_PATH=/tmp/drill.sqlite3 venv/bin/python manage.py showmigrations --plan | tail -3
+rm /tmp/drill.sqlite3
+```
+Debe decir `ok`, conteos razonables, el último lead de ayer o antes y las migraciones con `[X]`.
+Si usas la copia externa, repite el drill con el `.gpg` de S3 (procedimiento en
+`deploy/backup_db.sh`). La restauración real (con el sitio detenido) está al inicio de
+`deploy/backup_db.sh`; para deshacer un deploy, usa `rollback.sh`.
+
+### Staging (pendiente del dueño)
+No hay staging: `main` va directo a producción, protegido por los tests, el smoke test y el rollback.
+Cuando haga falta (cambios de esquema grandes, pagos), la opción mínima es otra instancia Lightsail
+pequeña (o el mismo servidor con otro directorio, otro servicio systemd, otro `.env` con llaves de
+Stripe sandbox y otra BD) en `staging.dominiopr.com`, desplegada por un job en push a una rama
+`staging`. Decisión y costo pendientes del dueño.
 
 ## Lanzamiento self-serve (Stripe + correo)
 

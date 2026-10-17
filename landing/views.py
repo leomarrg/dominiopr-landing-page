@@ -43,6 +43,7 @@ from . import leads as lead_service
 from . import usage as usage_ledger
 from .emailcheck import check_email
 from .forms import ContactForm, LeadNoteForm
+from .health import alert as ops_alert, quiet as quiet_5xx
 from .models import (
     AuditEvent, Booking, Client, ContactSubmission, Conversation,
     LeadNote, LeadTag, Membership, ProcessedWebhookEvent, Subscription, Survey,
@@ -557,6 +558,13 @@ def _provision_client_login(client, reset_password=False):
         # Never scope (or silently demote) a staff/superuser into one tenant.
         logger.warning('Skipped login provisioning: %s is a staff account', email)
         return None, None
+    if user is not None and not user.is_active:
+        # Deactivated when it lost its last membership (user_remove /
+        # delete_tenant): a new invite or purchase must give it back a working
+        # login, or a paying customer could not sign in nor reset the password.
+        User.objects.filter(pk=user.pk).update(is_active=True)
+        user.is_active = True
+        logger.info('Reactivated login %s on new membership', user.pk)
 
     # The account gets a random password nobody ever sees — not even the log —
     # and the customer picks their own through a one-time link. A real (if
@@ -1198,6 +1206,26 @@ def _global_daily_cap_hit():
     return False
 
 
+# Widget error copy. The widget runs on CUSTOMERS' sites, so the text is
+# neutral: never "use the contact form" (which form? DOMINIO's?) and never
+# DOMINIO's own contact. On DOMINIO's own site (slug 'dominio' or no tenant)
+# CHAT_ERROR_DOMINIO_SUFFIX adds the way to reach us.
+CHAT_ERROR_UNAVAILABLE = 'El asistente no está disponible en este momento. Intenta de nuevo más tarde.'
+CHAT_ERROR_MODEL = 'No pude responder en este momento. Intenta de nuevo en un minuto.'
+CHAT_ERROR_BUSY = 'Estamos recibiendo muchas preguntas ahora mismo. Intenta de nuevo en un minuto.'
+CHAT_ERROR_VISITOR_CAP = 'Llegaste al límite de mensajes por hoy. Intenta de nuevo mañana.'
+CHAT_ERROR_DOMINIO_SUFFIX = ' También puedes escribirnos a hola@dominiopr.com.'
+
+
+def _chat_error(client_obj, message, status):
+    """JSON error for the chat widget; DOMINIO's own site gets the contact."""
+    if client_obj is None or client_obj.slug == 'dominio':
+        message += CHAT_ERROR_DOMINIO_SUFFIX
+    # Expected 5xx (cap reached, model down): logged by chat_api itself, so
+    # django.request must not mail ADMINS once per visitor message.
+    return quiet_5xx(JsonResponse({'error': message}, status=status))
+
+
 @csrf_exempt
 @_cors_enabled
 @_rate_limited('chat', limit=12, window=60)
@@ -1306,11 +1334,7 @@ def chat_api(request):
         visitor_key = f'chat:visitor:{client_obj.slug}:{_client_ip(request)}:{today}'
         if cache.get(visitor_key, 0) >= visitor_cap:
             logger.warning('Per-visitor cap reached on %s', client_obj.slug)
-            return JsonResponse(
-                {'error': 'Llegaste al límite de mensajes por hoy. Usa el formulario de '
-                          'contacto y el equipo te responde enseguida.'},
-                status=429,
-            )
+            return _chat_error(client_obj, CHAT_ERROR_VISITOR_CAP, 429)
         if cache.get(visitor_key, 0) == 0:
             cache.set(visitor_key, 1, 60 * 60 * 26)
         else:
@@ -1323,11 +1347,7 @@ def chat_api(request):
         tenant_used = cache.get(tenant_key, 0)
         if tenant_used >= client_obj.daily_message_cap:
             logger.warning('Tenant chat quota reached for %s', client_obj.slug)
-            return JsonResponse(
-                {'error': 'El asistente llegó a su límite de hoy. Usa el formulario de '
-                          'contacto y el equipo te responde enseguida.'},
-                status=503,
-            )
+            return _chat_error(client_obj, CHAT_ERROR_UNAVAILABLE, 503)
         if tenant_used == 0:
             cache.set(tenant_key, 1, 60 * 60 * 26)
         else:
@@ -1340,11 +1360,7 @@ def chat_api(request):
 
     # Global daily ceiling across ALL IPs (shared with the WhatsApp webhook).
     if _global_daily_cap_hit():
-        return JsonResponse(
-            {'error': 'Nuestro asistente está descansando por ahora. Usa el formulario de '
-                      'contacto y el equipo te responde enseguida.'},
-            status=503,
-        )
+        return _chat_error(client_obj, CHAT_ERROR_UNAVAILABLE, 503)
 
     # Page the visitor is chatting from (widget sends location.href) — lets the
     # client see exactly which page produced the lead.
@@ -1393,20 +1409,21 @@ def chat_api(request):
                           channel='web', handlers=handlers, page_url=page,
                           fallback_history=history[:-1], **turn_kwargs)
     except agent.AgentNotConfigured:
-        return JsonResponse(
+        return quiet_5xx(JsonResponse(
             {'error': 'El asistente no está disponible ahora mismo.'}, status=503
-        )
+        ))
     except anthropic.RateLimitError:
-        return JsonResponse(
-            {'error': 'Estamos recibiendo muchas preguntas ahora mismo — trata de nuevo en un momento.'},
-            status=429,
-        )
-    except anthropic.APIError:
-        logger.exception('Anthropic API error in chat_api')
-        return JsonResponse(
-            {'error': 'Algo salió mal al conectar con el asistente. Trata de nuevo o usa el formulario de contacto.'},
-            status=502,
-        )
+        # Our account's rate limit at Anthropic: one email an hour at most.
+        ops_alert(logger, 'model:ratelimit', 'Anthropic rate limit in chat_api (%s)',
+                  client_obj.slug if client_obj else '-')
+        return _chat_error(client_obj, CHAT_ERROR_BUSY, 429)
+    except anthropic.APIError as exc:
+        # A provider outage fails EVERY turn: a WARNING per request, and the
+        # admins get one email per hour, not one per visitor message.
+        ops_alert(logger, 'model:chat', 'Anthropic API error in chat_api (%s, %s)',
+                  client_obj.slug if client_obj else '-', exc.__class__.__name__,
+                  exc_info=True)
+        return _chat_error(client_obj, CHAT_ERROR_MODEL, 502)
     return JsonResponse({'reply': result.reply})
 
 
@@ -1463,7 +1480,8 @@ def demo_api(request):
     day_key = 'demo:global:' + today
     used = cache.get(day_key, 0)
     if used >= daily_cap:
-        return JsonResponse({'error': 'El demo está ocupado ahora mismo. Trata más tarde.'}, status=503)
+        return quiet_5xx(JsonResponse(
+            {'error': 'El demo está ocupado ahora mismo. Trata más tarde.'}, status=503))
     for key in (day_key, ip_key):
         if cache.get(key, 0) == 0:
             cache.set(key, 1, 60 * 60 * 26)
@@ -1476,12 +1494,15 @@ def demo_api(request):
     try:
         reply, usage = agent.answer(history, business_prompt=context, handlers={})
     except agent.AgentNotConfigured:
-        return JsonResponse({'error': 'El demo no está disponible ahora mismo.'}, status=503)
+        return quiet_5xx(JsonResponse(
+            {'error': 'El demo no está disponible ahora mismo.'}, status=503))
     except anthropic.RateLimitError:
+        ops_alert(logger, 'model:ratelimit', 'Anthropic rate limit in demo_api')
         return JsonResponse({'error': 'Ocupado — trata de nuevo en un momento.'}, status=429)
-    except anthropic.APIError:
-        logger.exception('Anthropic API error in demo_api')
-        return JsonResponse({'error': 'Algo salió mal. Trata de nuevo.'}, status=502)
+    except anthropic.APIError as exc:
+        ops_alert(logger, 'model:demo', 'Anthropic API error in demo_api (%s)',
+                  exc.__class__.__name__, exc_info=True)
+        return quiet_5xx(JsonResponse({'error': 'Algo salió mal. Trata de nuevo.'}, status=502))
 
     usage_ledger.record('demo', usage)
     return JsonResponse({'reply': reply})

@@ -180,6 +180,8 @@ def control_overview(request):
         'start': start, 'end': end,
         'sort': sort, 'sort_key': sort_key, 'sort_desc': desc,
         'sort_links': _sort_links(period, sort_key, desc),
+        # Model latency of today's turns (p50/p95 ms), from the usage ledger.
+        'latency': usage_ledger.latency_percentiles(*usage_ledger.day_bounds()),
     })
 
 

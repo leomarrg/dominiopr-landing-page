@@ -1,0 +1,72 @@
+name: Uptime dominiopr.com
+
+# Monitor externo minimo: cada 10 minutos comprueba la salud de la app y el
+# script del widget (lo que cargan los sitios de los clientes). Si alguno no
+# responde 200 en 2 intentos, el job falla y GitHub manda un correo a quien
+# hizo el ultimo cambio al cron de este archivo (Settings > Notifications >
+# Actions: "Send notifications for failed workflows only").
+#
+# Limites conocidos: GitHub puede retrasar los `schedule` varios minutos en
+# horas pico, y en repos publicos los desactiva tras 60 dias sin actividad en
+# el repo (reactivalos en la pestana Actions). Para alertas de segundos o SMS,
+# usar un monitor dedicado (UptimeRobot, Better Stack) sobre las mismas URLs.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uptime
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Health y widget
+        run: |
+          set -u
+          BASE="https://dominiopr.com"
+
+          # Devuelve el codigo HTTP (000 si no hubo respuesta).
+          fetch() { curl -sS -o "$2" -w '%{http_code}' --max-time 20 "$BASE$1" 2>/dev/null || echo 000; }
+
+          # 2 intentos separados 30 s; un fallo aislado de red no alerta.
+          check() {
+            local path="$1" body code attempt
+            body="$(mktemp)"
+            for attempt in 1 2; do
+              code="$(fetch "$path" "$body")"
+              # /healthz/ llega con el cambio de backend; mientras produccion
+              # devuelva 404 se usa la portada como respaldo. Un 503 de
+              # /healthz/ (BD o cache caidas) SI es una falla.
+              if [ "$path" = "/healthz/" ] && [ "$code" = "404" ]; then
+                echo "/healthz/ -> 404 (aun no desplegado); respaldo: /"
+                check /
+                return $?
+              fi
+              if [ "$code" = "200" ]; then
+                # El widget responde 200 tambien para una clave desconocida:
+                # comprueba que de verdad sirve el script del cliente dominio.
+                if [ "$path" = "/widget.js?key=dominio" ] && grep -q "unknown or inactive client key" "$body"; then
+                  echo "::error::$path responde 200 pero sin el widget (cliente dominio inactivo o BD vacia)"
+                  return 1
+                fi
+                echo "$path -> 200 (intento $attempt)"
+                return 0
+              fi
+              echo "$path -> $code (intento $attempt)"
+              if [ "$attempt" = 1 ]; then sleep 30; fi
+            done
+            echo "::error::$BASE$path no respondio 200 en 2 intentos (ultimo codigo: $code)"
+            return 1
+          }
+
+          rc=0
+          check /healthz/ || rc=1
+          check "/widget.js?key=dominio" || rc=1
+          exit $rc

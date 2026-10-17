@@ -10,8 +10,10 @@ Inference runs on Anthropic's cloud, so it adds no meaningful load to the server
 """
 import logging
 import re
+import time
 
 import anthropic
+import httpx
 from django.conf import settings
 from django.utils import timezone
 
@@ -532,13 +534,53 @@ class AgentNotConfigured(Exception):
     """Raised when no ANTHROPIC_API_KEY is set."""
 
 
+# Seconds per provider call when the caller sets nothing tighter, and the SDK
+# retries on top of it. The SDK's own default is 10 minutes with 2 retries: a
+# slow or hung API would pin a gunicorn thread (2 workers x 4 threads on the
+# box) for the whole of that, and a handful of them takes the site down. The
+# widget, the demo, the internal assistant, the greeting and the nightly
+# tagging all inherit this; the ingest overrides it (ingest.LLM_TIMEOUT) and
+# the WhatsApp turn tightens it (whatsapp.TURN_TIMEOUT).
+DEFAULT_AGENT_TIMEOUT = 25
+AGENT_MAX_RETRIES = 1
+# Whole turn (every tool round plus the final call, retries included) must end
+# before gunicorn's 60 s --timeout and nginx's 65 s proxy_read_timeout: with
+# MAX_TOOL_ROUNDS=3 a per-call timeout alone could add up to minutes.
+DEFAULT_AGENT_TURN_BUDGET = 50
+
+
+def agent_timeout():
+    """settings.DOMINIO_AGENT_TIMEOUT in seconds (default 25). A missing,
+    invalid or non-positive value falls back to the default: never 'no
+    timeout'."""
+    try:
+        value = float(getattr(settings, 'DOMINIO_AGENT_TIMEOUT', DEFAULT_AGENT_TIMEOUT))
+    except (TypeError, ValueError):
+        return float(DEFAULT_AGENT_TIMEOUT)
+    return value if value > 0 else float(DEFAULT_AGENT_TIMEOUT)
+
+
+def agent_turn_budget():
+    """settings.DOMINIO_AGENT_TURN_BUDGET in seconds (default 50); invalid or
+    non-positive falls back to the default."""
+    try:
+        value = float(getattr(settings, 'DOMINIO_AGENT_TURN_BUDGET', DEFAULT_AGENT_TURN_BUDGET))
+    except (TypeError, ValueError):
+        return float(DEFAULT_AGENT_TURN_BUDGET)
+    return value if value > 0 else float(DEFAULT_AGENT_TURN_BUDGET)
+
+
 def _provider_client(api_key):
     """M-12: single seam where the model provider is chosen. Only 'anthropic' is
     implemented; a second provider means one new branch here — views and tools
-    never touch the SDK directly."""
+    never touch the SDK directly.
+
+    Every client leaves here with an explicit timeout (agent_timeout) and one
+    retry. Callers that need another budget use client.with_options()."""
     provider = getattr(settings, 'DOMINIO_AGENT_PROVIDER', 'anthropic')
     if provider == 'anthropic':
-        return anthropic.Anthropic(api_key=api_key)
+        return anthropic.Anthropic(api_key=api_key, timeout=agent_timeout(),
+                                   max_retries=AGENT_MAX_RETRIES)
     raise AgentNotConfigured(f'Unknown agent provider: {provider}')
 
 
@@ -671,11 +713,13 @@ def answer(history, business_prompt=None, handlers=None, language='es', clinic=F
     the cached prefix stays byte-stable.
     `timeout` (seconds, Phase G) bounds each provider call and drops the
     SDK's retries to one: a webhook that must answer Meta within seconds
-    cannot wait out the SDK's default timeout and retry budget. None = the
-    SDK defaults (the web widget and the internal assistant).
+    cannot wait out the agent's default budget. None = the client's own
+    budget (agent_timeout(), one retry: the web widget, the demo and the
+    internal assistant).
     `usage` (see new_usage) holds the uncached input, output and cache read/write
     tokens accumulated across the tool loop, plus model, effort and api_calls
-    (M-03 cost analytics). Raises AgentNotConfigured if no API key, or
+    (M-03 cost analytics) and latency_ms (wall time spent inside provider
+    calls, tool handlers excluded). Raises AgentNotConfigured if no API key, or
     anthropic.APIError on failure.
     """
     api_key = getattr(settings, 'ANTHROPIC_API_KEY', '')
@@ -723,9 +767,40 @@ def answer(history, business_prompt=None, handlers=None, language='es', clinic=F
     effort_kwarg = _effort_kwargs(model, history)
     usage['effort'] = effort_kwarg.get('output_config', {}).get('effort', '')
 
+    per_call = float(timeout) if timeout else agent_timeout()
+    deadline = time.monotonic() + agent_turn_budget()
+
+    def create(**kwargs):
+        # Each call gets what is left of the turn budget (never more than the
+        # per-call timeout), and drops its retry when there is no room for two
+        # attempts. Out of budget = a timeout error the callers already turn
+        # into the friendly 502 / WhatsApp fallback.
+        remaining = deadline - time.monotonic()
+        if remaining < 2:
+            raise anthropic.APITimeoutError(
+                request=httpx.Request('POST', 'https://api.anthropic.com/v1/messages'))
+        # While a full call plus its retry still fits (with 5 s of slack for
+        # the tools), use the client as configured; otherwise shrink the
+        # timeout to what is left and drop the retry if two attempts don't fit.
+        # Worst case: 5 s + 2 x per-call = 55 s with the defaults (< 60 s).
+        call = client
+        if remaining < 2 * per_call - 5:
+            call_timeout = min(per_call, remaining)
+            call = client.with_options(
+                timeout=call_timeout,
+                max_retries=1 if remaining >= 2 * call_timeout else 0)
+        # Model latency only: the tool handlers (DB writes, emails) are not
+        # the provider's time.
+        started = time.monotonic()
+        try:
+            return call.messages.create(**kwargs)
+        finally:
+            usage['latency_ms'] = (usage.get('latency_ms', 0)
+                                   + int((time.monotonic() - started) * 1000))
+
     try:
         for _ in range(MAX_TOOL_ROUNDS + 1):
-            response = client.messages.create(
+            response = create(
                 model=model, max_tokens=max_tokens, system=system, messages=messages,
                 **tool_kwarg, **effort_kwarg)
             _accumulate_usage(usage, response)
@@ -753,7 +828,7 @@ def answer(history, business_prompt=None, handlers=None, language='es', clinic=F
         # Ran out of tool rounds — one last call that may not use tools, so it
         # replies in text. The tools stay declared: the history holds tool_use
         # blocks, and the API rejects those when the request defines no tools.
-        response = client.messages.create(
+        response = create(
             model=model, max_tokens=max_tokens, system=system, messages=messages,
             tools=tools, tool_choice={'type': 'none'}, **effort_kwarg)
         _accumulate_usage(usage, response)

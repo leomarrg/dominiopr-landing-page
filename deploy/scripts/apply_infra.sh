@@ -29,6 +29,18 @@ sleep 2
 sudo systemctl is-active --quiet gunicorn-dominio && echo "    gunicorn active" || {
   echo "    gunicorn FAILED to start:"; sudo journalctl -u gunicorn-dominio -n 30 --no-pager; exit 1; }
 
+echo "==> logrotate: cron log written by deploy/scripts/cron_run.sh"
+sudo install -m 644 -o root -g root deploy/logrotate/dominio-cron /etc/logrotate.d/dominio-cron
+# -d = debug/dry run: parses the file and shows what it would do, rotates nothing.
+if sudo logrotate -d /etc/logrotate.d/dominio-cron >/dev/null 2>&1; then
+  echo "    logrotate config OK"
+else
+  echo "    logrotate config INVALID:"; sudo logrotate -d /etc/logrotate.d/dominio-cron; exit 1
+fi
+
+echo "==> backup dirs for deploy.sh / rollback.sh"
+sudo install -d -m 700 -o ubuntu -g ubuntu /var/backups/dominio /var/backups/dominio/predeploy /var/backups/dominio/prerollback
+
 echo "==> swap (the box has 512MB and no swap; it has already been OOM-killed once)"
 if swapon --show | grep -q '/swapfile'; then
   echo "    swap already present"

@@ -655,6 +655,29 @@ S += bullets([
     '<b>Precio:</b> con Haiku 5.5 la IA cuesta ~$1 por cliente al mes (máximo $1–8 según el tope del plan); los '
     'planes actuales dejan margen amplio. El costo que hay que cuidar es tu tiempo, no la IA.',
 ])
+S.append(CondPageBreak(2.6 * inch))
+S.append(Paragraph('16. Correo con el dominio dominiopr.com', H2))
+S.append(Paragraph(
+    'Hoy los correos de la plataforma (avisos de leads, citas, bienvenida, digest) salen de una cuenta de Gmail por '
+    'SMTP. Para que salgan como notificaciones@dominiopr.com o hola@dominiopr.com basta cambiar las variables '
+    'DJANGO_EMAIL_* del .env: el código ya envía por SMTP genérico. Volumen esperado con 3 clientes: unos cientos '
+    'de correos al mes. Precios de lista conocidos a junio de 2026; confirmarlos antes de contratar.', BODY))
+S.append(table([
+    ['Servicio', 'Costo', 'Ventajas', 'Contras'],
+    ['Amazon SES', '~$0.10 por 1,000', 'El más barato; DOMINIO ya usa AWS; SMTP o API', 'Hay que pedir salir del modo prueba; más pasos de DNS'],
+    ['Postmark', '~$15/mes (10,000)', 'Mejor entrega para correo transaccional; montaje simple', 'Costo fijo aunque se envíe poco'],
+    ['Resend', 'Gratis hasta 3,000/mes (100/día)', 'Montaje simple; plan gratis alcanza hoy', 'Tope diario bajo en el plan gratis'],
+    ['Brevo', 'Gratis 300/día', 'Plan gratis amplio; SMTP', 'Marca de agua y menos enfoque transaccional'],
+    ['Microsoft 365 (ya pagado)', '$0 adicional', 'Usa el buzón hola@dominiopr.com que ya existe', 'Microsoft retiró la autenticación básica de SMTP; exige OAuth y un backend propio'],
+    ['Gmail (actual)', '$0', 'Ya funciona', 'Sale como @gmail.com; tope ~500/día; imagen menos profesional'],
+], [1.25 * inch, 1.25 * inch, 2.1 * inch, 2.3 * inch]))
+S += bullets([
+    '<b>Recomendación:</b> Amazon SES por costo (centavos al mes) o Postmark por sencillez y entrega. Enviar desde '
+    'notificaciones@dominiopr.com con Reply-To a hola@dominiopr.com, que sigue en Microsoft 365.',
+    '<b>DNS en GoDaddy, en cualquier caso:</b> SPF con include:spf.protection.outlook.com (hoy falta y la política '
+    'DMARC está en cuarentena), DKIM de Microsoft 365 (selector1 y selector2) y los registros DKIM del servicio '
+    'escogido.',
+])
 S.append(Spacer(1, 8))
 S.append(Paragraph(
     'Notas: las cifras de conversación son estimaciones basadas en el tamaño medido del prompt y en el uso local '

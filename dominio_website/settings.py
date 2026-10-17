@@ -83,6 +83,9 @@ if DEBUG:
         pass
 
 MIDDLEWARE = [
+    # First: Server-Timing header + a WARNING for requests over
+    # DOMINIO_SLOW_REQUEST_MS (it times everything below it).
+    'landing.middleware.ServerTimingMiddleware',
     'django.middleware.security.SecurityMiddleware',
     # WhiteNoise serves static files efficiently in production
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -151,6 +154,9 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024  # 1 MB hard cap on POST bodies
 # The CSRF token is read from the DOM (not the cookie), so the cookie can be
 # HttpOnly — one less thing a XSS could read.
 CSRF_COOKIE_HTTPONLY = True
+# Branded Spanish page for a failed CSRF check (expired form, blocked cookies)
+# instead of Django's English one.
+CSRF_FAILURE_VIEW = 'landing.health.csrf_failure'
 
 TEMPLATES = [
     {
@@ -250,6 +256,11 @@ if not DEBUG:
     # HTTPS / cookies
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     SECURE_SSL_REDIRECT = True
+    # The health probe answers on plain HTTP too: the deploy smoke test and a
+    # monitor on the box hit gunicorn directly, without nginx's
+    # X-Forwarded-Proto, and a 301 there would read as "down". It carries no
+    # session and no data, so HTTPS adds nothing to it.
+    SECURE_REDIRECT_EXEMPT = [r'^healthz/$']
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 
@@ -335,6 +346,28 @@ LOGGING = {
         },
     },
 }
+
+# Optional error tracking (Sentry). OFF unless SENTRY_DSN is set: without it
+# sentry_sdk is never imported, so the 414 MB box pays nothing. No PII
+# (send_default_pii=False keeps cookies, user ids/emails and client IPs out of
+# events; the SDK's default scrubber still runs) and no performance tracing
+# unless SENTRY_TRACES_SAMPLE_RATE says so. A DSN without the package
+# installed logs to stderr and the site starts anyway.
+SENTRY_DSN = os.environ.get('SENTRY_DSN', '').strip()
+if SENTRY_DSN and not TESTING:
+    try:
+        import sentry_sdk
+    except ImportError:
+        print('SENTRY_DSN is set but sentry-sdk is not installed; error tracking is off.',
+              file=sys.stderr)
+    else:
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            send_default_pii=False,
+            traces_sample_rate=float(os.environ.get('SENTRY_TRACES_SAMPLE_RATE', '0') or 0),
+            environment=os.environ.get('SENTRY_ENVIRONMENT', 'production'),
+            release=os.environ.get('SENTRY_RELEASE') or None,
+        )
 
 
 # ============================================================
@@ -443,6 +476,19 @@ DOMINIO_MODEL_PRICES = {
 DOMINIO_AGENT_MAX_TURNS = int(os.environ.get('DOMINIO_AGENT_MAX_TURNS', '12'))
 # M-12: which model provider the agent engine uses (only 'anthropic' today).
 DOMINIO_AGENT_PROVIDER = os.environ.get('DOMINIO_AGENT_PROVIDER', 'anthropic')
+# Seconds per model call (widget, demo, internal assistant, greeting, nightly
+# tagging), with ONE SDK retry on top. The SDK default (10 min, 2 retries)
+# would let a slow API pin every gunicorn thread. The ingest keeps its own
+# longer budget (landing/ingest.py) and WhatsApp a shorter one.
+# Requests slower than this (ms) are logged as a WARNING by
+# landing.middleware.ServerTimingMiddleware (route, method, status, ms; no PII).
+DOMINIO_SLOW_REQUEST_MS = int(os.environ.get('DOMINIO_SLOW_REQUEST_MS', '3000') or 3000)
+# Daily AI spend (USD, UsageEvent.cost_usd) above which the hourly cost_alert
+# cron emails ADMINS once per day; it also warns at 80% of
+# DOMINIO_AGENT_DAILY_CAP chat messages.
+DOMINIO_DAILY_COST_ALERT_USD = float(os.environ.get('DOMINIO_DAILY_COST_ALERT_USD', '5') or 5)
+DOMINIO_AGENT_TIMEOUT = float(os.environ.get('DOMINIO_AGENT_TIMEOUT', '25') or 25)
+DOMINIO_AGENT_TURN_BUDGET = float(os.environ.get('DOMINIO_AGENT_TURN_BUDGET', '50') or 50)
 # Phase 8 knowledge ingest (website scan + uploaded files), run by the
 # process_knowledge cron, never inside a web request. Staff-only since Phase I:
 # DOMINIO loads and maintains every tenant's knowledge, so the ceilings are

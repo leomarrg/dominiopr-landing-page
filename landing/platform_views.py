@@ -33,6 +33,7 @@ from django.views.decorators.http import require_POST
 
 from . import agent, analytics, entitlements, ingest, knowledge, publishing, turns
 from . import leads as lead_service
+from .health import alert as ops_alert, quiet as quiet_5xx
 from . import usage as usage_ledger
 from .models import (
     AvailabilityRule, Booking, Client, ContactSubmission, Conversation,
@@ -1660,9 +1661,25 @@ def user_remove(request, pk):
         if membership.role == 'org_admin' and admin_ids == [membership.pk]:
             messages.error(request, 'No puedes quitar al último administrador de este agente.')
             return redirect(reverse('dash_users') + f'?client={client.slug}')
-        _audit(request, 'user.remove', client=client, target=membership.user.username)
+        user = membership.user
+        _audit(request, 'user.remove', client=client, target=user.username)
         membership.delete()
-    messages.success(request, 'Acceso eliminado (la cuenta sigue existiendo).')
+        # A login with no membership left has nothing to open: deactivate it
+        # (sessions stop authenticating, password reset skips it) instead of
+        # leaving a live account behind. Never deleted -- its audit trail and
+        # authored notes keep pointing at it -- and staff is never touched.
+        # A later invite or purchase reactivates it (_provision_client_login).
+        deactivated = (not user.is_staff and not user.is_superuser
+                       and not Membership.objects.filter(user=user).exists())
+        if deactivated:
+            type(user).objects.filter(pk=user.pk).update(is_active=False)
+            _audit(request, 'user.deactivate', client=client, target=user.username,
+                   result='sin membresías')
+    if deactivated:
+        messages.success(request, 'Acceso eliminado. No tenía otros accesos, así que su '
+                                  'cuenta quedó desactivada.')
+    else:
+        messages.success(request, 'Acceso eliminado (la cuenta sigue existiendo).')
     return redirect(reverse('dash_users') + f'?client={client.slug}')
 
 
@@ -1832,11 +1849,15 @@ def assistant_api(request):
             profile='internal', language=client.primary_language,
             business_prompt=prompt)
     except agent.AgentNotConfigured:
-        return JsonResponse({'error': 'El asistente no está configurado todavía.'}, status=503)
-    except anthropic.APIError:
-        logger.exception('Internal assistant call failed for %s', client.slug)
-        return JsonResponse({'error': 'Error consultando el modelo. Intenta de nuevo.'},
-                            status=502)
+        return quiet_5xx(JsonResponse(
+            {'error': 'El asistente no está configurado todavía.'}, status=503))
+    except anthropic.APIError as exc:
+        # One email an hour at most (landing.health.alert); every failure is
+        # still a WARNING with the trace.
+        ops_alert(logger, 'model:internal', 'Internal assistant call failed for %s (%s)',
+                  client.slug, exc.__class__.__name__, exc_info=True)
+        return quiet_5xx(JsonResponse({'error': 'Error consultando el modelo. Intenta de nuevo.'},
+                                      status=502))
     return JsonResponse({'reply': result.reply, 'conversation': conversation.pk})
 
 

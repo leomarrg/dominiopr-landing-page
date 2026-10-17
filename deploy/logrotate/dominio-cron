@@ -1,0 +1,17 @@
+# /etc/logrotate.d/dominio-cron  (installed by deploy/scripts/apply_infra.sh)
+#
+# Log written by deploy/scripts/cron_run.sh for every cron job. Weekly, 8
+# weeks kept, gzip. copytruncate because cron_run.sh appends with >> and
+# never reopens a handle (a rename would not be noticed by a job that is
+# running at that moment, e.g. a 20-minute process_knowledge).
+# su: the file and its directory belong to the app user, not root.
+/home/ubuntu/dominio-cron.log {
+    su ubuntu ubuntu
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

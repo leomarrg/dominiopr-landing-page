@@ -100,6 +100,8 @@
                {# ... #} es de UNA sola linea; multilinea hay que usar {% comment %}
                o el texto sale impreso en la pagina.
             {% endcomment %}
+            {# GA4 purchase (conversion.js): sent only with cookie consent, once per order, no PII. #}
+            <div hidden data-ga-event="purchase" data-ga-transaction="{{ receipt.ref }}" data-ga-value="{{ receipt.total }}" data-ga-tax="{{ receipt.tax|default:'0' }}" data-ga-currency="USD" data-ga-item-id="{{ plan_name|slugify }}" data-ga-item-name="{{ plan_name }}"></div>
             <div class="rcpt">
                 <div class="rcpt-machine" aria-hidden="true">
                     <span class="rcpt-vent"></span><span class="rcpt-led"></span>
@@ -176,5 +178,6 @@
 
     </div>
 </div>
+{% include 'landing/_tracking.html' %}
 </body>
 </html>

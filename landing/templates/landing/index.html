@@ -513,7 +513,7 @@
                     {% if messages %}
                     <div class="form-messages">
                         {% for message in messages %}
-                        <div class="form-message form-message--{{ message.tags }}">{{ message }}</div>
+                        <div class="form-message form-message--{{ message.tags }}"{% if message.level == DEFAULT_MESSAGE_LEVELS.SUCCESS %} data-ga-event="generate_lead"{% endif %}>{{ message }}</div>
                         {% endfor %}
                     </div>
                     {% endif %}

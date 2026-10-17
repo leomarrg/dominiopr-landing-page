@@ -6,7 +6,7 @@ DOMINIO_COST_PER_MTOK rate on all tokens, and logs a warning so the table gets
 updated.
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from django.conf import settings
@@ -66,6 +66,15 @@ def cost_for(model, usage):
     return cost.quantize(Decimal('0.000001'))
 
 
+def _latency(usage):
+    """usage['latency_ms'] as a non-negative int, or None when absent."""
+    try:
+        value = usage.get('latency_ms')
+        return None if value is None else max(0, min(int(value), 2_147_483_647))
+    except (TypeError, ValueError):
+        return None
+
+
 def record(kind, usage, client=None, conversation=None):
     """Write one UsageEvent for a finished Anthropic call. Best-effort: the
     reply has already been produced, so a ledger failure is logged and never
@@ -90,6 +99,7 @@ def record(kind, usage, client=None, conversation=None):
                 api_calls=min(int(usage.get('api_calls') or 1), 32767),
                 effort=str(usage.get('effort') or '')[:10],
                 cost_usd=cost_for(model, usage),
+                latency_ms=_latency(usage),
                 **tokens,
             )
     except Exception:
@@ -176,3 +186,40 @@ def monthly(client_ids=None, months=12):
     return [{'month': r['month'], 'client_id': r['client_id'],
              'messages': r['messages'] or 0, 'tokens': r['tokens'] or 0,
              'cost': Decimal(r['cost'] or 0).quantize(_MICRO)} for r in rows]
+
+
+# Turn kinds whose latency a visitor or an employee waits on.
+LATENCY_KINDS = ('chat', 'whatsapp', 'internal_chat', 'demo')
+# Ceiling on the rows read for the percentiles (a day is a few thousand at
+# most: DOMINIO_AGENT_DAILY_CAP plus the demo's own cap).
+LATENCY_SAMPLE_MAX = 20000
+
+
+def day_bounds(date=None):
+    """(start, end) aware datetimes of the local day (settings.TIME_ZONE)
+    containing `date` (default: today). `end` is exclusive."""
+    tz = timezone.get_default_timezone()
+    day = date or timezone.localdate(timezone=tz)
+    start = timezone.make_aware(datetime(day.year, day.month, day.day), tz)
+    return start, start + timedelta(days=1)
+
+
+def latency_percentiles(start, end, kinds=LATENCY_KINDS):
+    """Model latency of the turns in [start, end): {'count', 'p50', 'p95'}
+    in ms (nearest-rank), None values when nothing was measured. One query,
+    the column only."""
+    # The most recent rows when over the ceiling, sorted here: slicing an
+    # ORDER BY latency would drop exactly the slow tail p95 is about.
+    values = sorted(UsageEvent.objects
+                    .filter(created_at__gte=start, created_at__lt=end, kind__in=kinds,
+                            latency_ms__isnull=False)
+                    .order_by('-created_at')
+                    .values_list('latency_ms', flat=True)[:LATENCY_SAMPLE_MAX])
+    if not values:
+        return {'count': 0, 'p50': None, 'p95': None}
+
+    def rank(p):
+        # Nearest-rank: the smallest value with at least p% of samples <= it.
+        idx = max(0, -(-len(values) * p // 100) - 1)
+        return values[min(idx, len(values) - 1)]
+    return {'count': len(values), 'p50': rank(50), 'p95': rank(95)}

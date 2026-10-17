@@ -46,6 +46,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from . import agent, entitlements, views
+from .health import alert as ops_alert, quiet as quiet_5xx
 from .models import AuditEvent, ChannelAccount, ChannelOptOut, Conversation
 from .turns import run_turn
 
@@ -536,16 +537,20 @@ def whatsapp_webhook(request):
         # Once per hour, not per request: anyone can hit this URL.
         if _once('wa:nosecret', 3600):
             logger.warning('WhatsApp webhook called but META_APP_SECRET is not set')
-        return HttpResponse(status=503)
+        # And no django.request ERROR (= one email) per hit either.
+        return quiet_5xx(HttpResponse(status=503))
     if not verify_signature(request.body, request.META.get('HTTP_X_HUB_SIGNATURE_256', '')):
         logger.warning('WhatsApp webhook: bad signature from %s', views._client_ip(request))
         return HttpResponseForbidden()
     try:
         return _dispatch(request)
     except Exception as exc:
-        # Never a 500 to the outside: each one emails the admins, and Meta
-        # would retry the batch. The class only (no body, no PII).
-        logger.warning('WhatsApp webhook: unhandled %s', exc.__class__.__name__)
+        # Never a 500 to the outside: Meta would retry the batch and, repeated,
+        # disable the webhook. It is still a bug: the trace is logged every
+        # time and the admins get one email per hour (not one per event).
+        # The class and the trace only, never the body (PII).
+        ops_alert(logger, 'wa:webhook', 'WhatsApp webhook: unhandled %s',
+                  exc.__class__.__name__, exc_info=True)
         return HttpResponse(status=200)
 
 
@@ -581,10 +586,10 @@ def _dispatch(request):
                 try:
                     _handle_message(request, account, phone_number_id, message)
                 except Exception:
-                    # WARNING with the trace, not ERROR: the 'landing' logger
-                    # mails the admins at ERROR and this runs once per message.
-                    logger.warning('WhatsApp message handling failed (client=%s)',
-                                   account.client.slug if account else '-', exc_info=True)
+                    # Runs once per message: WARNING with the trace each time,
+                    # ERROR (email) at most once per hour.
+                    ops_alert(logger, 'wa:message', 'WhatsApp message handling failed (client=%s)',
+                              account.client.slug if account else '-', exc_info=True)
     return HttpResponse('ok')
 
 
@@ -694,7 +699,8 @@ def _process(request, account, client, wa_id, chash, wamid, message):
             logger.error('WhatsApp turn for %s without ANTHROPIC_API_KEY', client.slug)
         reply, outcome = _t(client, 'error'), 'not_configured'
     except anthropic.APIError as exc:
-        logger.warning('WhatsApp turn for %s failed: %s', client.slug, exc.__class__.__name__)
+        ops_alert(logger, 'model:whatsapp', 'WhatsApp turn for %s failed: %s',
+                  client.slug, exc.__class__.__name__)
         reply, outcome = _t(client, 'error'), 'model_error'
     if not send_text(account, wa_id, reply):
         outcome += '_unsent'

@@ -109,6 +109,7 @@
 </nav>
 {% endif %}
 <p class="text-muted">Tope global de hoy: <b>{{ totals.global_today|thousands }}</b> de {{ totals.global_cap|thousands }} mensajes de chat (DOMINIO_AGENT_DAILY_CAP; revísalo al sumar clientes).</p>
+<p class="text-muted">Latencia del modelo hoy: {% if latency.count %}p50 <b>{{ latency.p50|thousands }} ms</b>, p95 <b>{{ latency.p95|thousands }} ms</b> ({{ latency.count|thousands }} turnos: chat, WhatsApp, asistente interno y demo){% else %}sin turnos medidos todavía{% endif %}.</p>
 <p class="text-muted">Mensajes, tokens y costo salen del libro de uso (desde su despliegue). "Margen (mes)" = ingreso mensual − costo IA del mes en curso, sin importar el periodo elegido. Ingreso: solo suscripciones activas o con pago vencido; "—" = plan custom sin precio (ponlo en la suscripción).</p>
 {% else %}
 {% include 'landing/_dash_empty_state.html' with icon='grid' title='Todavía no hay clientes' text='Cuando crees el primer agente, aparecerá aquí con su uso, plan y estado.' %}

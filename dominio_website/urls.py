@@ -21,7 +21,7 @@ from django.urls import include, path, reverse_lazy
 from django.contrib.sitemaps.views import sitemap
 from django.views.generic import RedirectView
 
-from landing import control_views, platform_views, seo, views, whatsapp
+from landing import control_views, health, platform_views, seo, views, whatsapp
 from landing.forms import (
     HumanAdminAuthenticationForm, HumanAuthenticationForm, HumanPasswordResetForm,
 )
@@ -77,6 +77,12 @@ urlpatterns = [
     path('robots.txt', seo.robots_txt, name='robots_txt'),
     path('sitemap.xml', sitemap, {'sitemaps': seo.SITEMAPS}, name='sitemap'),
     path('site.webmanifest', seo.webmanifest, name='webmanifest'),
+    # Plain-text summary for AI answer engines (llmstxt.org convention).
+    path('llms.txt', seo.llms_txt, name='llms_txt'),
+    # Browsers and crawlers ask for /favicon.ico no matter what <link> says.
+    path('favicon.ico', seo.favicon, name='favicon'),
+    # Uptime monitor + deploy smoke test: DB + cache, no session, no PII.
+    path('healthz/', health.healthz, name='healthz'),
     path('privacy/', views.privacy, name='privacy'),
     # El sitio esta en espanol pero estas dos rutas nacieron en ingles, asi que
     # todo el mundo (nosotros incluidos) teclea el slug espanol y se come un

@@ -24,7 +24,8 @@ DB_PATH="${DJANGO_DB_PATH:-$APP_DIR/db.sqlite3}"
 PYTHON="${PYTHON:-$APP_DIR/venv/bin/python}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/dominio}"
 KEEP_DAYS="${KEEP_DAYS:-14}"
-STAMP="$(date +%Y%m%d)"
+# STAMP is overridable so deploy.sh can name predeploy copies by time + commit.
+STAMP="${STAMP:-$(date +%Y%m%d)}"
 OUT="$BACKUP_DIR/db-$STAMP.sqlite3"
 
 [ -f "$DB_PATH" ] || { echo "Backup FAILED: no database at $DB_PATH" >&2; exit 1; }

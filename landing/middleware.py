@@ -1,4 +1,8 @@
-"""Request-level guards for the branded dashboard."""
+"""Request-level guards for the branded dashboard, the CSP and request timing."""
+import logging
+import time
+
+from django.conf import settings
 from django.contrib import messages
 from django.shortcuts import redirect
 
@@ -154,4 +158,32 @@ class ContentSecurityPolicyMiddleware:
             return response
         policy = self.ADMIN_POLICY if request.path.startswith('/admin/') else self.POLICY
         response.setdefault('Content-Security-Policy', policy)
+        return response
+
+
+timing_logger = logging.getLogger('landing.timing')
+
+
+class ServerTimingMiddleware:
+    """`Server-Timing: app;dur=N` on every response (ms spent in Django,
+    visible in the browser's devtools) and a WARNING for any request slower
+    than DOMINIO_SLOW_REQUEST_MS (default 3000). The log line carries the
+    method, the URL pattern (the route, not the raw path, so tokens in
+    /confirmar/<token>/ never reach the log; the raw path only when nothing
+    resolved), the status and the milliseconds. No query string, no user, no
+    IP. First in MIDDLEWARE so it times the whole stack."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        started = time.monotonic()
+        response = self.get_response(request)
+        ms = int((time.monotonic() - started) * 1000)
+        response['Server-Timing'] = f'app;dur={ms}'
+        if ms > getattr(settings, 'DOMINIO_SLOW_REQUEST_MS', 3000):
+            match = getattr(request, 'resolver_match', None)
+            where = ('/' + match.route) if match is not None and match.route else request.path
+            timing_logger.warning('Slow request %s %s status=%s ms=%d',
+                                  request.method, where[:200], response.status_code, ms)
         return response

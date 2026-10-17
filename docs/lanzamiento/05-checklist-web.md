@@ -53,7 +53,7 @@ Tres cambios lo explican:
 1. **Fuentes: un solo `preload`.** Precargar las dos familias competía con el CSS
    que bloquea el render. Dejando solo la del titular (el elemento LCP) mejoró 4G
    y 3G; el cuerpo entra un instante después vía `font-display: swap`.
-2. **Logos redimensionados.** `logo_home.PNG` y `profile_pic@4x.PNG` eran de
+2. **Logos redimensionados.** `logo_home.PNG` y `profile_pic@4x.PNG` (originales, ahora en `assets/brand-src/`, fuera de lo publicado) eran de
    8004×8000 px (~350 KB cada uno) y se mostraban a 36–150 px: 714 KB por carga
    para dos imágenes diminutas, y ~256 MB de bitmap decodificado en RAM. Ahora
    son `brand/logo-wordmark.png` (300 px) y `brand/logo-mark.png` (112 px) — 2× el

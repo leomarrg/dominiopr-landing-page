@@ -805,7 +805,7 @@ def csat_distribution(client, start, end, clinic=False):
     rows = [{'score': score, 'n': counts[score], 'pct': round(counts[score] * 100 / n) if n else 0}
             for score in (5, 4, 3, 2, 1)]
     comments = [] if clinic else list(
-        base.exclude(comment='').order_by('-created_at')
+        base.exclude(comment='').order_by('-created_at', '-id')  # same instant: newest row first
         .values('score', 'comment', 'created_at')[:5])
     return {'counts': counts, 'rows': rows, 'n': n, 'avg': avg, 'comments': comments}
 

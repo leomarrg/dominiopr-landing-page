@@ -1,38 +1,184 @@
-name: Deploy to AWS Lightsail
+name: CI y deploy a AWS Lightsail
 
+# test + audit corren en cada push y en cada PR contra main (incluye los de
+# Dependabot). deploy solo corre en push a main (o a mano desde la UI) y SOLO
+# si test y audit pasaron: un commit rojo nunca llega a produccion.
 on:
   push:
     branches: [main]
-  workflow_dispatch:  # allow manual trigger from GitHub UI
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_audit:
+        description: "Emergencia: desplegar aunque pip-audit encuentre una vulnerabilidad con fix (los tests siguen siendo obligatorios)"
+        type: boolean
+        default: false
 
-concurrency:
-  group: production-deploy
-  cancel-in-progress: false  # don't cancel a running deploy
+permissions:
+  contents: read
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Misma version menor que el servidor (Ubuntu 24.04 LTS trae Python 3.12).
+      # Si el servidor cambia (`python3 --version` en Lightsail), cambia esto.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Configuracion de produccion (DEBUG=False) con una SECRET_KEY de usar y
+      # tirar: valida HTTPS, cookies seguras, HSTS, etc. Falla con cualquier
+      # aviso salvo security.W021 (HSTS preload), que es una decision consciente
+      # (SECURE_HSTS_PRELOAD=False en settings.py) y no un descuido.
+      - name: Django check --deploy
+        env:
+          DJANGO_DEBUG: "False"
+        run: |
+          DJANGO_SECRET_KEY="ci-$(python -c 'import secrets; print(secrets.token_urlsafe(50))')"
+          export DJANGO_SECRET_KEY
+          out="$(python manage.py check --deploy 2>&1)" || { echo "$out"; exit 1; }
+          echo "$out"
+          if echo "$out" | grep -E '\([a-z_]+\.[WE][0-9]+\)' | grep -v 'security\.W021'; then
+            echo "::error::check --deploy reporto avisos nuevos (arriba). Corrigelos o justificalos antes de desplegar."
+            exit 1
+          fi
+
+      - name: Migraciones al dia
+        env:
+          DJANGO_DEBUG: "False"
+        run: |
+          DJANGO_SECRET_KEY="ci-$(python -c 'import secrets; print(secrets.token_urlsafe(50))')"
+          export DJANGO_SECRET_KEY
+          python manage.py makemigrations --check --dry-run
+
+      # En serie a proposito: la suite usa SQLite, hilos (gthread) y bloqueos de
+      # BD; con --parallel aparecen fallos intermitentes que bloquearian deploys
+      # sanos. DJANGO_DEBUG=True igual que en desarrollo (con False, settings.py
+      # activa SECURE_SSL_REDIRECT y el cliente de pruebas recibe 301 en todo).
+      - name: Tests
+        env:
+          DJANGO_DEBUG: "True"
+        run: python manage.py test landing social --noinput
+
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_audit) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install pip-audit
+        run: python -m pip install --upgrade pip pip-audit
+
+      # Politica: bloquea el deploy SOLO si hay una vulnerabilidad con version
+      # corregida publicada (el arreglo es subir el pin; Dependabot abre el PR).
+      # Sin fix disponible no hay nada que hacer en este repo: queda como aviso
+      # amarillo y no frena un deploy. Si pip-audit no puede consultar la base
+      # de vulnerabilidades (caida de PyPI/OSV), avisa y no bloquea: una caida
+      # de un tercero no debe impedir desplegar un arreglo.
+      - name: pip-audit
+        run: |
+          set +e
+          pip-audit -r requirements.txt --format json --output audit.json --progress-spinner off
+          rc=$?
+          set -e
+          if [ ! -s audit.json ]; then
+            echo "::warning::pip-audit no produjo resultados (codigo $rc). No se bloquea el deploy; revisa el log."
+            exit 0
+          fi
+          python - <<'PY'
+          import json, sys
+          data = json.load(open('audit.json'))
+          deps = data.get('dependencies', data if isinstance(data, list) else [])
+          fixable, unfixable = [], []
+          for dep in deps:
+              for v in dep.get('vulns', []):
+                  line = f"{dep['name']}=={dep.get('version')} {v.get('id')} fix: {', '.join(v.get('fix_versions') or []) or 'ninguno'}"
+                  (fixable if v.get('fix_versions') else unfixable).append(line)
+          for line in unfixable:
+              print(f"::warning::Vulnerabilidad sin fix publicado: {line}")
+          for line in fixable:
+              print(f"::error::Vulnerabilidad con fix disponible: {line}")
+          if fixable:
+              print("Sube esos pines en requirements.txt (o fusiona el PR de Dependabot) y vuelve a desplegar.")
+              sys.exit(1)
+          print(f"pip-audit: {len(fixable)} con fix, {len(unfixable)} sin fix.")
+          PY
+
+  deploy:
+    needs: [test, audit]
+    # always() para poder evaluar el caso "audit omitido a proposito"; el
+    # resto de condiciones exige test verde, audit verde u omitido, y main.
+    if: >-
+      ${{ always()
+          && github.event_name != 'pull_request'
+          && github.ref == 'refs/heads/main'
+          && needs.test.result == 'success'
+          && (needs.audit.result == 'success' || needs.audit.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false  # nunca cortar un deploy a medias
+
+    steps:
       - name: Set up SSH
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
 
-      - name: Add server to known_hosts
+      # Clave de host FIJADA (es publica). Con ssh-keyscan el runner confiaba
+      # en lo primero que contestara (TOFU): un DNS o una ruta secuestrados
+      # recibian el deploy. Si el servidor se reinstala, la clave cambia: pon
+      # aqui la nueva (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` y
+      # `cat /etc/ssh/ssh_host_ed25519_key.pub` en el servidor).
+      - name: Pin server host key
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -H ${{ secrets.LIGHTSAIL_HOST }} >> ~/.ssh/known_hosts
+          chmod 700 ~/.ssh
+          cat > ~/.ssh/known_hosts <<'EOF'
+          dominiopr.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK9/oZhqy+TuvYn1a9zLI2Yen/ymx62qmt0T+e/sN46M
+          52.54.98.28 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK9/oZhqy+TuvYn1a9zLI2Yen/ymx62qmt0T+e/sN46M
+          EOF
+          chmod 600 ~/.ssh/known_hosts
 
+      # Despliega exactamente el commit que paso los tests (github.sha), no lo
+      # que haya en main en ese momento. deploy.sh termina en un smoke test y
+      # sale con 1 si el sitio no responde: el job queda rojo.
       - name: Run deploy script on server
         run: |
-          ssh ${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }} \
-            'bash /var/www/dominio/deploy/scripts/deploy.sh'
+          ssh -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            ${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }} \
+            "bash /var/www/dominio/deploy/scripts/deploy.sh ${{ github.sha }}"
 
-      - name: Notify success
+      - name: Resumen
         if: success()
-        run: echo "Deployed commit ${{ github.sha }} to dominiopr.com"
+        run: echo "Desplegado ${{ github.sha }} en dominiopr.com"
+
+      - name: Que hacer si fallo
+        if: failure()
+        run: |
+          echo "::error::El deploy o su smoke test fallo. Revisa el log de arriba."
+          echo "Rollback: ssh ubuntu@dominiopr.com 'bash /var/www/dominio/deploy/scripts/rollback.sh'"

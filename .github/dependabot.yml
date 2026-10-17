@@ -1,0 +1,33 @@
+# Dependabot: PRs semanales con actualizaciones. Cada PR corre el job `test`
+# y `audit` de deploy.yml; fusionarlo a main = desplegarlo a produccion.
+# Tope total de 5 PRs abiertos (4 pip + 1 de GitHub Actions); minor y patch
+# de pip llegan agrupados en un solo PR para no saturar.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Puerto_Rico
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: "deps"
+    groups:
+      pip-minor-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Puerto_Rico
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]

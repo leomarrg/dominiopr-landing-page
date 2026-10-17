@@ -171,10 +171,10 @@
         </div>
     </section>
         <div class="gs-form-wrap" id="request">
-            {% if messages %}{% for m in messages %}<div class="gs-success" id="done">{{ m }}</div>{% endfor %}{% endif %}
+            {% if messages %}{% for m in messages %}<div class="gs-success" id="done"{% if m.level == DEFAULT_MESSAGE_LEVELS.SUCCESS %} data-ga-event="generate_lead"{% endif %}>{{ m }}</div>{% endfor %}{% endif %}
             <h2>Activa tu agente</h2>
             <p class="sub">Completa tus datos y sigue al pago seguro con Stripe. Tu cuenta y tu dashboard se crean al instante; nosotros instalamos el agente en tu página en 48 horas.</p>
-            <form class="gs-form" method="post" action="{% url 'get_started' %}#request" novalidate
+            <form class="gs-form" method="post" action="{% url 'get_started' %}#request" novalidate data-ga-submit="begin_checkout"
                   onsubmit="var b=this.querySelector('button[type=submit]');if(b){b.disabled=true;b.textContent='Enviando…';}">
                 {% csrf_token %}
                 <div style="position:absolute;left:-9999px" aria-hidden="true"><input type="text" name="hp" tabindex="-1" autocomplete="off" aria-hidden="true"></div>
@@ -194,7 +194,7 @@
                 <select name="plan" aria-label="Plan" id="planSelect">
                     <option value="">Elige un plan</option>
                     {% for p in plans %}
-                    <option value="{{ p.id }}" {% if form.plan == p.id %}selected{% endif %}>{{ p.name }}{% if p.monthly %} — ${{ p.monthly }}/mes{% if p.setup %} + ${{ p.setup }} instalación{% endif %}{% else %} — Hablemos{% endif %}</option>
+                    <option value="{{ p.id }}" data-ga-name="{{ p.name }}"{% if p.monthly %} data-ga-monthly="{{ p.monthly }}" data-ga-annual="{{ p.annual }}"{% endif %} {% if form.plan == p.id %}selected{% endif %}>{{ p.name }}{% if p.monthly %} — ${{ p.monthly }}/mes{% if p.setup %} + ${{ p.setup }} instalación{% endif %}{% else %} — Hablemos{% endif %}</option>
                     {% endfor %}
                 </select>
                 {% if errors.plan %}<div class="err">{{ errors.plan }}</div>{% endif %}
@@ -357,5 +357,6 @@
         }
     })();
 </script>
+{% include 'landing/_tracking.html' %}
 </body>
 </html>

@@ -1,4 +1,4 @@
-{% comment %}
+{% load static %}{% comment %}
 Cookie consent + Google Analytics 4.
 GA only loads AFTER the visitor clicks "Accept" (opt-in), satisfying
 US/PR privacy expectations (CCPA/CPRA: clear notice + ability to reject).
@@ -18,7 +18,23 @@ reopens the banner so the visitor can change their mind.
     s.src = 'https://www.googletagmanager.com/gtag/js?id={{ GA_MEASUREMENT_ID }}';
     document.head.appendChild(s);
     gtag('js', new Date());
-    gtag('config', '{{ GA_MEASUREMENT_ID }}', { anonymize_ip: true });
+    gtag('config', '{{ GA_MEASUREMENT_ID }}', {
+      anonymize_ip: true,
+      page_location: dominioCleanLocation()
+    });
+  }
+  // Only campaign parameters reach Google: any other query string value
+  // (e.g. the Stripe session_id on /bienvenida/, which opens a receipt with
+  // the buyer's email) is dropped from the reported URL.
+  function dominioCleanLocation(){
+    var keep = /^(utm_(source|medium|campaign|term|content)|gclid)$/;
+    var out = [];
+    try {
+      new URLSearchParams(location.search).forEach(function (v, k) {
+        if (keep.test(k)) out.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
+      });
+    } catch (e) {}
+    return location.origin + location.pathname + (out.length ? '?' + out.join('&') : '');
   }
 </script>
 {% endif %}
@@ -124,3 +140,6 @@ reopens the banner so the visitor can change their mind.
     });
   })();
 </script>
+{% if GA_MEASUREMENT_ID %}
+<script src="{% static 'landing/js/conversion.js' %}"></script>
+{% endif %}

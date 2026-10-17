@@ -1261,6 +1261,10 @@ class UsageEvent(models.Model):
     api_calls = models.PositiveSmallIntegerField(default=0)
     effort = models.CharField(max_length=10, blank=True)
     cost_usd = models.DecimalField(max_digits=12, decimal_places=6, default=0)
+    # Wall time inside the provider calls of this event (ms, tool handlers
+    # excluded). Null for rows written before it existed and for callers that
+    # do not measure it (ingest, tagging, greeting).
+    latency_ms = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
 
     class Meta:

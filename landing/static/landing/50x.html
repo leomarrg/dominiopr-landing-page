@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Volvemos en un momento | DOMINIO</title>
+<!-- Pagina de error que sirve nginx (502/503/504) cuando la app no responde.
+     Autocontenida a proposito: sin JS, sin fuentes ni imagenes, sin nada que
+     dependa del backend caido. -->
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b1a2b;color:#fff;font-family:Montserrat,Arial,Helvetica,sans-serif;padding:24px}
+main{max-width:560px;text-align:center;background:#12304a;border:1px solid rgba(52,214,200,.2);border-radius:20px;padding:44px 32px}
+.brand{font-weight:700;letter-spacing:.3em;color:#34d6c8;font-size:1.1rem;margin:0 0 22px}
+.code{color:#34d6c8;font-size:.8rem;letter-spacing:.25em;text-transform:uppercase;margin:0 0 10px}
+h1{font-size:1.8rem;line-height:1.2;margin:0 0 14px}
+p{color:rgba(255,255,255,.78);line-height:1.6;margin:0 0 26px;font-size:1rem}
+.actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+a{display:inline-block;padding:13px 24px;border-radius:999px;font-weight:600;text-decoration:none;font-size:.95rem;min-height:44px}
+a.primary{background:#34d6c8;color:#0b1a2b}
+a.outline{border:1px solid rgba(52,214,200,.5);color:#34d6c8}
+a:focus-visible{outline:3px solid #fff;outline-offset:3px}
+</style>
+</head>
+<body>
+<main>
+<p class="brand">DOMINIO</p>
+<p class="code">Servicio no disponible</p>
+<h1>Volvemos en un momento</h1>
+<p>Estamos actualizando o reiniciando el sitio. Intenta de nuevo en un minuto. Si el problema sigue, escríbenos y te ayudamos.</p>
+<div class="actions">
+<a class="primary" href="/">Intentar de nuevo</a>
+<a class="outline" href="mailto:hola@dominiopr.com">hola@dominiopr.com</a>
+</div>
+</main>
+</body>
+</html>
