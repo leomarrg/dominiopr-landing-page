@@ -1,0 +1,47 @@
+# DOMINIO: entorno de desarrollo local.
+#   docker compose up            -> http://localhost:8765 (y http://IP-DE-TU-MAQUINA:8765 desde la red)
+#   docker compose down          -> detiene (los datos quedan en el volumen dominio_data)
+#   docker compose down -v       -> detiene y BORRA la base de datos local
+# Configuracion: copia .env.example a .env si quieres claves (IA, Stripe...). Sin .env tambien arranca.
+# La base de datos es SQLite (igual que produccion), en el volumen dominio_data: no hace falta
+# un contenedor de base de datos aparte.
+
+x-app: &app
+  build: .
+  image: dominio-dev:latest
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
+    DJANGO_DB_PATH: /data/db.sqlite3
+    DJANGO_SITE_URL: ${DJANGO_SITE_URL:-http://localhost:8765}
+    # Con DEBUG=True el valor por defecto ya es "*": acepta localhost y la IP de la red.
+    DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-*}
+  volumes:
+    - .:/app                 # el codigo se recarga al guardar
+    - dominio_data:/data     # base de datos SQLite persistente
+
+services:
+  web:
+    <<: *app
+    ports:
+      - "${APP_PORT:-8765}:8000"   # 0.0.0.0 por defecto: visible en la red local
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz/', timeout=5)"]
+      interval: 15s
+      timeout: 8s
+      retries: 10
+      start_period: 30s
+
+  # Procesa la cola de escaneos de sitio y documentos cada minuto
+  # (en produccion lo hace el cron process_knowledge). Sin ANTHROPIC_API_KEY solo avisa.
+  worker:
+    <<: *app
+    command: ["sh", "-c", "while true; do python manage.py process_knowledge --limit 1 || true; sleep 60; done"]
+    depends_on:
+      web:
+        condition: service_healthy
+
+volumes:
+  dominio_data:
