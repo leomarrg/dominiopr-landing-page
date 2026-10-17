@@ -1,14 +1,14 @@
 anthropic==0.105.2
 # Transitive (anthropic/httpx): floor above PYSEC-2026-4024/4025.
 anyio>=4.14.2
-asgiref==3.11.0
+asgiref==3.12.1
 Django==5.2.17
 django-browser-reload==1.21.0
-gunicorn==26.0.0
-pypdf==6.19.0
+gunicorn==26.2.0
+pypdf==6.20.1
 whitenoise==6.12.0
-python-dotenv==1.2.2
+python-dotenv==1.2.4
 sentry-sdk==2.72.0
 sqlparse==0.6.0
-typing_extensions==4.15.0
+typing_extensions==4.16.0
 tzdata==2025.2
