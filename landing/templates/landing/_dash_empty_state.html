@@ -1,0 +1,9 @@
+{% comment %}Empty state with a clear next action. Params: title, text; optional: icon (name from _icons.html, default inbox),
+action_href, action_label, inline (any value, smaller padding).
+Usage: {% include 'landing/_dash_empty_state.html' with icon='user-plus' title='Aún no hay leads' text='Aparecerán aquí.' action_href=url action_label='Instalar el agente' %}{% endcomment %}
+<div class="empty-state{% if inline %} empty-state--inline{% endif %}">
+    <span class="empty-state__icon" aria-hidden="true"><svg class="icon" focusable="false"><use href="#i-{{ icon|default:'inbox' }}"/></svg></span>
+    <p class="empty-state__title">{{ title }}</p>
+    {% if text %}<p class="empty-state__text">{{ text }}</p>{% endif %}
+    {% if action_href %}<a class="btn btn--primary empty-state__action" href="{{ action_href }}">{{ action_label }}</a>{% endif %}
+</div>

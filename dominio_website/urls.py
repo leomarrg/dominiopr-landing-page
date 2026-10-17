@@ -85,9 +85,17 @@ urlpatterns = [
     path('terminos/', RedirectView.as_view(pattern_name='terms', permanent=True)),
     path('privacidad/', RedirectView.as_view(pattern_name='privacy', permanent=True)),
 
-    # Branded internal dashboard (custom backend, not Django admin)
-    path('dashboard/', views.dashboard, name='dashboard'),
+    # Branded internal dashboard (custom backend, not Django admin).
+    # CRM: /dashboard/ is the home (attention, KPIs, charts); the leads list
+    # moved to /dashboard/leads/ and KEEPS the url name 'dashboard' (every
+    # reverse('dashboard') and the tests still point at the leads).
+    path('dashboard/', platform_views.home, name='home'),
+    path('dashboard/leads/', views.dashboard, name='dashboard'),
     path('dashboard/lead/<int:pk>/status/', views.lead_status, name='lead_status'),
+    path('dashboard/lead/<int:pk>/assign/', views.lead_assign, name='lead_assign'),
+    path('dashboard/lead/<int:pk>/follow-up/', views.lead_follow_up, name='lead_follow_up'),
+    path('dashboard/lead/<int:pk>/tags/', views.lead_tags, name='lead_tags'),
+    path('dashboard/lead/<int:pk>/lost/', views.lead_lost_reason, name='lead_lost_reason'),
     path('dashboard/lead/<int:pk>/email/', views.lead_email, name='lead_email'),
     # Phase 7: lead detail (timeline + notes) and the two privacy actions.
     path('dashboard/lead/<int:pk>/', views.lead_detail, name='lead_detail'),

@@ -1,0 +1,39 @@
+{% comment %}Conversations per day, web vs WhatsApp (stacked area). Context: channel_chart (analytics.svg_area + hits,
+legend, summary from platform_views._decorate_charts).{% endcomment %}
+<section class="card chart-card" aria-labelledby="an-channels-t">
+    <div class="card__head">
+        <div>
+            <h2 class="card__title" id="an-channels-t">Conversaciones por día</h2>
+            <p class="card__sub">Web y WhatsApp · últimos 30 días</p>
+        </div>
+        {% if not channel_chart.empty %}<span class="chip chip--neutral">{{ channel_chart.total }} en total</span>{% endif %}
+    </div>
+    {% if channel_chart.empty %}
+    {% include 'landing/_dash_empty_state.html' with inline=1 icon='message' title='Todavía no hay conversaciones' text='Cuando alguien escriba a tu agente, verás aquí cuántas conversaciones llegan cada día por la web y por WhatsApp.' %}
+    {% else %}
+    <figure class="chart">
+        <div class="chart__plot" data-chart role="img" aria-labelledby="an-channels-t" aria-describedby="an-channels-d">
+            <svg viewBox="{{ channel_chart.viewBox }}" focusable="false">
+                <g class="grid">{% for t in channel_chart.y_ticks %}<line x1="{{ channel_chart.plot.x }}" x2="{{ channel_chart.plot.x|add:channel_chart.plot.w }}" y1="{{ t.y }}" y2="{{ t.y }}"/>{% endfor %}</g>
+                {% for t in channel_chart.y_ticks %}<text x="{{ channel_chart.plot.x|add:'-6' }}" y="{{ t.y }}" dy="4" text-anchor="end">{{ t.text }}</text>{% endfor %}
+                {% for l in channel_chart.layers %}<path class="area {% if l.key == 'whatsapp' %}s-wa{% else %}s-web{% endif %}" d="{{ l.area }}"/>{% endfor %}
+                {% for l in channel_chart.layers %}<path class="line {% if l.key == 'whatsapp' %}s-wa{% else %}s-web{% endif %}" d="{{ l.line }}"/>{% endfor %}
+                {% for x in channel_chart.x_labels %}<text x="{{ x.x }}" y="{{ channel_chart.height|add:'-4' }}" text-anchor="{% if forloop.first %}start{% elif forloop.last %}end{% else %}middle{% endif %}">{{ x.text }}</text>{% endfor %}
+                {% for h in channel_chart.hits %}<rect class="hit" x="{{ h.x }}" y="{{ channel_chart.plot.y }}" width="{{ h.w }}" height="{{ channel_chart.plot.h }}" data-tip="{{ h.tip }}"/>{% endfor %}
+            </svg>
+        </div>
+        <p class="sr-only" id="an-channels-d">{{ channel_chart.summary }}</p>
+        <figcaption>
+            <ul class="chart__legend">{% for l in channel_chart.legend %}<li><span class="legend__sw legend--{{ l.cls }}" aria-hidden="true"></span>{{ l.label }} <b>{{ l.value }}</b></li>{% endfor %}</ul>
+        </figcaption>
+    </figure>
+    <details class="chart__table">
+        <summary>Ver como tabla</summary>
+        <div class="table-scroll"><table class="data-table data-table--compact">
+            <caption class="sr-only">Conversaciones por día y canal</caption>
+            <thead><tr><th scope="col">Día</th>{% for c in channel_chart.columns %}<th scope="col">{{ c }}</th>{% endfor %}<th scope="col">Total</th></tr></thead>
+            <tbody>{% for r in channel_chart.rows %}<tr><th scope="row">{{ r.day|date:"d/m" }}</th>{% for v in r.cells %}<td class="num">{{ v }}</td>{% endfor %}<td class="num">{{ r.total }}</td></tr>{% endfor %}</tbody>
+        </table></div>
+    </details>
+    {% endif %}
+</section>

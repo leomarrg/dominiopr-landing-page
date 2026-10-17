@@ -12,6 +12,7 @@ product understandable:
 import csv
 import json
 import logging
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 import anthropic
@@ -31,13 +32,14 @@ from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.views.decorators.http import require_POST
 
 from . import agent, analytics, entitlements, ingest, knowledge, publishing, turns
+from . import leads as lead_service
 from . import usage as usage_ledger
 from .models import (
     AvailabilityRule, Booking, Client, ContactSubmission, Conversation,
     KnowledgeSource, Location, Membership, StaffContact, UsageEvent,
 )
 from .views import (
-    MAX_CHAT_BODY_BYTES, _audit, _client_ip, _member_client_ids, _rate_limited,
+    MAX_CHAT_BODY_BYTES, _audit, _back, _client_ip, _member_client_ids, _rate_limited,
     _send_plain_email, _tenant_action_cap_hit, booking_notify_visitor, leads_for,
     staff_required,
 )
@@ -112,30 +114,98 @@ ALLOWED_TRANSITIONS = {
 }
 
 
-@login_required
-def conversations(request):
+INBOX_CHANNEL_LABELS = {'web': 'Web', 'whatsapp': 'WhatsApp', 'internal': 'Asistente interno'}
+INBOX_DETAIL_LIST = 40
+
+
+def _inbox_filter(request):
+    """The inbox querystring applied to the scoped conversations. Returns
+    (qs, state, channel, client_slug, q); unknown values filter nothing."""
     qs = conversations_for(request.user)
     state = request.GET.get('state', '')
+    channel = request.GET.get('channel', '')
+    client_slug = (request.GET.get('client') or '').strip()[:60]
     q = (request.GET.get('q') or '').strip()
     if state in dict(Conversation.STATE_CHOICES):
         qs = qs.filter(state=state)
+    else:
+        state = ''
+    if channel in dict(Conversation.CHANNEL_CHOICES):
+        qs = qs.filter(channel=channel)
+    else:
+        channel = ''
+    if client_slug:
+        # Scoped first: a foreign slug filters to nothing, never widens.
+        qs = qs.filter(client__slug=client_slug)
     if q:
         qs = qs.filter(
             Q(chat_messages__content__icontains=q)
             | Q(lead__name__icontains=q) | Q(lead__email__icontains=q)
         ).distinct()
     qs = qs.annotate(n_messages=Count('chat_messages', distinct=True))
+    return qs, state, channel, client_slug, q
+
+
+def _inbox_chip_groups(request, state, channel, client_slug):
+    """State and channel chips with counts over the scope (and client
+    filter), each an href that toggles it. Two grouped queries."""
+    from .views import _filter_href
+    base = conversations_for(request.user)
+    if client_slug:
+        base = base.filter(client__slug=client_slug)
+    by_state = dict(base.order_by().values_list('state').annotate(n=Count('pk')))
+    by_channel = dict(base.order_by().values_list('channel').annotate(n=Count('pk')))
+
+    def chip(param, value, label, count, current):
+        active = current == value
+        return {'label': label, 'count': count, 'active': active,
+                'href': _filter_href(request, **{param: '' if active else value})}
+
+    return [
+        {'key': 'state', 'label': 'Estado', 'chips': [
+            chip('state', key, label, by_state.get(key, 0), state)
+            for key, label in Conversation.STATE_CHOICES
+            if by_state.get(key) or state == key]},
+        {'key': 'channel', 'label': 'Canal', 'chips': [
+            chip('channel', key, INBOX_CHANNEL_LABELS.get(key, label), by_channel.get(key, 0), channel)
+            for key, label in Conversation.CHANNEL_CHOICES
+            if by_channel.get(key) or channel == key]},
+    ]
+
+
+def _inbox_qs(state, channel, client_slug, q):
+    """'?state=..&q=..' to carry the inbox filters into the detail links."""
+    from urllib.parse import urlencode
+    params = {k: v for k, v in (('state', state), ('channel', channel),
+                                ('client', client_slug), ('q', q)) if v}
+    return '?' + urlencode(params) if params else ''
+
+
+@login_required
+def conversations(request):
+    """Inbox: scoped list with state, channel (web|whatsapp|internal),
+    client (slug within scope) and text filters. Each row carries
+    `contact_label` ("WhatsApp · termina en 1234") for rows without a lead."""
+    qs, state, channel, client_slug, q = _inbox_filter(request)
     scoped = conversations_for(request.user)
     stats = {
         'total': scoped.count(),
         'escalated': scoped.filter(state='escalated').count(),
         'with_lead': scoped.filter(lead__isnull=False).count(),
+        'whatsapp': scoped.filter(channel='whatsapp').count(),
     }
     return render(request, 'landing/dashboard_conversations.html', {
         'active_tab': 'conversations',
         'conversations': qs[:200], 'stats': stats,
         'state_choices': Conversation.STATE_CHOICES,
-        'cur_state': state, 'q': q,
+        'channel_choices': Conversation.CHANNEL_CHOICES,
+        'cur_state': state, 'cur_channel': channel, 'cur_client': client_slug, 'q': q,
+        'client_options': list(clients_for(request.user).order_by('name')
+                               .values_list('slug', 'name')),
+        'inbox_groups': _inbox_chip_groups(request, state, channel, client_slug),
+        'multi_client': clients_for(request.user).count() > 1,
+        'inbox_qs': _inbox_qs(state, channel, client_slug, q),
+        'filters_active': bool(state or channel or client_slug or q),
     })
 
 
@@ -151,14 +221,45 @@ def conversation_detail(request, pk):
     if first_view:
         _audit(request, 'conversation.view', client=conv.client,
                target=f'conv:{conv.pk}')
+    survey = getattr(conv, 'survey', None)
+    clinic = bool(conv.client.clinic_mode)
+    lead = conv.lead
+    booking = (lead_service.lead_bookings(lead).order_by('-start').first()
+               if lead is not None else None)
+    # The list stays beside the thread (same filters as the inbox).
+    list_qs, state, channel, client_slug, q = _inbox_filter(request)
     return render(request, 'landing/dashboard_conversation_detail.html', {
         'active_tab': 'conversations',
+        'inbox_items': list(list_qs[:INBOX_DETAIL_LIST]),
+        'multi_client': clients_for(request.user).count() > 1,
+        'inbox_qs': _inbox_qs(state, channel, client_slug, q),
+        'filters_active': bool(state or channel or client_slug or q),
         'conv': conv,
         'msgs': conv.chat_messages.order_by('position'),
-        'survey': getattr(conv, 'survey', None),
+        'survey': survey,
         'state_choices': Conversation.STATE_CHOICES,
         'allowed': sorted(new for new, olds in ALLOWED_TRANSITIONS.items()
                           if conv.state in olds),
+        'contact_label': conv.contact_label,
+        # The side panel: everything known about this conversation besides
+        # the transcript. Clinic clients: no topic / first question (free
+        # text that may carry health details).
+        'context': {
+            'lead': lead,
+            'booking': booking,
+            'page_url': conv.page_url,
+            'intent': conv.intent,
+            'intent_label': analytics.INTENT_LABELS.get(conv.intent, ''),
+            'topic': '' if clinic else conv.topic,
+            'first_question': '' if clinic else conv.first_question,
+            'csat': survey,
+            'escalation_reason': conv.escalation_reason,
+            'contact_label': conv.contact_label,
+            'channel': conv.channel,
+            'channel_label': conv.get_channel_display(),
+            'clinic': clinic,
+            'state_label': conv.get_state_display(),
+        },
     })
 
 
@@ -206,9 +307,24 @@ def bookings_list(request):
         pass
     if location_filter is not None:
         qs = qs.filter(location=location_filter)
+    status_filter = request.GET.get('status', '')
+    by_status = dict(qs.order_by().values_list('status').annotate(n=Count('pk')))
+    if status_filter in dict(Booking.STATUS_CHOICES):
+        qs = qs.filter(status=status_filter)
+    else:
+        status_filter = ''
     now = timezone.now()
     upcoming = qs.filter(start__gte=now).exclude(status='cancelled').order_by('start')[:100]
     past = qs.filter(start__lt=now).order_by('-start')[:50]
+    week = _week_grid(qs, request.GET.get('week'))
+    from .views import _filter_href
+    week_urls = {'prev': _filter_href(request, week=week['prev']),
+                 'next': _filter_href(request, week=week['next']),
+                 'today': _filter_href(request, week='')}
+    status_chips = [{'label': BOOKING_STATUS_ES.get(key, label), 'count': by_status.get(key, 0),
+                     'active': status_filter == key,
+                     'href': _filter_href(request, status='' if status_filter == key else key)}
+                    for key, label in Booking.STATUS_CHOICES]
     can_manage_rules = is_org_admin(request.user)
     rules = (AvailabilityRule.objects.filter(client__in=my_clients)
              .select_related('client', 'location'))
@@ -233,7 +349,84 @@ def bookings_list(request):
         'weekdays': [(0, 'Lunes'), (1, 'Martes'), (2, 'Miércoles'), (3, 'Jueves'),
                      (4, 'Viernes'), (5, 'Sábado'), (6, 'Domingo')],
         'transitions': BOOKING_TRANSITIONS,
+        'cur_status': status_filter,
+        'booking_status_choices': Booking.STATUS_CHOICES,
+        'week': week,
+        'week_urls': week_urls,
+        'status_chips': status_chips,
+        'filters_active': bool(status_filter or location_filter),
     })
+
+
+BOOKING_STATUS_ES = {
+    'pending': 'Pendiente', 'confirmed': 'Confirmada', 'cancelled': 'Cancelada',
+    'completed': 'Completada', 'no_show': 'No llegó',
+}
+WEEK_DAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+WEEK_MIN_HOUR, WEEK_MAX_HOUR = 8, 18
+
+
+def _week_grid(qs, week_param):
+    """The weekly calendar: Monday to Sunday (Puerto Rico) of the week that
+    contains ?week=YYYY-MM-DD (default: today), with every booking of `qs`
+    (already scoped and filtered) placed as a block. One query.
+
+    Returns {'start', 'end' (dates), 'prev', 'next', 'today' (ISO strings
+    for links), 'is_current', 'start_hour', 'end_hour', 'hours' ([int]),
+    'count', 'days': [{'date', 'label', 'is_today', 'bookings': [{'booking',
+    'start_local', 'end_local', 'top_pct', 'height_pct', 'status',
+    'status_label', 'status_class'}]}]}. top/height are % of the visible
+    day column, so the template needs no arithmetic."""
+    tz = analytics.BUSINESS_TZ
+    today = timezone.localtime(timezone.now(), tz).date()
+    anchor = today
+    if week_param:
+        try:
+            anchor = date.fromisoformat(week_param[:10])
+        except ValueError:
+            anchor = today
+    monday = anchor - timedelta(days=anchor.weekday())
+    week_start = datetime(monday.year, monday.month, monday.day, tzinfo=tz)
+    week_end = week_start + timedelta(days=7)
+    rows = list(qs.filter(start__gte=week_start, start__lt=week_end).order_by('start', 'pk'))
+    start_hour, end_hour = WEEK_MIN_HOUR, WEEK_MAX_HOUR
+    placed = []
+    for b in rows:
+        local = timezone.localtime(b.start, tz)
+        local_end = local + timedelta(minutes=b.duration_minutes or 30)
+        start_hour = min(start_hour, local.hour)
+        end_hour = max(end_hour, local_end.hour + (1 if local_end.minute else 0))
+        placed.append((b, local, local_end))
+    end_hour = min(24, max(end_hour, start_hour + 1))
+    span = (end_hour - start_hour) * 60
+    days = []
+    for i in range(7):
+        day = monday + timedelta(days=i)
+        days.append({'date': day, 'label': f'{WEEK_DAY_LABELS[i]} {day.day}',
+                     'is_today': day == today, 'bookings': []})
+    for b, local, local_end in placed:
+        offset = (local.hour - start_hour) * 60 + local.minute
+        length = max(15, (b.duration_minutes or 30))
+        days[local.weekday()]['bookings'].append({
+            'booking': b, 'start_local': local, 'end_local': local_end,
+            'top_pct': round(offset * 100 / span, 2),
+            'height_pct': round(min(length, span - offset) * 100 / span, 2),
+            'status': b.status, 'status_label': BOOKING_STATUS_ES.get(b.status, b.status),
+            'status_class': f'is-{b.status}',
+        })
+    return {
+        'start': monday, 'end': monday + timedelta(days=6),
+        'prev': (monday - timedelta(days=7)).isoformat(),
+        'next': (monday + timedelta(days=7)).isoformat(),
+        'today': today.isoformat(), 'is_current': monday <= today <= monday + timedelta(days=6),
+        'start_hour': start_hour, 'end_hour': end_hour,
+        'hours': list(range(start_hour, end_hour)), 'count': len(rows), 'days': days,
+    }
+
+
+BOOKING_STATUS_LABELS_ES = {'pending': 'pendiente', 'confirmed': 'confirmada',
+                            'cancelled': 'cancelada', 'completed': 'completada',
+                            'no_show': 'no llegó'}
 
 
 @login_required
@@ -243,7 +436,7 @@ def booking_status(request, pk):
     new_status = request.POST.get('status', '')
     if new_status not in BOOKING_TRANSITIONS or booking.status not in BOOKING_TRANSITIONS[new_status]:
         messages.error(request, 'Transición de cita no permitida.')
-        return redirect('bookings')
+        return _back(request, 'bookings')
     Booking.objects.filter(pk=booking.pk).update(status=new_status)
     _audit(request, 'booking.status', client=booking.client,
            target=f'booking:{booking.pk}', result=new_status)
@@ -254,8 +447,10 @@ def booking_status(request, pk):
     # knows where to go. One selector for every booking notice.
     if new_status in ('confirmed', 'cancelled'):
         booking_notify_visitor(booking, new_status)
-    messages.success(request, f'Cita marcada como {new_status}.')
-    return redirect('bookings')
+    label = BOOKING_STATUS_LABELS_ES.get(new_status, new_status)
+    messages.success(request, f'Cita marcada como {label}.')
+    # Back to the same week and filters the user was looking at.
+    return _back(request, 'bookings')
 
 
 @login_required
@@ -553,7 +748,226 @@ def reports(request):
             .exclude(escalation_reason='').order_by('-started_at')
             .values_list('escalation_reason', flat=True)[:20]),
     })
+    context.update(_crm_report_block(client, start, end))
     return render(request, 'landing/dashboard_reports.html', context)
+
+
+KPI_BAD_WHEN_UP = {'escalated'}  # for these, a rise is bad news (delta in red)
+
+
+def _decorate_kpis(kpis, client):
+    """Display fields for the KPI cards, shared by the home and the reports
+    page. Adds to each item: 'display' (value + suffix), 'delta_text' ("+12 %",
+    "+2 pts", "Nuevo", "Sin cambios"), 'delta_dir' (up|down|flat), 'delta_good'
+    (good|bad|neutral) and 'href' (the list behind the figure, or ''). Existing
+    keys are untouched."""
+    slug = client.slug
+    q = f'?client={slug}'
+    hrefs = {
+        'conversations': reverse('conversations') + q,
+        'leads': reverse('dashboard') + q,
+        'escalated': reverse('conversations') + f'{q}&state=escalated',
+        'bookings': reverse('bookings') + q if client.enable_bookings else '',
+    }
+    for k in kpis:
+        key, cur, prev, pct = k['key'], k['value'], k['prev'], k['pct']
+        if cur is None:
+            k['display'] = '—'
+        elif key == 'csat':
+            k['display'] = f'{cur:.1f}{k["suffix"]}'
+        elif isinstance(cur, int):
+            k['display'] = f'{cur:,}{" " if k["suffix"] == "%" else ""}{k["suffix"]}'
+        else:
+            k['display'] = f'{cur}{k["suffix"]}'
+        direction = k['direction']
+        if key == 'conversion':
+            diff = int(cur or 0) - int(prev or 0)
+            text = f'{diff:+d} pts' if diff else 'Sin cambios'
+            direction = 'up' if diff > 0 else 'down' if diff < 0 else 'flat'
+        elif key == 'csat':
+            if cur is None:
+                text, direction = 'Sin respuestas', 'flat'
+            elif prev is None:
+                text, direction = 'Nuevo', 'up'
+            else:
+                diff = round(cur - prev, 1)
+                text = f'{diff:+.1f}' if diff else 'Sin cambios'
+                direction = 'up' if diff > 0 else 'down' if diff < 0 else 'flat'
+        elif pct is None:
+            text = 'Nuevo' if cur else 'Sin cambios'
+            direction = 'up' if cur else 'flat'
+        elif pct == 0:
+            text, direction = 'Sin cambios', 'flat'
+        else:
+            text = f'{pct:+d} %'
+        k['delta_text'], k['delta_dir'] = text, direction
+        if direction == 'flat':
+            k['delta_good'] = 'neutral'
+        elif (direction == 'up') != (key in KPI_BAD_WHEN_UP):
+            k['delta_good'] = 'good'
+        else:
+            k['delta_good'] = 'bad'
+        k['href'] = hrefs.get(key, '')
+    return kpis
+
+
+def _decorate_charts(block):
+    """Geometry and text the chart templates need on top of analytics.svg_*:
+    channel_chart gets 'hits' (one hover column per day with its tooltip),
+    'legend' (totals per channel) and 'summary'; peak_chart cells get 'tip'
+    (only the non-empty ones) and the chart a 'summary'. Mutates and returns
+    `block`."""
+    chart = block['channel_chart']
+    plot, rows, n = chart['plot'], chart['rows'], len(chart['rows'])
+    step = plot['w'] / (n - 1) if n > 1 else plot['w']
+    classes = {'web': 'web', 'whatsapp': 'wa'}
+    hits = []
+    for i, row in enumerate(rows):
+        cx = plot['x'] + (i * plot['w'] / (n - 1) if n > 1 else plot['w'] / 2)
+        left = max(plot['x'], cx - step / 2)
+        right = min(plot['x'] + plot['w'], cx + step / 2)
+        parts = ', '.join(f'{col} {v}' for col, v in zip(chart['columns'], row['cells']))
+        day = f"{analytics.WEEKDAYS_ES[row['day'].weekday()]} {row['day']:%d/%m}"
+        hits.append({'x': f'{left:.1f}', 'w': f'{right - left:.1f}',
+                     'tip': f"{day}: {parts}. Total {row['total']}"})
+    chart['hits'] = hits
+    chart['legend'] = [
+        {'label': col, 'cls': classes.get(layer['key'], 'web'),
+         'value': sum(row['cells'][j] for row in rows)}
+        for j, (col, layer) in enumerate(zip(chart['columns'], chart['layers']))]
+    if rows and not chart['empty']:
+        best = max(rows, key=lambda r: r['total'])
+        chart['summary'] = (
+            f"{chart['total']} conversaciones en {n} días: "
+            + ', '.join(f"{leg['label']} {leg['value']}" for leg in chart['legend'])
+            + f". El día con más: {best['day']:%d/%m} ({best['total']}).")
+    else:
+        chart['summary'] = 'Sin conversaciones en estos días.'
+    heat = block['peak_chart']
+    for cell in heat['cells']:
+        cell['tip'] = (f"{cell['day']} {cell['hour']}: {cell['n']} "
+                       f"conversaci{'ón' if cell['n'] == 1 else 'ones'}") if cell['n'] else ''
+    top = block['peak'].get('top') or []
+    heat['summary'] = ('Los momentos con más conversaciones: '
+                       + ', '.join(f"{t['day']} {t['hour']} ({t['n']})" for t in top) + '.'
+                       if top else 'Sin conversaciones en este periodo.')
+    return block
+
+
+def _crm_report_block(client, start, end):
+    """CRM figures shared by the home and the reports page for one client
+    and period. Tenant-safe (no usage ledger, no cost). Keys: kpis
+    (analytics.kpis), channel_series (daily_by_channel, 30 d),
+    channel_chart (svg_area), funnel + funnel_chart, peak + peak_chart,
+    csat (csat_distribution), resolution (resolution_rate), prev_start,
+    prev_end."""
+    prev_start, prev_end = analytics.previous_period(start, end)
+    cur = analytics.kpi_counts(client, start, end)
+    prev = analytics.kpi_counts(client, prev_start, prev_end)
+    channel_series = analytics.daily_by_channel(client, days=30)
+    fun = analytics.funnel(client, start, end)
+    stages = fun['stages'] if fun['has_bookings_stage'] else fun['stages'][:2]
+    peak = analytics.peak_hours(client, start, end)
+    return _decorate_charts({
+        'kpis': _decorate_kpis(analytics.kpis(client, start, end, cur=cur, prev=prev), client),
+        'kpi_counts': cur,
+        'prev_start': prev_start, 'prev_end': prev_end,
+        'channel_series': channel_series,
+        'channel_chart': analytics.svg_area(channel_series, ['web', 'whatsapp']),
+        'funnel': fun,
+        'funnel_chart': analytics.svg_funnel(stages),
+        'peak': peak,
+        'peak_chart': analytics.svg_heatmap(peak),
+        'csat': analytics.csat_distribution(client, start, end, clinic=client.clinic_mode),
+        'resolution': analytics.resolution_rate(client, start, end),
+    })
+
+
+# ============================================================
+# CRM home (/dashboard/): attention band, KPIs, charts, agent status
+# ============================================================
+
+@login_required
+def home(request):
+    """The dashboard home for ONE agent: what needs attention now, the
+    period KPIs with their delta, the 30-day channel series, the funnel,
+    peak hours, topics and the agent's status. Same scoping as reports:
+    ?client=<slug> within clients_for(user), else the first one. Employees
+    never get here (EmployeeScopeMiddleware sends them to the assistant)."""
+    user = request.user
+    period, start, end = analytics.period_bounds(request.GET.get('period'))
+    scope = clients_for(user)
+    options = list(scope.order_by('name').values_list('slug', 'name'))
+    wanted = (request.GET.get('client') or '').strip()
+    slugs = {slug for slug, _name in options}
+    slug = wanted if wanted in slugs else (options[0][0] if options else None)
+    client = scope.select_related('subscription').filter(slug=slug).first() if slug else None
+    context = {
+        'active_tab': 'home',
+        'client_obj': client, 'client_options': options,
+        'period': period, 'periods': analytics.PERIODS,
+        'period_label': analytics.PERIOD_LABELS[period],
+        'start': start, 'end': end,
+    }
+    if client is None:
+        return render(request, 'landing/dashboard_home.html', context)
+
+    block = _crm_report_block(client, start, end)
+    # 30-day sparklines under the KPIs (one grouped query each).
+    series = block['channel_series']
+    leads_daily = analytics.daily_counts(client, 30, 'leads')
+    bookings_daily = analytics.daily_counts(client, 30, 'bookings')
+    escalated_daily = analytics.daily_counts(client, 30, 'escalated')
+    conv_values = [d['total'] for d in series]
+    lead_values = [d['value'] for d in leads_daily]
+    sparks = {
+        'conversations': analytics.sparkline(conv_values),
+        'leads': analytics.sparkline(lead_values),
+        'bookings': analytics.sparkline([d['value'] for d in bookings_daily]),
+        'escalated': analytics.sparkline([d['value'] for d in escalated_daily]),
+        'conversion': analytics.sparkline([
+            round(lv * 100 / cv) if cv else 0 for lv, cv in zip(lead_values, conv_values)]),
+        'csat': None,
+    }
+    for kpi in block['kpis']:
+        kpi['spark'] = sparks.get(kpi['key'])
+
+    ids = [client.pk]
+    month_start, month_end = usage_ledger.month_bounds()
+    now = timezone.now()
+    seen = client.widget_last_seen_at
+    ent = entitlements.entitlements(client)
+    agent_status = {
+        'setup_status': client.setup_status,
+        'setup_label': client.get_setup_status_display(),
+        'is_live': client.setup_status == 'live' and client.is_active,
+        'is_active': client.is_active,
+        'widget_last_seen_at': seen,
+        'seen_recently': bool(seen and seen >= now - timedelta(hours=24)),
+        'live_at': client.live_at,
+        'website_url': client.website_url,
+        'profile': client.agent_profile,
+        'profile_label': client.get_agent_profile_display(),
+        'channels': sorted(ent.get('channels', ()) or ()),
+        'enable_bookings': client.enable_bookings,
+        'clinic_mode': client.clinic_mode,
+        'plan': ent.get('plan', ''),
+    }
+    context.update(block)
+    context.update({
+        'clinic': client.clinic_mode,
+        'attention': analytics.attention(client, user),
+        'follow_ups': analytics.follow_up_lists(client),
+        'intents': analytics.hbars(analytics.top_intents(ids, start, end)),
+        # Clinic clients: stored topics never reach the template.
+        'topics': ([] if client.clinic_mode
+                   else analytics.hbars(analytics.top_topics(ids, start, end, n=10))),
+        'agent': agent_status,
+        'allowance': analytics.allowance(client, month_start, month_end),
+        'month_start': month_start,
+        'status_labels': ContactSubmission.STATUS_LABELS_ES,
+    })
+    return render(request, 'landing/dashboard_home.html', context)
 
 
 # ============================================================
@@ -571,33 +985,37 @@ def _csv_safe(value):
 
 @login_required
 def export_leads_csv(request):
-    qs = leads_for(request.user)
-    source = request.GET.get('source', '')
-    status = request.GET.get('status', '')
-    q = (request.GET.get('q') or '').strip()
-    if source in dict(ContactSubmission.SOURCE_CHOICES):
-        qs = qs.filter(source=source)
-    if status in dict(ContactSubmission.STATUS_CHOICES):
-        qs = qs.filter(status=status)
-    if q:
-        qs = qs.filter(Q(name__icontains=q) | Q(email__icontains=q)
-                       | Q(phone__icontains=q) | Q(company__icontains=q)
-                       | Q(message__icontains=q))
+    # Same querystring as the leads board/list (channel, assigned, tag,
+    # follow-up, stale... on top of source/status/q): what the user sees
+    # filtered is what the CSV contains. Tenant scope comes first.
+    from .views import _lead_filters
+    base_qs, filters = _lead_filters(request, leads_for(request.user))
+    qs = base_qs.filter(status=filters['status']) if filters['status'] else base_qs
+    qs = qs.select_related('assigned_to').prefetch_related('tags').distinct()
+    source, status, q = filters['source'], filters['status'], filters['q']
 
     resp = HttpResponse(content_type='text/csv; charset=utf-8')
     resp['Content-Disposition'] = 'attachment; filename="leads.csv"'
     resp.write('﻿')  # BOM so Excel opens accents correctly
     writer = csv.writer(resp)
     writer.writerow(['Nombre', 'Email', 'Teléfono', 'Compañía', 'Servicio',
-                     'Fuente', 'Estado', 'Página', 'Mensaje', 'Fecha'])
+                     'Fuente', 'Estado', 'Página', 'Mensaje', 'Fecha',
+                     'Asignado a', 'Etiquetas', 'Próximo seguimiento'])
+    tz = analytics.BUSINESS_TZ
     for lead in qs[:5000]:
+        follow_up = ''
+        if lead.follow_up_at and not lead.follow_up_done_at:
+            follow_up = timezone.localtime(lead.follow_up_at, tz).strftime('%Y-%m-%d %H:%M')
         writer.writerow([_csv_safe(v) for v in (
             lead.name, lead.email, lead.phone, lead.company,
             lead.get_service_display(), lead.get_source_display(),
             lead.get_status_display(), lead.page_url,
-            lead.message[:1000], lead.created_at.strftime('%Y-%m-%d %H:%M'))])
+            lead.message[:1000], lead.created_at.strftime('%Y-%m-%d %H:%M'),
+            lead.assigned_to.get_username() if lead.assigned_to_id else '',
+            ', '.join(sorted(t.name for t in lead.tags.all())), follow_up)])
+    applied = ' '.join(f'{k}={v}' for k, v in filters.items() if v and k != 'q')
     _audit(request, 'leads.export', target=f'{qs.count()} filas',
-           result=f'filtros source={source} status={status} q={q[:40]}')
+           result=f'filtros {applied} q={q[:40]}'.strip()[:200])
     return resp
 
 
@@ -1432,8 +1850,12 @@ def audit_list(request):
     if request.user.is_staff:
         qs = AuditEvent.objects.select_related('client', 'user')
     elif is_org_admin(request.user):
+        # Only the businesses where this login is org_admin: an admin of A who
+        # is an agent of B must not read B's trail (tags, statuses, emails).
+        admin_of = Membership.objects.filter(
+            user=request.user, role='org_admin').values('client_id')
         qs = AuditEvent.objects.filter(
-            client__in=clients_for(request.user)).select_related('client', 'user')
+            client_id__in=admin_of).select_related('client', 'user')
     else:
         messages.error(request, 'Solo un administrador puede ver la auditoría.')
         return redirect('dashboard')

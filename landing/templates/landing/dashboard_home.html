@@ -1,0 +1,133 @@
+{% extends "landing/dashboard_base.html" %}
+{% load landing_extras %}
+{% block title %}Inicio{% endblock %}
+{% block content %}
+{% if not client_obj %}
+<h1 class="dash-h1">Inicio</h1>
+<div class="card">
+    {% include 'landing/_dash_empty_state.html' with icon='bot' title='Todavía no tienes un agente asignado' text='Cuando DOMINIO active el tuyo, aquí verás tus conversaciones, leads y todo lo que necesita atención.' %}
+</div>
+{% else %}
+
+<header class="page-head an-head">
+    <div>
+        <h1 class="dash-h1">{{ client_obj.name }}</h1>
+        <p class="an-head__meta">{{ period_label }} · comparado con el periodo anterior de la misma duración</p>
+    </div>
+    <div class="page-head__actions">
+        <span class="chip {% if agent.is_live %}chip--ok{% else %}chip--warn{% endif %}"><span class="chip__dot" aria-hidden="true"></span>{% if agent.is_live %}Agente en vivo{% else %}{{ agent.setup_label }}{% endif %}</span>
+        {% if agent.widget_last_seen_at %}
+        <span class="chip {% if agent.seen_recently %}chip--neutral{% else %}chip--warn{% endif %}">Widget visto {{ agent.widget_last_seen_at|ago }}</span>
+        {% else %}
+        <span class="chip chip--warn">Widget sin conectar</span>
+        {% endif %}
+    </div>
+</header>
+
+<section class="an-section" aria-labelledby="home-attn-t">
+    <h2 class="an-h2" id="home-attn-t">Requiere atención</h2>
+    {% if attention.total %}
+    <div class="attn-band">
+        {% for it in attention.items %}{% if it.count %}
+        <a class="attn{% if it.tone == 'danger' %} attn--danger{% elif it.tone == 'info' %} attn--info{% endif %}" href="{{ it.url }}">
+            <span class="attn__n">{{ it.count }}</span>
+            <span class="attn__label">{{ it.label }}{% if it.mine %}<span class="attn__mine">{{ it.mine }} asignado{{ it.mine|pluralize }} a ti</span>{% endif %}</span>
+        </a>
+        {% endif %}{% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert--ok" role="status">
+        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check-circle"/></svg>
+        <div class="alert__body"><b>Todo al día.</b> No hay leads sin atender, conversaciones escaladas, seguimientos pendientes ni citas por confirmar.</div>
+    </div>
+    {% endif %}
+</section>
+
+{% include 'landing/_dash_an_kpis.html' %}
+
+<div class="grid grid--main-side an-grid">
+    {% include 'landing/_dash_an_channels.html' %}
+    {% include 'landing/_dash_an_funnel.html' %}
+</div>
+
+<div class="grid grid--main-side an-grid">
+    <section class="card" aria-labelledby="home-fu-t">
+        <div class="card__head">
+            <div>
+                <h2 class="card__title" id="home-fu-t">Seguimientos</h2>
+                <p class="card__sub">Leads a los que prometiste volver a escribir</p>
+            </div>
+            <a class="btn btn--sm btn--ghost" href="{% url 'dashboard' %}?client={{ client_obj.slug|urlencode }}">Ver leads</a>
+        </div>
+        {% if not follow_ups.overdue and not follow_ups.today and not follow_ups.week %}
+        {% include 'landing/_dash_empty_state.html' with inline=1 icon='bell' title='No hay seguimientos programados' text='Programa un seguimiento desde la ficha de un lead y te avisaremos aquí y en el resumen diario por correo.' %}
+        {% else %}
+        {% if follow_ups.overdue %}
+        <div class="fu-group">
+            <h3 class="fu-group__head"><span class="chip chip--danger">Vencidos</span><span class="fu-group__n">{{ follow_ups.overdue|length }}</span></h3>
+            <ul class="fu-list">{% for lead in follow_ups.overdue %}{% include 'landing/_dash_an_followup.html' %}{% endfor %}</ul>
+        </div>
+        {% endif %}
+        {% if follow_ups.today %}
+        <div class="fu-group">
+            <h3 class="fu-group__head"><span class="chip chip--warn">Hoy</span><span class="fu-group__n">{{ follow_ups.today|length }}</span></h3>
+            <ul class="fu-list">{% for lead in follow_ups.today %}{% include 'landing/_dash_an_followup.html' %}{% endfor %}</ul>
+        </div>
+        {% endif %}
+        {% if follow_ups.week %}
+        <div class="fu-group">
+            <h3 class="fu-group__head"><span class="chip chip--info">Esta semana</span><span class="fu-group__n">{{ follow_ups.week|length }}</span></h3>
+            <ul class="fu-list">{% for lead in follow_ups.week %}{% include 'landing/_dash_an_followup.html' %}{% endfor %}</ul>
+        </div>
+        {% endif %}
+        {% endif %}
+    </section>
+
+    <section class="card" aria-labelledby="home-agent-t">
+        <div class="card__head">
+            <div>
+                <h2 class="card__title" id="home-agent-t">Tu agente</h2>
+                <p class="card__sub">{{ agent.profile_label }}</p>
+            </div>
+        </div>
+        <dl class="agent-dl">
+            <dt>Instalación</dt>
+            <dd><span class="chip {% if agent.setup_status == 'live' %}chip--ok{% else %}chip--warn{% endif %}">{{ agent.setup_label }}</span>{% if not agent.is_active %} <span class="chip chip--danger">Pausado</span>{% endif %}</dd>
+            <dt>Último visto del widget</dt>
+            <dd>{% if agent.widget_last_seen_at %}{{ agent.widget_last_seen_at|ago }}{% if not agent.seen_recently %} <span class="chip chip--warn">Más de 24 h</span>{% endif %}{% else %}Todavía no se ha visto{% endif %}</dd>
+            {% if agent.website_url %}<dt>Sitio</dt><dd class="agent-dl__url">{{ agent.website_url }}</dd>{% endif %}
+            <dt>Canales</dt>
+            <dd>{% for ch in agent.channels %}<span class="chip chip--neutral">{% if ch == 'web' %}Chat web{% elif ch == 'whatsapp' %}WhatsApp{% elif ch == 'internal' %}Asistente interno{% else %}{{ ch }}{% endif %}</span> {% endfor %}</dd>
+            <dt>Citas</dt>
+            <dd>{% if agent.enable_bookings %}Activadas{% else %}No activadas{% endif %}</dd>
+        </dl>
+        {% if allowance.included %}
+        <div class="agent-quota">
+            <p class="agent-quota__line">Cupo de este mes <b>{{ allowance.used|thousands }}</b> de {{ allowance.included|thousands }} {{ allowance.unit_label }}{% if allowance.pct is not None %} <span class="{% if allowance.warn %}chip chip--warn{% else %}text-muted{% endif %}">{{ allowance.pct }} %</span>{% endif %}</p>
+            <span class="progress progress--block{% if allowance.warn %} progress--warn{% endif %}" role="progressbar" aria-label="{{ allowance.unit_label|capfirst }} usadas este mes" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ allowance.bar_pct }}"><span style="width:{{ allowance.bar_pct }}%"></span></span>
+            <p class="card__sub an-note">Día {{ allowance.elapsed }} de {{ allowance.days }}. A este ritmo cerrarías el mes con unas {{ allowance.projection|thousands }}.</p>
+        </div>
+        {% else %}
+        <p class="agent-quota__line">Este mes llevas <b>{{ allowance.used|thousands }}</b> {{ allowance.unit_label }}.</p>
+        {% endif %}
+        <p class="an-links">
+            <a href="{% url 'reports' %}?client={{ client_obj.slug|urlencode }}">Ver el plan en Reportes</a>
+            {% if IS_ORG_ADMIN and not request.user.is_staff %}<a href="{% url 'install' %}">Instalación</a>{% endif %}
+        </p>
+    </section>
+</div>
+
+<div class="grid grid--main-side an-grid">
+    {% include 'landing/_dash_an_peak.html' %}
+    <div class="stack an-stack">
+        {% include 'landing/_dash_an_csat.html' %}
+        {% include 'landing/_dash_an_resolution.html' %}
+    </div>
+</div>
+
+<div class="grid grid--2 an-grid">
+    {% include 'landing/_dash_an_hbars.html' with uid='topics' title='Temas más frecuentes' subtitle=period_label rows=topics empty='Los temas se asignan cada noche a las conversaciones del día; aparecerán aquí.' hidden_text=clinic|yesno:"En modo clínica no se guardan temas ni texto libre de las conversaciones.," %}
+    {% include 'landing/_dash_an_hbars.html' with uid='intents' title='Qué buscan tus visitantes' subtitle=period_label rows=intents empty='Las intenciones se clasifican cada noche; aparecerán aquí.' hidden_text=clinic|yesno:"En modo clínica no se muestran las intenciones de las conversaciones.," %}
+</div>
+{% endif %}
+{% endblock %}

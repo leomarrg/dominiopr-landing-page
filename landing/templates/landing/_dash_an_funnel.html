@@ -1,0 +1,39 @@
+{% comment %}Funnel conversations -> with lead -> with booking. Context: funnel, funnel_chart (analytics.svg_funnel), period_label.{% endcomment %}
+<section class="card chart-card" aria-labelledby="an-funnel-t">
+    <div class="card__head">
+        <div>
+            <h2 class="card__title" id="an-funnel-t">Embudo</h2>
+            <p class="card__sub">De la conversación al lead{% if funnel_chart.bars|length > 2 %} y a la cita{% endif %} · {{ period_label }}</p>
+        </div>
+        {% if funnel.conversations %}<span class="chip chip--accent">{{ funnel.lead_rate }} % con lead</span>{% endif %}
+    </div>
+    {% if not funnel.conversations %}
+    {% include 'landing/_dash_empty_state.html' with inline=1 icon='user-plus' title='Sin conversaciones en este periodo' text='El embudo se llena cuando tu agente conversa con visitantes y capta sus datos.' %}
+    {% else %}
+    <figure class="chart">
+        <div class="chart__plot funnel" data-chart role="img" aria-labelledby="an-funnel-t" aria-describedby="an-funnel-d">
+            {% for b in funnel_chart.bars %}
+            <div class="funnel__row" data-tip="{{ b.label }}: {{ b.n }} ({{ b.pct }} % de las conversaciones){% if b.drop is not None %}. {{ b.drop }} % menos que el paso anterior{% endif %}">
+                <div class="funnel__top"><span class="funnel__label">{{ b.label }}</span><span class="funnel__val"><b>{{ b.n }}</b><span class="funnel__pct">{{ b.pct }} %</span></span></div>
+                <div class="funnel__track"><span class="funnel__bar funnel__bar--{{ b.key }}{% if not b.n %} is-zero{% endif %}" style="width:{{ b.pct }}%"></span></div>
+                {% if b.drop is not None %}<p class="funnel__drop">{% if b.drop %}Caída de {{ b.drop }} % frente al paso anterior{% else %}Sin caída frente al paso anterior{% endif %}</p>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        <p class="sr-only" id="an-funnel-d">{% for b in funnel_chart.bars %}{{ b.label }}: {{ b.n }} ({{ b.pct }} %){% if not forloop.last %}. {% endif %}{% endfor %}.</p>
+        <figcaption>
+            <ul class="chart__legend">
+                {% for b in funnel_chart.bars %}<li><span class="legend__sw {% if b.key == 'leads' %}legend--leads{% elif b.key == 'bookings' %}legend--appts{% else %}legend--web{% endif %}" aria-hidden="true"></span>{{ b.label }} <b>{{ b.n }}</b></li>{% endfor %}
+            </ul>
+        </figcaption>
+    </figure>
+    <details class="chart__table">
+        <summary>Ver como tabla</summary>
+        <div class="table-scroll"><table class="data-table data-table--compact">
+            <caption class="sr-only">Embudo de conversaciones</caption>
+            <thead><tr><th scope="col">Paso</th><th scope="col">Conversaciones</th><th scope="col">% del total</th><th scope="col">Caída</th></tr></thead>
+            <tbody>{% for r in funnel_chart.rows %}<tr><th scope="row">{{ r.label }}</th><td class="num">{{ r.n }}</td><td class="num">{{ r.pct }} %</td><td class="num">{% if r.drop is None %}—{% else %}{{ r.drop }} %{% endif %}</td></tr>{% endfor %}</tbody>
+        </table></div>
+    </details>
+    {% endif %}
+</section>

@@ -1,0 +1,10 @@
+{% comment %}Filter chip groups for the CRM pages (leads, inbox, bookings). Param: groups = [{key, label, chips: [{label, href, count, active}]}].
+Each chip is a link that toggles one filter; the active ones carry aria-current. On phones every group is one horizontally scrollable row.{% endcomment %}
+{% for g in groups %}{% if g.chips %}
+<div class="crm-filter" role="group" aria-labelledby="crm-fg-{{ g.key }}">
+    <span class="crm-filter__label" id="crm-fg-{{ g.key }}">{{ g.label }}</span>
+    <div class="chip-row crm-filter__chips">
+        {% for c in g.chips %}{% include 'landing/_dash_chip.html' with text=c.label href=c.href active=c.active count=c.count %}{% endfor %}
+    </div>
+</div>
+{% endif %}{% endfor %}

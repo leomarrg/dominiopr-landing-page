@@ -1,151 +1,227 @@
 {% extends 'landing/dashboard_base.html' %}
+{% load landing_extras %}
 {% block title %}Citas{% endblock %}
 {% block content %}
-<h1 class="dash-h1">Citas</h1>
+{% url 'bookings' as bookings_url %}
+<header class="page-head">
+    <h1 class="dash-h1">Citas</h1>
+</header>
 
-{% if has_locations %}
-<form class="dash-inline-form" method="get" action="{% url 'bookings' %}">
-    <label class="dash-muted" for="location-filter">Local</label>
-    <select name="location" id="location-filter">
-        <option value="">Todos los locales</option>
-        {% for loc in locations %}<option value="{{ loc.pk }}" {% if location_filter and location_filter.pk == loc.pk %}selected{% endif %}>{{ loc.name }}{% if locations|length > 1 and rule_clients|length > 1 %} · {{ loc.client.name }}{% endif %}</option>{% endfor %}
-    </select>
-    <button type="submit" class="save-btn save-btn--sm">Filtrar</button>
-    {% if location_filter %}<a class="dash-muted" href="{% url 'bookings' %}">Quitar filtro</a>{% endif %}
-</form>
-{% endif %}
-
-<div class="dash-table-wrap">
-    <table class="dash-table">
-        <thead><tr><th>Fecha y hora</th><th>Nombre</th><th>Contacto</th><th>Servicio</th>{% if has_locations %}<th>Local</th>{% endif %}<th>Estado</th><th>Acciones</th></tr></thead>
-        <tbody>
-            {% for b in upcoming %}
-            <tr>
-                <td><b>{{ b.start|date:"D d M · g:i A" }}</b><div class="dash-sub">{{ b.duration_minutes }} min · {{ b.client.name|default:"DOMINIO" }}</div></td>
-                <td>{{ b.name }}</td>
-                <td>{% if b.email %}<a href="mailto:{{ b.email }}">{{ b.email }}</a>{% endif %}{% if b.phone %}{% if b.email %}<div class="dash-sub">{% endif %}<a href="tel:{{ b.phone }}">{{ b.phone }}</a>{% if b.email %}</div>{% endif %}{% endif %}{% if not b.email and not b.phone %}—{% endif %}</td>
-                <td>{{ b.service|default:"—" }}</td>
-                {% if has_locations %}<td>{{ b.location.name|default:"—" }}</td>{% endif %}
-                <td><span class="dash-pill dash-pill--{{ b.status }}">{{ b.get_status_display }}</span></td>
-                <td>
-                    <div class="dash-actions-row" style="margin:0">
-                    {% if b.status == 'pending' %}
-                        <form method="post" action="{% url 'booking_status' b.pk %}">{% csrf_token %}<input type="hidden" name="status" value="confirmed"><button class="save-btn save-btn--sm">Confirmar</button></form>
-                        <form method="post" action="{% url 'booking_status' b.pk %}">{% csrf_token %}<input type="hidden" name="status" value="cancelled"><button class="save-btn save-btn--sm">Cancelar</button></form>
-                    {% elif b.status == 'confirmed' %}
-                        <form method="post" action="{% url 'booking_status' b.pk %}">{% csrf_token %}<input type="hidden" name="status" value="completed"><button class="save-btn save-btn--sm">Completada</button></form>
-                        <form method="post" action="{% url 'booking_status' b.pk %}">{% csrf_token %}<input type="hidden" name="status" value="no_show"><button class="save-btn save-btn--sm">No llegó</button></form>
-                        <form method="post" action="{% url 'booking_status' b.pk %}">{% csrf_token %}<input type="hidden" name="status" value="cancelled"><button class="save-btn save-btn--sm">Cancelar</button></form>
-                    {% endif %}
-                    </div>
-                </td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="7"><div class="dash-empty">No hay citas próximas. El agente las creará según los visitantes reserven.</div></td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
-
-{% if can_manage_rules and rule_clients %}
-<div class="dash-card">
-    <h2>Locales</h2>
-    <p class="dash-muted">Si tu negocio tiene más de un local, el agente pregunta en cuál quiere la cita el visitante, usa el horario de ese local y lo indica en la confirmación. Con un solo local (o ninguno) todo funciona como hasta ahora.</p>
-    {% for over in location_over %}
-    <p class="dash-muted" style="color:#f0b429">{% if rule_clients|length > 1 %}{{ over.client.name }}: {% endif %}Tu plan incluye {{ over.allowed }} local(es) y tienes {{ over.count }}; el agente seguirá usándolos, pero no podrás añadir más. Contáctanos para ampliar el plan.</p>
-    {% endfor %}
-    {% for c in rule_clients %}
-    {% if rule_clients|length > 1 %}<h3 class="dash-sub" style="margin:12px 0 6px">{{ c.name }}</h3>{% endif %}
-    {# One edit form per row, owned through the HTML5 form= attribute (a <form> cannot sit inside a <tr>). #}
-    {% for loc in locations %}{% if loc.client_id == c.pk %}
-    <form id="loc-edit-{{ loc.pk }}" method="post" action="{% url 'location_save' %}">
-        {% csrf_token %}
-        <input type="hidden" name="client" value="{{ c.slug }}">
-        <input type="hidden" name="pk" value="{{ loc.pk }}">
-    </form>
-    <form id="loc-del-{{ loc.pk }}" method="post" action="{% url 'location_delete' loc.pk %}">{% csrf_token %}</form>
-    {% endif %}{% endfor %}
-    <table class="dash-table" style="max-width:960px">
-        <thead><tr><th>Nombre</th><th>Dirección</th><th>Teléfono</th><th>Principal</th><th></th></tr></thead>
-        <tbody>
-            {% for loc in locations %}{% if loc.client_id == c.pk %}
-            <tr>
-                <td><input type="text" name="name" form="loc-edit-{{ loc.pk }}" value="{{ loc.name }}" required maxlength="80" style="min-width:140px"></td>
-                <td><input type="text" name="address" form="loc-edit-{{ loc.pk }}" value="{{ loc.address }}" maxlength="200" style="min-width:220px"></td>
-                <td><input type="tel" name="phone" form="loc-edit-{{ loc.pk }}" value="{{ loc.phone }}" style="min-width:140px"></td>
-                <td><input type="checkbox" name="is_default" form="loc-edit-{{ loc.pk }}" {% if loc.is_default %}checked{% endif %}></td>
-                <td>
-                    <div class="dash-actions-row" style="margin:0">
-                        <button type="submit" form="loc-edit-{{ loc.pk }}" class="save-btn save-btn--sm">Guardar</button>
-                        <button type="submit" form="loc-del-{{ loc.pk }}" class="save-btn save-btn--sm">Quitar</button>
-                    </div>
-                </td>
-            </tr>
-            {% endif %}{% empty %}
-            <tr><td colspan="5"><div class="dash-empty">Sin locales: el agente trata el negocio como un solo sitio.</div></td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    <form class="dash-inline-form" method="post" action="{% url 'location_save' %}">
-        {% csrf_token %}
-        <input type="hidden" name="client" value="{{ c.slug }}">
-        <input type="text" name="name" placeholder="Nombre (ej. Bayamón)" required maxlength="80" style="min-width:160px">
-        <input type="text" name="address" placeholder="Dirección" maxlength="200" style="min-width:220px">
-        <input type="tel" name="phone" placeholder="(787) 123-4567" style="min-width:140px">
-        <label class="dash-muted" style="display:inline-flex;align-items:center;gap:6px"><input type="checkbox" name="is_default"> Principal</label>
-        <button type="submit" class="save-btn save-btn--sm">Añadir local</button>
-        <span class="dash-muted">Tu plan incluye {% for pk, limit in location_limits.items %}{% if pk == c.pk %}{{ limit }}{% endif %}{% endfor %} local(es).</span>
-    </form>
-    {% endfor %}
-</div>
-
-<div class="dash-card">
-    <h2>Horario laboral (el agente solo ofrece horas dentro de estas ventanas)</h2>
-    {% if rules %}
-    <table class="dash-table" style="max-width:640px">
-        <thead><tr><th>Agente</th><th>Local</th><th>Día</th><th>Horario</th><th></th></tr></thead>
-        <tbody>
-            {% for r in rules %}
-            <tr>
-                <td>{{ r.client.name }}</td>
-                <td>{{ r.location.name|default:"Todo el negocio" }}</td>
-                <td>{% for num, dname in weekdays %}{% if num == r.weekday %}{{ dname }}{% endif %}{% endfor %}</td>
-                <td>{{ r.open_time|time:"g:i A" }} – {{ r.close_time|time:"g:i A" }}</td>
-                <td><form method="post" action="{% url 'availability_delete' r.pk %}">{% csrf_token %}<button class="save-btn save-btn--sm">Quitar</button></form></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <p class="dash-muted">Sin horario configurado: el agente acepta cualquier hora futura (con 30 min de antelación).</p>
-    {% endif %}
-    <form class="dash-inline-form" method="post" action="{% url 'availability_add' %}">
-        {% csrf_token %}
-        <select name="client">{% for c in rule_clients %}<option value="{{ c.pk }}">{{ c.name }}</option>{% endfor %}</select>
-        {% if has_locations %}
-        <select name="location">
-            <option value="">Todo el negocio</option>
-            {% for loc in locations %}<option value="{{ loc.pk }}">{{ loc.name }}{% if rule_clients|length > 1 %} · {{ loc.client.name }}{% endif %}</option>{% endfor %}
+<section class="crm-toolbar" aria-label="Filtrar citas">
+    {% if has_locations %}
+    <form class="crm-search" method="get" action="{{ bookings_url }}">
+        {% if cur_status %}<input type="hidden" name="status" value="{{ cur_status }}">{% endif %}
+        {% if request.GET.week %}<input type="hidden" name="week" value="{{ request.GET.week }}">{% endif %}
+        <label for="location-filter" class="crm-filter__label">Local</label>
+        <select name="location" id="location-filter" class="select" data-autosubmit>
+            <option value="">Todos los locales</option>
+            {% for loc in locations %}<option value="{{ loc.pk }}" {% if location_filter and location_filter.pk == loc.pk %}selected{% endif %}>{{ loc.name }}{% if locations|length > 1 and rule_clients|length > 1 %} · {{ loc.client.name }}{% endif %}</option>{% endfor %}
         </select>
-        {% endif %}
-        <select name="weekday">{% for num, dname in weekdays %}<option value="{{ num }}">{{ dname }}</option>{% endfor %}</select>
-        <input type="time" name="open_time" required>
-        <input type="time" name="close_time" required>
-        <button type="submit" class="save-btn save-btn--sm">Añadir ventana</button>
+        <noscript><button type="submit" class="btn btn--sm">Filtrar</button></noscript>
     </form>
-</div>
-{% endif %}
+    {% endif %}
+    <div class="crm-filter" role="group" aria-labelledby="crm-fg-bstatus">
+        <span class="crm-filter__label" id="crm-fg-bstatus">Estado</span>
+        <div class="chip-row crm-filter__chips">
+            {% for c in status_chips %}{% include 'landing/_dash_chip.html' with text=c.label href=c.href active=c.active count=c.count %}{% endfor %}
+        </div>
+    </div>
+    {% if filters_active %}<p class="crm-result"><a href="{{ bookings_url }}">Quitar filtros</a>{% if location_filter %} · Local: {{ location_filter.name }}{% endif %}</p>{% endif %}
+</section>
+
+<section class="card" aria-labelledby="cal-title">
+    <div class="card__head">
+        <div>
+            <h2 class="card__title" id="cal-title">Semana del {{ week.start|fecha_es:"short" }} al {{ week.end|fecha_es:"full" }}</h2>
+            <p class="card__sub">{% if week.count %}{{ week.count }} cita{{ week.count|pluralize }} esta semana.{% else %}Sin citas esta semana.{% endif %}</p>
+        </div>
+        <nav class="cal-nav" aria-label="Semanas">
+            <a class="btn btn--sm" href="{{ week_urls.prev }}"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>Semana anterior</a>
+            <a class="btn btn--sm{% if week.is_current %} btn--ghost{% endif %}" href="{{ week_urls.today }}"{% if week.is_current %} aria-current="date"{% endif %}>Hoy</a>
+            <a class="btn btn--sm" href="{{ week_urls.next }}">Semana siguiente<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg></a>
+        </nav>
+    </div>
+    <div class="cal-week">
+        {% for day in week.days %}
+        <div class="cal-day{% if day.is_today %} cal-day--today{% endif %}{% if not day.bookings %} cal-day--empty{% endif %}">
+            <h3 class="cal-day__head">{{ day.label }}{% if day.is_today %} <small>Hoy</small>{% endif %}</h3>
+            {% if day.bookings %}
+            <ul class="cal-day__body">
+                {% for item in day.bookings %}
+                <li class="cal-event cal-event--{{ item.status }}">
+                    <span class="cal-event__time">{{ item.start_local|date:"g:i A" }}</span>
+                    <span class="cal-event__name">{{ item.booking.name }}</span>
+                    {% if has_locations and item.booking.location %}<span class="dash-sub">{{ item.booking.location.name }}</span>{% endif %}
+                    <span class="cal-event__status">{{ item.status_label }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="cal-day__empty">Sin citas.</p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="card card--flush" aria-labelledby="upcoming-title">
+    <div class="card__head crm-pad">
+        <h2 class="card__title" id="upcoming-title">Próximas citas</h2>
+    </div>
+    <div class="table-scroll crm-flat">
+        <table class="data-table data-table--cards">
+            <thead><tr><th>Fecha y hora</th><th>Nombre</th><th>Contacto</th><th>Servicio</th>{% if has_locations %}<th>Local</th>{% endif %}<th>Estado</th><th>Acciones</th></tr></thead>
+            <tbody>
+                {% for b in upcoming %}
+                <tr>
+                    <td data-label="Fecha y hora"><b>{{ b.start|fecha_es:"diahora" }}</b><div class="dash-sub">{{ b.duration_minutes }} min · {{ b.client.name|default:"DOMINIO" }}</div></td>
+                    <td data-label="Nombre">{{ b.name }}</td>
+                    <td data-label="Contacto">{% if b.email %}<a href="mailto:{{ b.email }}">{{ b.email }}</a>{% endif %}{% if b.phone %}{% if b.email %}<div class="dash-sub">{% endif %}<a href="tel:{{ b.phone }}">{{ b.phone }}</a>{% if b.email %}</div>{% endif %}{% endif %}{% if not b.email and not b.phone %}—{% endif %}</td>
+                    <td data-label="Servicio">{% if b.client.clinic_mode %}—{% else %}{{ b.service|default:"—" }}{% endif %}</td>
+                    {% if has_locations %}<td data-label="Local">{{ b.location.name|default:"—" }}</td>{% endif %}
+                    <td data-label="Estado"><span class="dash-pill dash-pill--{{ b.status }}">{{ b.get_status_display }}</span></td>
+                    <td data-label="Acciones">
+                        <div class="crm-actions">
+                        {% if b.status == 'pending' %}
+                            <form method="post" action="{% url 'booking_status' b.pk %}">{% csrf_token %}<input type="hidden" name="status" value="confirmed"><button class="btn btn--sm btn--primary">Confirmar<span class="sr-only"> la cita de {{ b.name }}</span></button></form>
+                        {% elif b.status == 'confirmed' %}
+                            <form method="post" action="{% url 'booking_status' b.pk %}">{% csrf_token %}<input type="hidden" name="status" value="completed"><button class="btn btn--sm">Completada<span class="sr-only">: cita de {{ b.name }}</span></button></form>
+                            <form method="post" action="{% url 'booking_status' b.pk %}">{% csrf_token %}<input type="hidden" name="status" value="no_show"><button class="btn btn--sm">No llegó<span class="sr-only">: {{ b.name }}</span></button></form>
+                        {% endif %}
+                        {% if b.status == 'pending' or b.status == 'confirmed' %}
+                            <details class="crm-confirm">
+                                <summary class="btn btn--sm btn--danger">Cancelar<span class="sr-only"> la cita de {{ b.name }}</span></summary>
+                                <form method="post" action="{% url 'booking_status' b.pk %}">{% csrf_token %}<input type="hidden" name="status" value="cancelled">
+                                    <p class="dash-sub">Se avisará al cliente de la cancelación.</p>
+                                    <button class="btn btn--sm btn--danger">Sí, cancelar cita</button>
+                                </form>
+                            </details>
+                        {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="{% if has_locations %}7{% else %}6{% endif %}">
+                    {% if filters_active %}{% include 'landing/_dash_empty_state.html' with inline=1 icon='filter' title='Ninguna cita coincide con estos filtros' text='Quita el filtro de local o de estado para ver más citas.' action_href=bookings_url action_label='Quitar filtros' %}
+                    {% else %}{% include 'landing/_dash_empty_state.html' with inline=1 icon='calendar' title='No hay citas próximas' text='El agente las creará según los visitantes reserven.' %}{% endif %}
+                </td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
 
 {% if past %}
-<div class="dash-card">
-    <h2>Pasadas</h2>
-    <table class="dash-table">
-        <tbody>
-            {% for b in past %}
-            <tr><td>{{ b.start|date:"M d · g:i A" }}</td><td>{{ b.name }}</td>{% if has_locations %}<td>{{ b.location.name|default:"—" }}</td>{% endif %}<td><span class="dash-pill dash-pill--{{ b.status }}">{{ b.get_status_display }}</span></td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
+<details class="card crm-fold">
+    <summary>Citas pasadas ({{ past|length }})</summary>
+    <div class="table-scroll crm-flat">
+        <table class="data-table data-table--cards">
+            <caption class="sr-only">Citas pasadas</caption>
+            <tbody>
+                {% for b in past %}
+                <tr><td data-label="Fecha">{{ b.start|fecha_es:"hora" }}</td><td data-label="Nombre">{{ b.name }}</td>{% if has_locations %}<td data-label="Local">{{ b.location.name|default:"—" }}</td>{% endif %}<td data-label="Estado"><span class="dash-pill dash-pill--{{ b.status }}">{{ b.get_status_display }}</span></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</details>
+{% endif %}
+
+{% if can_manage_rules and rule_clients %}
+<details class="card crm-fold"{% if location_over %} open{% endif %}>
+    <summary>Ajustes de citas</summary>
+
+    <section class="crm-settings" aria-labelledby="loc-title">
+        <h2 class="card__title" id="loc-title">Locales</h2>
+        <p class="dash-muted">Si tu negocio tiene más de un local, el agente pregunta en cuál quiere la cita el visitante, usa el horario de ese local y lo indica en la confirmación. Con un solo local (o ninguno) todo funciona como hasta ahora.</p>
+        {% for over in location_over %}
+        <p class="alert alert--warn">{% if rule_clients|length > 1 %}{{ over.client.name }}: {% endif %}Tu plan incluye {{ over.allowed }} local(es) y tienes {{ over.count }}; el agente seguirá usándolos, pero no podrás añadir más. Contáctanos para ampliar el plan.</p>
+        {% endfor %}
+        {% for c in rule_clients %}
+        {% if rule_clients|length > 1 %}<h3 class="crm-settings__client">{{ c.name }}</h3>{% endif %}
+        {# One edit form per row, owned through the HTML5 form= attribute (a <form> cannot sit inside a <tr>). #}
+        {% for loc in locations %}{% if loc.client_id == c.pk %}
+        <form id="loc-edit-{{ loc.pk }}" method="post" action="{% url 'location_save' %}">
+            {% csrf_token %}
+            <input type="hidden" name="client" value="{{ c.slug }}">
+            <input type="hidden" name="pk" value="{{ loc.pk }}">
+        </form>
+        <form id="loc-del-{{ loc.pk }}" method="post" action="{% url 'location_delete' loc.pk %}">{% csrf_token %}</form>
+        {% endif %}{% endfor %}
+        <div class="table-scroll">
+            <table class="data-table data-table--cards crm-edit-table">
+                <thead><tr><th>Nombre</th><th>Dirección</th><th>Teléfono</th><th>Principal</th><th><span class="sr-only">Acciones</span></th></tr></thead>
+                <tbody>
+                    {% for loc in locations %}{% if loc.client_id == c.pk %}
+                    <tr>
+                        <td data-label="Nombre"><input class="input" type="text" name="name" form="loc-edit-{{ loc.pk }}" value="{{ loc.name }}" required maxlength="80" aria-label="Nombre del local"></td>
+                        <td data-label="Dirección"><input class="input" type="text" name="address" form="loc-edit-{{ loc.pk }}" value="{{ loc.address }}" maxlength="200" aria-label="Dirección del local"></td>
+                        <td data-label="Teléfono"><input class="input" type="tel" name="phone" form="loc-edit-{{ loc.pk }}" value="{{ loc.phone }}" aria-label="Teléfono del local"></td>
+                        <td data-label="Principal"><input type="checkbox" name="is_default" form="loc-edit-{{ loc.pk }}" {% if loc.is_default %}checked{% endif %} aria-label="Local principal"></td>
+                        <td>
+                            <div class="crm-actions">
+                                <button type="submit" form="loc-edit-{{ loc.pk }}" class="btn btn--sm">Guardar</button>
+                                <button type="submit" form="loc-del-{{ loc.pk }}" class="btn btn--sm btn--danger">Quitar<span class="sr-only"> {{ loc.name }}</span></button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}{% empty %}
+                    <tr><td colspan="5"><div class="dash-empty">Sin locales: el agente trata el negocio como un solo sitio.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <form class="crm-add-form" method="post" action="{% url 'location_save' %}">
+            {% csrf_token %}
+            <input type="hidden" name="client" value="{{ c.slug }}">
+            <input class="input" type="text" name="name" placeholder="Nombre (ej. Bayamón)" required maxlength="80" aria-label="Nombre del nuevo local">
+            <input class="input" type="text" name="address" placeholder="Dirección" maxlength="200" aria-label="Dirección del nuevo local">
+            <input class="input" type="tel" name="phone" placeholder="(787) 123-4567" aria-label="Teléfono del nuevo local">
+            <label class="dash-muted crm-check"><input type="checkbox" name="is_default"> Principal</label>
+            <button type="submit" class="btn btn--sm btn--primary">Añadir local</button>
+            <span class="dash-muted">Tu plan incluye {% for pk, limit in location_limits.items %}{% if pk == c.pk %}{{ limit }}{% endif %}{% endfor %} local(es).</span>
+        </form>
+        {% endfor %}
+    </section>
+
+    <section class="crm-settings" aria-labelledby="hours-title">
+        <h2 class="card__title" id="hours-title">Horario laboral</h2>
+        <p class="dash-muted">El agente solo ofrece horas dentro de estas ventanas.</p>
+        {% if rules %}
+        <div class="table-scroll">
+            <table class="data-table data-table--cards">
+                <thead><tr><th>Agente</th><th>Local</th><th>Día</th><th>Horario</th><th><span class="sr-only">Acciones</span></th></tr></thead>
+                <tbody>
+                    {% for r in rules %}
+                    <tr>
+                        <td data-label="Agente">{{ r.client.name }}</td>
+                        <td data-label="Local">{{ r.location.name|default:"Todo el negocio" }}</td>
+                        <td data-label="Día">{% for num, dname in weekdays %}{% if num == r.weekday %}{{ dname }}{% endif %}{% endfor %}</td>
+                        <td data-label="Horario">{{ r.open_time|time:"g:i A" }} – {{ r.close_time|time:"g:i A" }}</td>
+                        <td><form method="post" action="{% url 'availability_delete' r.pk %}">{% csrf_token %}<button class="btn btn--sm btn--danger">Quitar<span class="sr-only"> la ventana del {% for num, dname in weekdays %}{% if num == r.weekday %}{{ dname }}{% endif %}{% endfor %}</span></button></form></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="dash-muted">Sin horario configurado: el agente acepta cualquier hora futura (con 30 min de antelación).</p>
+        {% endif %}
+        <form class="crm-add-form" method="post" action="{% url 'availability_add' %}">
+            {% csrf_token %}
+            <select class="select" name="client" aria-label="Agente">{% for c in rule_clients %}<option value="{{ c.pk }}">{{ c.name }}</option>{% endfor %}</select>
+            {% if has_locations %}
+            <select class="select" name="location" aria-label="Local">
+                <option value="">Todo el negocio</option>
+                {% for loc in locations %}<option value="{{ loc.pk }}">{{ loc.name }}{% if rule_clients|length > 1 %} · {{ loc.client.name }}{% endif %}</option>{% endfor %}
+            </select>
+            {% endif %}
+            <select class="select" name="weekday" aria-label="Día">{% for num, dname in weekdays %}<option value="{{ num }}">{{ dname }}</option>{% endfor %}</select>
+            <label class="dash-muted crm-check">Abre <input class="input" type="time" name="open_time" required></label>
+            <label class="dash-muted crm-check">Cierra <input class="input" type="time" name="close_time" required></label>
+            <button type="submit" class="btn btn--sm btn--primary">Añadir ventana</button>
+        </form>
+    </section>
+</details>
 {% endif %}
 {% endblock %}

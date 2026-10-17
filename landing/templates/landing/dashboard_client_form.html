@@ -1,14 +1,8 @@
+{% extends 'landing/dashboard_base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DOMINIO — {% if instance %}Editar agente{% else %}Nuevo agente{% endif %}</title>
-    <meta name="robots" content="noindex, nofollow">
-    <link rel="preload" href="{% static 'landing/fonts/space-grotesk-latin-var.woff2' %}" as="font" type="font/woff2" crossorigin>
-    <link rel="stylesheet" href="{% static 'landing/css/fonts.css' %}">
-    <link rel="stylesheet" href="{% static 'landing/css/dashboard.css' %}">
+{% block title %}{% if instance %}Editar agente{% else %}Nuevo agente{% endif %}{% endblock %}
+{% block nav %}{% include 'landing/_dash_nav.html' with active='agents' %}{% endblock %}
+{% block extra_head %}
     <style>
         .cform{max-width:720px;background:var(--primary-light);border:1px solid var(--line);border-radius:14px;padding:28px}
         .cfield{margin-bottom:18px}
@@ -50,10 +44,8 @@
         .wpv-fab svg{width:18px;height:18px}
         @media(max-width:900px){.wpv{position:static;flex:1 1 100%;max-width:340px}}
     </style>
-</head>
-<body class="dash-body">
-    {% include 'landing/_dash_nav.html' with active='agents' %}
-    <main class="dash-main">
+{% endblock %}
+{% block content %}
         <h1 class="dash-h1">{% if instance %}Editar “{{ instance.name }}”{% else %}Nuevo agente{% endif %}</h1>
         <div class="cform-layout">
             <form class="cform" method="post" novalidate>
@@ -95,7 +87,8 @@
                 </div>
             </aside>
         </div>
-    </main>
+{% endblock %}
+{% block scripts %}
     <script>
         // Live-preview the slug from the name as you type. The server still
         // slugifies + guarantees uniqueness on save (this is just a preview).
@@ -211,5 +204,4 @@
             apply();
         })();
     </script>
-</body>
-</html>
+{% endblock %}

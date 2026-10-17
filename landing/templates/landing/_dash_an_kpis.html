@@ -1,0 +1,17 @@
+{% comment %}KPI grid of the home and reports pages. Context: kpis (platform_views._decorate_kpis: display, delta_text,
+delta_dir, delta_good, href; optional spark from analytics.sparkline), period_label.{% endcomment %}
+<section class="kpi-grid kpi-grid--metrics" aria-label="Indicadores de {{ period_label|lower }}">
+    {% for k in kpis %}
+    {% if k.href %}<a class="kpi" href="{{ k.href }}">{% else %}<div class="kpi">{% endif %}
+        <p class="kpi__label">{{ k.label }}</p>
+        <p class="kpi__value">{{ k.display }}</p>
+        <div class="kpi__foot">
+            <span>
+                <span class="delta{% if k.delta_good == 'good' %} delta--good{% elif k.delta_good == 'bad' %} delta--bad{% endif %}"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-{% if k.delta_dir == 'up' %}trending-up{% elif k.delta_dir == 'down' %}trending-down{% else %}minus{% endif %}"/></svg>{{ k.delta_text }}</span>
+                <span class="kpi__hint">vs. periodo anterior</span>
+            </span>
+            {% if k.spark and k.spark.path %}<svg class="kpi__spark" viewBox="{{ k.spark.viewBox }}" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="area" d="{{ k.spark.area }}"/><path d="{{ k.spark.path }}"/></svg>{% endif %}
+        </div>
+    {% if k.href %}</a>{% else %}</div>{% endif %}
+    {% endfor %}
+</section>

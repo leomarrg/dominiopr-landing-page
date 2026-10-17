@@ -1,0 +1,11 @@
+{% comment %}Side panel (drawer). Render it as a direct child of <body> via {% block overlays %}.
+Params: id, title, content_html (safe string, optional). For rich bodies copy this markup and fill .drawer__body.
+Open with <button type="button" data-panel-open="#ID">; closes with Esc, the X, the scrim or any [data-panel-close];
+focus returns to the opener (dash.js).{% endcomment %}
+<aside class="drawer" id="{{ id }}" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="{{ id }}-t">
+    <div class="drawer__head">
+        <h2 class="drawer__title" id="{{ id }}-t">{{ title }}</h2>
+        <button type="button" class="btn btn--ghost btn--sm" data-panel-close aria-label="Cerrar"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="drawer__body">{{ content_html }}</div>
+</aside>

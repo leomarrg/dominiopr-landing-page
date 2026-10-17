@@ -1,0 +1,22 @@
+{% comment %}Topbar business + period selectors. Context: popts (iterable of (key, label), optional), pcur (selected key),
+client_options, client_current, client_select_id. Included by _dash_nav.html.{% endcomment %}
+<form class="dash-ctx" method="get" data-autosubmit aria-label="Negocio y periodo">
+    {% for key, vals in request.GET.lists %}{% if key != 'client' and key != 'period' and key != 'page' %}{% for v in vals %}<input type="hidden" name="{{ key }}" value="{{ v }}">{% endfor %}{% endif %}{% endfor %}
+    {% if client_options|length > 1 %}
+    <div class="dash-ctx__field">
+        <label for="{{ client_select_id|default:'dash-ctx-client' }}">Negocio</label>
+        <select id="{{ client_select_id|default:'dash-ctx-client' }}" name="client">
+            {% firstof client_current client_obj.slug client.slug as cur %}{% for slug, name in client_options %}<option value="{{ slug }}"{% if slug == cur %} selected{% endif %}>{{ name }}</option>{% endfor %}
+        </select>
+    </div>
+    {% endif %}
+    {% if popts %}
+    <div class="dash-ctx__field">
+        <label for="dash-ctx-period">Periodo</label>
+        <select id="dash-ctx-period" name="period">
+            {% for key, label in popts %}<option value="{{ key }}"{% if key == pcur %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+    </div>
+    {% endif %}
+    <button type="submit" class="btn btn--sm">Aplicar</button>
+</form>

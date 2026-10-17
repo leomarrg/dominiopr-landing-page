@@ -1,57 +1,85 @@
 {% extends 'landing/dashboard_base.html' %}
+{% load landing_extras %}
 {% block title %}Conversación{% endblock %}
 {% block content %}
-<h1 class="dash-h1">Conversación — {{ conv.client.name }}</h1>
-<p class="dash-muted">
-    {% if conv.channel == 'internal' %}<span class="dash-pill dash-pill--closed_resolved">Interno</span> · Empleado: {% if conv.user %}{{ conv.user.get_full_name|default:conv.user.username }}{% else %}(cuenta eliminada){% endif %} · {% endif %}
-    <span class="dash-pill dash-pill--{{ conv.state }}">{{ conv.get_state_display }}</span>
-    · Inició {{ conv.started_at|date:"M d, Y g:i A" }}
-    · Última actividad {{ conv.last_message_at|date:"M d, Y g:i A" }}
-    {% if conv.page_url %} · Página: <a href="{{ conv.page_url }}" target="_blank" rel="noopener">{{ conv.page_url|truncatechars:50 }}</a>{% endif %}
-    {% if conv.config_version %} · Config <code>{{ conv.config_version }}</code>{% endif %}
-</p>
-{% if conv.escalation_reason %}
-<div class="dash-card"><b>Motivo del escalamiento:</b> {{ conv.escalation_reason }}</div>
-{% endif %}
-{% if conv.lead %}
-<div class="dash-card">
-    <b>Lead capturado:</b> {{ conv.lead.name }}
-    {% if conv.lead.email %}· <a href="mailto:{{ conv.lead.email }}">{{ conv.lead.email }}</a>{% endif %}
-    {% if conv.lead.phone %}· {{ conv.lead.phone }}{% endif %}
-    — <a href="{% url 'lead_detail' conv.lead.pk %}">ver el lead</a>
-</div>
-{% endif %}
-{% if survey %}
-<div class="dash-card"><b>Satisfacción:</b> {{ survey.score }}/5{% if survey.comment %} — “{{ survey.comment }}”{% endif %}</div>
-{% endif %}
+{% url 'conversations' as list_url %}
+<header class="page-head">
+    <h1 class="dash-h1">Conversación — {{ conv.client.name }}</h1>
+</header>
 
-<div class="dash-card">
-    <h2>Transcript</h2>
-    <div class="dash-chat">
-        {% for m in msgs %}
-        <div class="dash-chat__b dash-chat__b--{{ m.role }}">{{ m.content }}</div>
-        {% empty %}
-        <p class="dash-muted">Sin mensajes guardados.</p>
-        {% endfor %}
+<div class="inbox-wrap">
+    <div class="inbox" data-view="detail">
+        <section class="inbox__list" aria-label="Lista de conversaciones">
+            {% include 'landing/_crm_inbox_list.html' with items=inbox_items current=conv.pk multi=multi_client %}
+        </section>
+
+        <section class="inbox__thread" aria-label="Conversación seleccionada">
+            <a class="inbox__back btn btn--ghost btn--sm" href="{{ list_url }}{{ inbox_qs }}"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-left"/></svg>Volver a conversaciones</a>
+            <p class="thread-meta">
+                {% if conv.channel == 'internal' %}<span class="chip dash-pill--closed_resolved">Interno</span> Empleado: {% if conv.user %}{{ conv.user.get_full_name|default:conv.user.username }}{% else %}(cuenta eliminada){% endif %} · {% endif %}
+                <span class="dash-pill dash-pill--{{ conv.state }}">{{ conv.get_state_display }}</span>
+                · Inició {{ conv.started_at|fecha_es:"hora" }}
+                · Última actividad {{ conv.last_message_at|fecha_es:"hora" }}
+            </p>
+
+            {% if allowed %}
+            <div class="thread-actions">
+                {% for s in allowed %}
+                <form method="post" action="{% url 'conversation_state' conv.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="state" value="{{ s }}">
+                    <button type="submit" class="btn btn--sm{% if s == 'blocked' %} btn--danger{% endif %}">{% if s == 'followup' %}Marcar en seguimiento{% elif s == 'closed_resolved' %}Cerrar — resuelta{% elif s == 'closed_unresolved' %}Cerrar — no resuelta{% elif s == 'blocked' %}Bloquear{% elif s == 'active' %}Desbloquear{% else %}{{ s }}{% endif %}</button>
+                </form>
+                {% endfor %}
+            </div>
+            <p class="dash-muted">Cerrar una conversación requiere clasificar el resultado, así los reportes reflejan la realidad.</p>
+            {% endif %}
+
+            <h2 class="card__title">Transcript</h2>
+            <div class="dash-chat">
+                {% for m in msgs %}
+                <div class="dash-chat__b dash-chat__b--{{ m.role }}"><span class="sr-only">{% if m.role == 'user' %}{% if conv.channel == 'internal' %}Empleado{% else %}Visitante{% endif %}{% else %}Agente{% endif %}: </span>{{ m.content }}</div>
+                {% empty %}
+                <p class="dash-muted">Sin mensajes guardados.</p>
+                {% endfor %}
+            </div>
+        </section>
+
+        <aside class="inbox__context" aria-label="Contexto de la conversación">
+            <h2 class="card__title">Contexto</h2>
+            <dl class="ctx-list">
+                <dt>Canal</dt>
+                <dd>{{ context.channel_label }}{% if context.contact_label %} · {{ context.contact_label }}{% endif %}</dd>
+                <dt>Lead</dt>
+                <dd>{% if context.lead %}<a href="{% url 'lead_detail' context.lead.pk %}">{{ context.lead.name }}</a> <span class="dash-sub">ver el lead</span>
+                    {% if context.lead.email %}<br><a href="mailto:{{ context.lead.email }}">{{ context.lead.email }}</a>{% endif %}
+                    {% if context.lead.phone %}<br>{{ context.lead.phone|format_phone }}{% endif %}
+                    {% else %}<span class="dash-sub">Sin lead capturado</span>{% endif %}</dd>
+                {% if context.booking %}
+                <dt>Cita</dt>
+                <dd>{{ context.booking.start|fecha_es:"diahora" }} · <span class="dash-pill dash-pill--{{ context.booking.status }}">{{ context.booking.get_status_display }}</span></dd>
+                {% endif %}
+                {% if context.page_url %}
+                <dt>Página</dt>
+                <dd><a href="{{ context.page_url }}" target="_blank" rel="noopener noreferrer">{{ context.page_url|truncatechars:50 }}</a></dd>
+                {% endif %}
+                {% if context.clinic %}
+                <dt>Modo clínica</dt><dd class="dash-sub">Intención, tema y primera pregunta no se muestran.</dd>
+                {% else %}
+                {% if context.intent_label %}<dt>Intención</dt><dd>{{ context.intent_label }}</dd>{% endif %}
+                {% if context.topic %}<dt>Tema</dt><dd>{{ context.topic }}</dd>{% endif %}
+                {% if context.first_question %}<dt>Primera pregunta</dt><dd>{{ context.first_question }}</dd>{% endif %}
+                {% endif %}
+                {% if survey %}
+                <dt>Satisfacción</dt>
+                <dd>{{ survey.score }}/5{% if survey.comment %} — “{{ survey.comment }}”{% endif %}</dd>
+                {% endif %}
+                {% if conv.escalation_reason %}
+                <dt>Motivo del escalamiento</dt><dd>{{ conv.escalation_reason }}</dd>
+                {% endif %}
+                {% if conv.config_version %}<dt>Configuración</dt><dd><code>{{ conv.config_version }}</code></dd>{% endif %}
+            </dl>
+        </aside>
     </div>
 </div>
-
-{% if allowed %}
-<div class="dash-card">
-    <h2>Cambiar estado</h2>
-    <div class="dash-actions-row">
-        {% for s in allowed %}
-        <form method="post" action="{% url 'conversation_state' conv.pk %}">
-            {% csrf_token %}
-            <input type="hidden" name="state" value="{{ s }}">
-            <button type="submit" class="save-btn save-btn--sm">
-                {% if s == 'followup' %}Marcar en seguimiento{% elif s == 'closed_resolved' %}Cerrar — resuelta{% elif s == 'closed_unresolved' %}Cerrar — no resuelta{% elif s == 'blocked' %}Bloquear{% elif s == 'active' %}Desbloquear{% else %}{{ s }}{% endif %}
-            </button>
-        </form>
-        {% endfor %}
-    </div>
-    <p class="dash-muted">Cerrar una conversación requiere clasificar el resultado — así los reportes reflejan la realidad.</p>
-</div>
-{% endif %}
-<p><a href="{% url 'conversations' %}">← Volver a conversaciones</a></p>
 {% endblock %}

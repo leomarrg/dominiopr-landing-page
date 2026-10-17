@@ -1,0 +1,44 @@
+{% load landing_extras %}{% comment %}Satisfaction: average, 1-5 distribution and the latest comments. Context: csat (analytics.csat_distribution), client_obj.
+Comments never arrive for clinic mode (the helper drops them); the card says so.{% endcomment %}
+<section class="card chart-card" aria-labelledby="an-csat-t">
+    <div class="card__head">
+        <div>
+            <h2 class="card__title" id="an-csat-t">Satisfacción</h2>
+            <p class="card__sub">Calificaciones de 1 a 5 que dejan los visitantes · {{ period_label }}</p>
+        </div>
+    </div>
+    {% if not csat.n %}
+    {% include 'landing/_dash_empty_state.html' with inline=1 icon='check-circle' title='Todavía no hay calificaciones' text='Aparecen cuando un visitante califica su conversación con el agente.' %}
+    {% else %}
+    <p class="an-score"><span class="an-score__n">{{ csat.avg }}</span><span class="an-score__of">de 5 · {{ csat.n }} voto{{ csat.n|pluralize }}</span></p>
+    <figure class="chart">
+        <div class="chart__plot" data-chart role="img" aria-label="Distribución de calificaciones: {% for r in csat.rows %}{{ r.score }} de 5, {{ r.n }} voto{{ r.n|pluralize }}{% if not forloop.last %}; {% endif %}{% endfor %}">
+            {% for r in csat.rows %}
+            <div class="hbar" data-tip="{{ r.score }} de 5: {{ r.n }} voto{{ r.n|pluralize }} ({{ r.pct }} %)">
+                <span class="hbar__label"><span aria-hidden="true">&#9733;</span> {{ r.score }}</span>
+                <span class="hbar__track"><span class="hbar__fill" style="width:{{ r.pct }}%"></span></span>
+                <span class="hbar__value">{{ r.n }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </figure>
+    <details class="chart__table">
+        <summary>Ver como tabla</summary>
+        <div class="table-scroll"><table class="data-table data-table--compact">
+            <caption class="sr-only">Distribución de calificaciones</caption>
+            <thead><tr><th scope="col">Calificación</th><th scope="col">Votos</th><th scope="col">%</th></tr></thead>
+            <tbody>{% for r in csat.rows %}<tr><th scope="row">{{ r.score }} de 5</th><td class="num">{{ r.n }}</td><td class="num">{{ r.pct }} %</td></tr>{% endfor %}</tbody>
+        </table></div>
+    </details>
+    {% if client_obj.clinic_mode %}
+    <p class="card__sub an-note">Modo clínica: los comentarios de los visitantes no se muestran.</p>
+    {% elif csat.comments %}
+    <h3 class="an-h3">Últimos comentarios</h3>
+    <ul class="an-comments">
+        {% for c in csat.comments %}
+        <li class="an-comment"><span class="chip chip--neutral">{{ c.score }} de 5</span> {{ c.comment|truncatechars:180 }} <span class="an-comment__date">{{ c.created_at|fecha_es:'short' }}</span></li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% endif %}
+</section>

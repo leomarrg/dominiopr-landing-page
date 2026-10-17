@@ -1,0 +1,36 @@
+{% comment %}Ranked horizontal bars card. Params: uid, title, subtitle (optional), rows (items with n, pct and one of label | topic | page_url),
+empty (text shown without rows), unit (singular noun for the tooltip, default "conversaciones"), hidden_text (when set, shown instead of the chart:
+used for clinic mode).{% endcomment %}
+<section class="card chart-card" aria-labelledby="an-{{ uid }}-t">
+    <div class="card__head">
+        <div>
+            <h2 class="card__title" id="an-{{ uid }}-t">{{ title }}</h2>
+            {% if subtitle %}<p class="card__sub">{{ subtitle }}</p>{% endif %}
+        </div>
+    </div>
+    {% if hidden_text %}
+    {% include 'landing/_dash_empty_state.html' with inline=1 icon='info' title='No disponible en modo clínica' text=hidden_text %}
+    {% elif not rows %}
+    {% include 'landing/_dash_empty_state.html' with inline=1 icon='chart' title='Sin datos todavía' text=empty %}
+    {% else %}
+    <figure class="chart">
+        <div class="chart__plot" data-chart role="img" aria-label="{{ title }}: {% for r in rows %}{% if r.label %}{{ r.label }}{% elif r.topic %}{{ r.topic }}{% else %}{{ r.page_url }}{% endif %} {{ r.n }}{% if not forloop.last %}, {% endif %}{% endfor %}">
+            {% for r in rows %}
+            <div class="hbar" data-tip="{% if r.label %}{{ r.label }}{% elif r.topic %}{{ r.topic }}{% else %}{{ r.page_url }}{% endif %}: {{ r.n }} {{ unit|default:'conversaciones' }}">
+                <span class="hbar__label" {% if r.page_url %}title="{{ r.page_url }}"{% endif %}>{% if r.label %}{{ r.label }}{% elif r.topic %}{{ r.topic }}{% else %}{{ r.page_url|truncatechars:48 }}{% endif %}</span>
+                <span class="hbar__track"><span class="hbar__fill" style="width:{{ r.pct }}%"></span></span>
+                <span class="hbar__value">{{ r.n }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </figure>
+    <details class="chart__table">
+        <summary>Ver como tabla</summary>
+        <div class="table-scroll"><table class="data-table data-table--compact">
+            <caption class="sr-only">{{ title }}</caption>
+            <thead><tr><th scope="col">Concepto</th><th scope="col">{{ unit|default:'Conversaciones'|capfirst }}</th></tr></thead>
+            <tbody>{% for r in rows %}<tr><th scope="row">{% if r.label %}{{ r.label }}{% elif r.topic %}{{ r.topic }}{% else %}{{ r.page_url }}{% endif %}</th><td class="num">{{ r.n }}</td></tr>{% endfor %}</tbody>
+        </table></div>
+    </details>
+    {% endif %}
+</section>

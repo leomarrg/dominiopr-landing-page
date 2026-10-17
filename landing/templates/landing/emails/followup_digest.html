@@ -1,0 +1,37 @@
+{% extends "landing/emails/_base.html" %}
+
+{% block content %}
+<h1 style="margin:0 0 18px; color:#ffffff; font-size:22px; font-weight:700;">Seguimientos de hoy · {{ business }}</h1>
+
+<p style="margin:0 0 18px;">Resumen del {{ day|date:"d/m/Y" }}: {{ overdue|length }} vencido{{ overdue|length|pluralize }}, {{ today|length }} para hoy y {{ stale|length }} lead{{ stale|length|pluralize }} nuevo{{ stale|length|pluralize }} sin atender desde hace más de {{ stale_hours }} horas.</p>
+
+{% if overdue %}
+<h2 style="margin:18px 0 8px; color:#ffffff; font-size:16px;">Seguimientos vencidos</h2>
+<ul style="margin:0 0 12px; padding-left:18px;">
+{% for item in overdue %}
+  <li style="margin:0 0 6px;"><a href="{{ item.url }}" style="color:#34d6c8;">{{ item.name }}</a> · estaba para el {{ item.when|date:"d/m H:i" }}{% if item.assigned %} · {{ item.assigned }}{% endif %}</li>
+{% endfor %}
+</ul>
+{% endif %}
+
+{% if today %}
+<h2 style="margin:18px 0 8px; color:#ffffff; font-size:16px;">Para hoy</h2>
+<ul style="margin:0 0 12px; padding-left:18px;">
+{% for item in today %}
+  <li style="margin:0 0 6px;"><a href="{{ item.url }}" style="color:#34d6c8;">{{ item.name }}</a> · {{ item.when|date:"H:i" }}{% if item.assigned %} · {{ item.assigned }}{% endif %}</li>
+{% endfor %}
+</ul>
+{% endif %}
+
+{% if stale %}
+<h2 style="margin:18px 0 8px; color:#ffffff; font-size:16px;">Leads nuevos sin atender</h2>
+<ul style="margin:0 0 12px; padding-left:18px;">
+{% for item in stale %}
+  <li style="margin:0 0 6px;"><a href="{{ item.url }}" style="color:#34d6c8;">{{ item.name }}</a> · llegó el {{ item.when|date:"d/m H:i" }}</li>
+{% endfor %}
+</ul>
+{% endif %}
+
+<p style="margin:22px 0 0;"><a href="{{ leads_url }}" style="color:#34d6c8;">Abrir el tablero de leads</a></p>
+<p style="margin:16px 0 0; color:#9fb3c8; font-size:12px;">Recibes este correo porque eres parte del equipo de {{ business }} en DOMINIO. Si no quieres recibirlo, responde a este correo y lo desactivamos.</p>
+{% endblock %}

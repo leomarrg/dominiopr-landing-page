@@ -1,54 +1,51 @@
 {% extends 'landing/dashboard_base.html' %}
 {% load landing_extras %}
 {% block title %}Control — {{ c.name }}{% endblock %}
+{# Staff control pages ship no <script> (tested); the drawer works through :target. #}
+{% block dash_js %}{% endblock %}
 {% block content %}
-<div class="ctl-head">
-    <h1 class="dash-h1">{{ c.name }} <span class="ctl-muted">{{ c.slug }}</span>
-        {% if not c.is_active %}<span class="ctl-badge ctl-badge--off">Pausado</span>{% endif %}
-        {% if c.setup_status == 'pending' %}<span class="ctl-badge ctl-badge--warn">Pendiente de instalación</span>{% else %}<span class="ctl-badge ctl-badge--on">En vivo</span>{% endif %}
+<header class="page-head">
+    <h1 class="dash-h1 ctl-client-title">{{ c.name }} <small>{{ c.slug }}</small>
+        {% if not c.is_active %}<span class="chip chip--danger">Pausado</span>{% endif %}
+        {% if c.setup_status == 'pending' %}<span class="chip chip--warn">Pendiente de instalación</span>{% else %}<span class="chip chip--ok">En vivo</span>{% endif %}
     </h1>
-    <nav class="ctl-periods" aria-label="Periodo">
-        {% for key, label in periods %}
-        <a href="?period={{ key }}" class="{% if key == period %}is-active{% endif %}"{% if key == period %} aria-current="true"{% endif %}>{{ label }}</a>
-        {% endfor %}
-    </nav>
-</div>
-<p class="ctl-sub">
-    <a href="{% url 'control' %}">Centro de control</a> ·
-    <a href="{% url 'client_edit' c.pk %}">Editar agente</a> ·
-    <a href="{% url 'conversations' %}">Conversaciones</a> ·
-    <a href="{% url 'knowledge' %}?client={{ c.slug }}">Conocimiento</a> ·
+</header>
+<nav class="ctl-subnav" aria-label="Accesos del cliente">
+    <a href="{% url 'control' %}">Centro de control</a>
+    <a href="{% url 'client_edit' c.pk %}">Editar agente</a>
+    <a href="{% url 'conversations' %}">Conversaciones</a>
+    <a href="{% url 'knowledge' %}?client={{ c.slug }}">Conocimiento</a>
     <a href="{% url 'dash_users' %}?client={{ c.slug }}">Usuarios</a>
-</p>
-<form method="post" action="{% url 'control_export_tenant' c.slug %}" class="ctl-sub">
+</nav>
+<form method="post" action="{% url 'control_export_tenant' c.slug %}" class="ctl-export">
     {% csrf_token %}
-    <button type="submit" class="ctl-btn">Exportar datos del cliente</button>
-    <span class="ctl-muted">Zip con JSON y CSV: leads, notas, conversaciones, citas, conocimiento, horario, usuarios, encuestas y uso mensual (sin costos ni credenciales). Queda en la auditoría.</span>
+    <button type="submit" class="btn btn--sm">Exportar datos del cliente</button>
+    <p class="text-muted">Zip con JSON y CSV: leads, notas, conversaciones, citas, conocimiento, horario, usuarios, encuestas y uso mensual (sin costos ni credenciales). Queda en la auditoría.</p>
 </form>
 
-<section class="dash-stats">
-    <div class="dash-stat dash-stat--accent"><div class="dash-stat__num">{{ revenue|usd }}</div><div class="dash-stat__label">Ingreso mensual</div></div>
-    <div class="dash-stat"><div class="dash-stat__num">{{ month_cost|usd:4 }}</div><div class="dash-stat__label">Costo IA del mes en curso</div></div>
-    <div class="dash-stat"><div class="dash-stat__num{% if margin is not None and margin < 0 %} ctl-stat__num--neg{% endif %}">{{ margin|usd }}</div><div class="dash-stat__label">Margen del mes (ingreso − costo IA del mes)</div></div>
-    <div class="dash-stat"><div class="dash-stat__num">{{ vol_cost|usd:4 }}</div><div class="dash-stat__label">Costo IA · {{ period_label }}</div></div>
+<section class="kpi-grid">
+    <div class="kpi kpi--accent"><p class="kpi__label">Ingreso mensual</p><p class="kpi__value">{{ revenue|usd }}</p></div>
+    <div class="kpi"><p class="kpi__label">Costo IA del mes en curso</p><p class="kpi__value">{{ month_cost|usd:4 }}</p></div>
+    <div class="kpi"><p class="kpi__label">Margen del mes (ingreso − costo IA del mes)</p><p class="kpi__value{% if margin is not None and margin < 0 %}  ctl-neg{% endif %}">{{ margin|usd }}</p></div>
+    <div class="kpi"><p class="kpi__label">Costo IA · {{ period_label }}</p><p class="kpi__value">{{ vol_cost|usd:4 }}</p></div>
 </section>
-<section class="dash-stats">
-    <div class="dash-stat"><div class="dash-stat__num">{{ vol.messages|thousands }}</div><div class="dash-stat__label">Mensajes · {{ period_label }}</div></div>
-    <div class="dash-stat"><div class="dash-stat__num">{{ vol.conversations|thousands }}</div><div class="dash-stat__label">Conversaciones ({{ vol.escalated }} escaladas)</div></div>
-    <div class="dash-stat"><div class="dash-stat__num">{{ vol.leads|thousands }}</div><div class="dash-stat__label">Leads ({{ vol.chat_leads }} del chat) · {{ vol.bookings }} citas</div></div>
-    <div class="dash-stat"><div class="dash-stat__num">{% if vol.csat_avg %}{{ vol.csat_avg }}/5{% else %}—{% endif %}</div><div class="dash-stat__label">CSAT ({{ vol.csat_n }} votos)</div></div>
+<section class="kpi-grid">
+    <div class="kpi"><p class="kpi__label">Mensajes · {{ period_label }}</p><p class="kpi__value">{{ vol.messages|thousands }}</p></div>
+    <div class="kpi"><p class="kpi__label">Conversaciones ({{ vol.escalated }} escaladas)</p><p class="kpi__value">{{ vol.conversations|thousands }}</p></div>
+    <div class="kpi"><p class="kpi__label">Leads ({{ vol.chat_leads }} del chat) · {{ vol.bookings }} citas</p><p class="kpi__value">{{ vol.leads|thousands }}</p></div>
+    <div class="kpi"><p class="kpi__label">CSAT ({{ vol.csat_n }} votos)</p><p class="kpi__value">{% if vol.csat_avg %}{{ vol.csat_avg }}/5{% else %}—{% endif %}</p></div>
 </section>
 
-<div class="ctl-grid">
-    <div class="ctl-card">
-        <h2>Configuración y permisos</h2>
+<div class="grid grid--2 an-grid">
+    <div class="card">
+        <h2 class="card__title">Configuración y permisos</h2>
         <dl class="ctl-dl">
             <dt>Estado</dt><dd>{% if c.is_active %}Activo{% else %}Pausado{% endif %} · {{ c.get_setup_status_display }}{% if c.live_at %} desde {{ c.live_at|date:"j M Y" }}{% endif %}</dd>
             <dt>Widget</dt><dd><span class="ctl-dot ctl-dot--{{ heartbeat }}" aria-hidden="true"></span>{% if heartbeat == 'never' %}Nunca visto{% else %}Visto {{ c.widget_last_seen_at|date:"d M Y H:i" }}{% if heartbeat == 'stale' %} (hace más de 24 h){% endif %}{% endif %}</dd>
             <dt>Citas</dt><dd>{% if c.enable_bookings %}Sí{% else %}No{% endif %}</dd>
             <dt>Modo clínica</dt><dd>{% if c.clinic_mode %}Sí — sin texto libre en reportes{% else %}No{% endif %}</dd>
             <dt>Escalación a humano</dt><dd>Siempre activa</dd>
-            <dt>Orígenes permitidos</dt><dd>{% if origins %}{{ origins|join:", " }}{% else %}<span class="ctl-badge ctl-badge--warn">Sin restricción</span>{% endif %}</dd>
+            <dt>Orígenes permitidos</dt><dd>{% if origins %}{{ origins|join:", " }}{% else %}<span class="chip chip--warn">Sin restricción</span>{% endif %}</dd>
             <dt>Tope diario</dt><dd>{% if cap and cap.cap %}{{ cap.used }}/{{ cap.cap }} hoy ({{ cap.pct }}%){% else %}Sin tope{% endif %}</dd>
             <dt>Idioma</dt><dd>{{ c.get_primary_language_display }}</dd>
             <dt>Retención</dt><dd>{{ c.retention_months }} meses</dd>
@@ -57,19 +54,19 @@
             <dt>Creado</dt><dd>{{ c.created_at|date:"j M Y" }}</dd>
         </dl>
     </div>
-    <div class="ctl-card">
-        <h2>Suscripción</h2>
+    <div class="card">
+        <h2 class="card__title">Suscripción</h2>
         {% if sub %}
         <dl class="ctl-dl">
             <dt>Plan</dt><dd>{{ sub.get_plan_display }} · {{ sub.get_period_display }}</dd>
             <dt>Método</dt><dd>{{ sub.get_method_display }}</dd>
-            <dt>Estado</dt><dd><span class="ctl-badge {% if sub.status == 'active' %}ctl-badge--on{% elif sub.status == 'past_due' %}ctl-badge--warn{% elif sub.status == 'canceled' %}ctl-badge--off{% endif %}">{{ sub.get_status_display }}</span></dd>
+            <dt>Estado</dt><dd><span class="chip {% if sub.status == 'active' %}chip--ok{% elif sub.status == 'past_due' %}chip--warn{% elif sub.status == 'canceled' %}chip--danger{% else %}chip--neutral{% endif %}">{{ sub.get_status_display }}</span></dd>
             <dt>Renovación</dt><dd>{% if sub.current_period_end %}{{ sub.current_period_end|date:"j M Y" }}{% else %}—{% endif %}</dd>
             <dt>Precio mensual</dt><dd>{{ revenue|usd }}{% if sub.monthly_price_cents is not None %} (precio manual){% endif %} · <a href="{% url 'admin:landing_subscription_change' sub.pk %}">editar precio</a></dd>
             {% if allowance.unit == 'conversations' and allowance.included %}
             <dt>Escalón</dt><dd>{{ allowance.step }}</dd>
             <dt>Incluido / usado ({{ allowance.month_label }})</dt><dd>{{ allowance.used|thousands }} de {{ allowance.included|thousands }} conversaciones ({{ allowance.pct }}%) · proyección {{ allowance.projection|thousands }}{% if allowance.wa.included %}<br>WhatsApp: {{ allowance.wa.used|thousands }} de {{ allowance.wa.included|thousands }}{% endif %}{% if allowance.seats.included %}<br>Asientos: {{ allowance.seats.used }} de {{ allowance.seats.included }}{% endif %}</dd>
-            <dt>Exceso</dt><dd>{% if allowance.total_overage_cents %}<span class="ctl-badge ctl-badge--warn">{{ allowance.total_overage_price }}</span> · {{ allowance.overage_blocks }} bloque{{ allowance.overage_blocks|pluralize }} web de {{ allowance.block_size }} ({{ allowance.overage_price }}){% if allowance.wa.overage_blocks %} · {{ allowance.wa.overage_blocks }} bloque{{ allowance.wa.overage_blocks|pluralize }} WhatsApp ({{ allowance.wa.overage_price }}){% endif %}{% if allowance.seats.extra %} · {{ allowance.seats.extra }} asiento{{ allowance.seats.extra|pluralize }} extra{% endif %} — se factura el día 1 con <code>bill_overage</code>{% else %}Ninguno{% endif %}</dd>
+            <dt>Exceso</dt><dd>{% if allowance.total_overage_cents %}<span class="chip chip--warn">{{ allowance.total_overage_price }}</span> · {{ allowance.overage_blocks }} bloque{{ allowance.overage_blocks|pluralize }} web de {{ allowance.block_size }} ({{ allowance.overage_price }}){% if allowance.wa.overage_blocks %} · {{ allowance.wa.overage_blocks }} bloque{{ allowance.wa.overage_blocks|pluralize }} WhatsApp ({{ allowance.wa.overage_price }}){% endif %}{% if allowance.seats.extra %} · {{ allowance.seats.extra }} asiento{{ allowance.seats.extra|pluralize }} extra{% endif %} — se factura el día 1 con <code>bill_overage</code>{% else %}Ninguno{% endif %}</dd>
             {% else %}
             <dt>Conversaciones ({{ allowance.month_label }})</dt><dd>{{ allowance.all_conversations|thousands }} · plan por mensajes (tope diario), sin cobro por exceso</dd>
             {% endif %}
@@ -77,50 +74,50 @@
             {% if sub.order_number %}<dt>Orden</dt><dd>{{ sub.order_number }}</dd>{% endif %}
         </dl>
         {% else %}
-        <p class="ctl-muted">Sin suscripción (cliente creado a mano o el agente de DOMINIO).</p>
+        <p class="text-muted">Sin suscripción (cliente creado a mano o el agente de DOMINIO).</p>
         {% endif %}
-        <details class="ctl-plan" style="margin-top:14px">
-            <summary style="cursor:pointer;font-weight:600">{% if sub %}Cambiar plan o facturación{% else %}Asignar plan{% endif %}</summary>
-            <form method="post" action="{% url 'control_plan' c.slug %}" class="ctl-plan-form" style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px 12px;font-size:0.85rem">
+        <details class="ctl-plan">
+            <summary>{% if sub %}Cambiar plan o facturación{% else %}Asignar plan{% endif %}</summary>
+            <form method="post" action="{% url 'control_plan' c.slug %}" class="ctl-plan-form">
                 {% csrf_token %}
-                <label style="grid-column:span 2">Plan<br><select name="plan" style="width:100%">{% for id, name in plan_choices %}<option value="{{ id }}" {% if sub and sub.plan == id %}selected{% endif %}>{{ name }} ({{ id }})</option>{% endfor %}</select></label>
-                <label>Escalón<br><select name="step">{% for n in '123' %}<option value="{{ n }}" {% if sub and sub.step|stringformat:"s" == n %}selected{% endif %}>{{ n }}</option>{% endfor %}</select></label>
-                <label>Período<br><select name="period">{% for id, name in period_choices %}<option value="{{ id }}" {% if sub and sub.period == id %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
-                <label>Método<br><select name="method">{% for id, name in method_choices %}<option value="{{ id }}" {% if sub and sub.method == id %}selected{% elif not sub and id == 'manual' %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
-                <label>Estado<br><select name="status">{% for id, name in status_choices %}<option value="{{ id }}" {% if sub and sub.status == id %}selected{% elif not sub and id == 'active' %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
-                <label>Precio manual (USD/mes)<br><input type="number" name="monthly_price" step="0.01" min="0" placeholder="tabla de precios" value="{% if sub and sub.monthly_price_cents is not None %}{{ manual_price }}{% endif %}"></label>
-                <label>Vence (ATH/manual)<br><input type="date" name="current_period_end" value="{% if sub and sub.current_period_end %}{{ sub.current_period_end|date:'Y-m-d' }}{% endif %}"></label>
-                <label style="grid-column:1/-1">Nota (auditoría)<br><input type="text" name="note" maxlength="200" placeholder="p. ej. precio de fundador, 3 meses" style="width:100%"></label>
-                <div style="grid-column:1/-1"><button class="save-btn save-btn--sm" type="submit">Guardar plan</button>
-                <span class="ctl-muted" style="margin-left:8px">Al cambiar plan o escalón se recalculan el tope diario y las citas. Un cambio a mitad de mes manda el exceso de ese mes a revisión manual.</span></div>
+                <div class="field span-2"><label for="cp-plan">Plan</label><select class="select" id="cp-plan" name="plan">{% for id, name in plan_choices %}<option value="{{ id }}" {% if sub and sub.plan == id %}selected{% endif %}>{{ name }} ({{ id }})</option>{% endfor %}</select></div>
+                <div class="field"><label for="cp-step">Escalón</label><select class="select" id="cp-step" name="step">{% for n in '123' %}<option value="{{ n }}" {% if sub and sub.step|stringformat:"s" == n %}selected{% endif %}>{{ n }}</option>{% endfor %}</select></div>
+                <div class="field"><label for="cp-period">Período</label><select class="select" id="cp-period" name="period">{% for id, name in period_choices %}<option value="{{ id }}" {% if sub and sub.period == id %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+                <div class="field"><label for="cp-method">Método</label><select class="select" id="cp-method" name="method">{% for id, name in method_choices %}<option value="{{ id }}" {% if sub and sub.method == id %}selected{% elif not sub and id == 'manual' %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+                <div class="field"><label for="cp-status">Estado</label><select class="select" id="cp-status" name="status">{% for id, name in status_choices %}<option value="{{ id }}" {% if sub and sub.status == id %}selected{% elif not sub and id == 'active' %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+                <div class="field"><label for="cp-price">Precio manual (USD/mes)</label><input class="input" id="cp-price" type="number" name="monthly_price" step="0.01" min="0" placeholder="tabla de precios" value="{% if sub and sub.monthly_price_cents is not None %}{{ manual_price }}{% endif %}"></div>
+                <div class="field"><label for="cp-end">Vence (ATH/manual)</label><input class="input" id="cp-end" type="date" name="current_period_end" value="{% if sub and sub.current_period_end %}{{ sub.current_period_end|date:'Y-m-d' }}{% endif %}"></div>
+                <div class="field span-all"><label for="cp-note">Nota (auditoría)</label><input class="input" id="cp-note" type="text" name="note" maxlength="200" placeholder="p. ej. precio de fundador, 3 meses"></div>
+                <div class="span-all ctl-plan-actions"><button class="btn btn--primary btn--sm" type="submit">Guardar plan</button>
+                <span class="text-muted">Al cambiar plan o escalón se recalculan el tope diario y las citas. Un cambio a mitad de mes manda el exceso de ese mes a revisión manual.</span></div>
             </form>
-            <table class="dash-table" style="margin-top:10px;font-size:0.8rem">
+            <div class="table-scroll ctl-plan-table"><table class="data-table data-table--compact">
                 <thead><tr><th>Plan</th><th>Escalón</th><th>Mensual</th><th>Incluye</th><th>Tope diario</th></tr></thead>
                 <tbody>{% for p in plan_options %}{% for st in p.steps %}<tr>{% if forloop.first %}<td rowspan="{{ p.steps|length }}">{{ p.name }} <code>{{ p.id }}</code></td>{% endif %}<td>{{ st.n }}</td><td>{% if st.monthly %}${{ st.monthly }}{% else %}—{% endif %}</td><td>{% if st.conversations %}{{ st.conversations|thousands }} conv/mes{% if st.wa %} · {{ st.wa|thousands }} WhatsApp{% endif %}{% if st.seats %} · {{ st.seats }} asientos{% endif %}{% else %}por mensajes/día{% endif %}</td><td>{{ st.daily_cap|thousands }}</td></tr>{% endfor %}{% endfor %}</tbody>
-            </table>
+            </table></div>
         </details>
-        <h2 style="margin-top:18px;">Usuarios</h2>
+        <h2 class="card__title ctl-h2">Usuarios</h2>
         {% if members %}
         <ul class="ctl-list">
-            {% for m in members %}<li>{{ m.user.username }} <span class="ctl-badge">{{ m.get_role_display }}</span>{% if m.must_change_password %}<span class="ctl-badge ctl-badge--warn">Sin activar</span>{% endif %}</li>{% endfor %}
+            {% for m in members %}<li>{{ m.user.username }} <span class="chip chip--neutral">{{ m.get_role_display }}</span>{% if m.must_change_password %}<span class="chip chip--warn">Sin activar</span>{% endif %}</li>{% endfor %}
         </ul>
-        {% else %}<p class="ctl-muted">Sin usuarios.</p>{% endif %}
+        {% else %}<p class="text-muted">Sin usuarios.</p>{% endif %}
     </div>
 </div>
 
-<div class="ctl-card">
-    <h2>Mensajes por día — últimos 30 días ({{ daily_total|thousands }})</h2>
+<div class="card">
+    <h2 class="card__title">Mensajes por día — últimos 30 días ({{ daily_total|thousands }})</h2>
     <svg class="ctl-chart" viewBox="0 0 600 120" role="img" aria-label="Mensajes del chat por día, últimos 30 días">
         <line x1="0" y1="119.5" x2="600" y2="119.5"></line>
         {% for b in daily_bars %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}"><title>{{ b.day|date:"j M" }}: {{ b.value }} mensajes</title></rect>{% endfor %}
     </svg>
-    {% if daily_bars %}{% with last=daily_bars|last %}<p class="ctl-muted">{{ daily_bars.0.day|date:"j M" }} – {{ last.day|date:"j M" }}</p>{% endwith %}{% endif %}
+    {% if daily_bars %}{% with last=daily_bars|last %}<p class="text-muted">{{ daily_bars.0.day|date:"j M" }} – {{ last.day|date:"j M" }}</p>{% endwith %}{% endif %}
 </div>
 
-<div class="ctl-card">
-    <h2>Uso por mes (12 meses, por tipo)</h2>
-    <div class="ctl-scroll" style="border:none;margin:0;">
-    <table class="ctl-table">
+<div class="card">
+    <h2 class="card__title">Uso por mes (12 meses, por tipo)</h2>
+    <div class="table-scroll">
+    <table class="data-table data-table--compact">
         <thead><tr>
             <th scope="col">Mes</th>
             {% for key, label in kinds %}<th scope="col" class="num">{{ label }}</th>{% endfor %}
@@ -135,52 +132,52 @@
             {% for k in m.kind_list %}<td class="num">{% if k %}{{ k.events|thousands }}<br><span class="ctl-muted">{{ k.cost|usd:4 }}</span>{% else %}<span class="ctl-muted">0</span>{% endif %}</td>{% endfor %}
             <td class="num">{{ m.tokens|thousands }}<br><span class="ctl-muted">{{ m.input|thousands }} / {{ m.output|thousands }} / {{ m.cache_read|add:m.cache_write|thousands }}</span></td>
             <td class="num">{{ m.cost4|usd:4 }}</td>
-            <td style="min-width:90px;"><span class="ctl-hbar__track" style="display:block;"><span class="ctl-hbar__fill" style="width:{{ m.pct }}%"></span></span></td>
+            <td><span class="hbar__track ctl-bar"><span class="hbar__fill" style="width:{{ m.pct }}%"></span></span></td>
         </tr>
         {% endfor %}
         </tbody>
     </table>
     </div>
-    <p class="ctl-muted">Cada celda: llamadas IA y su costo. "Chat" = mensajes del widget.</p>
+    <p class="text-muted">Cada celda: llamadas IA y su costo. "Chat" = mensajes del widget.</p>
 </div>
 
-<div class="ctl-grid">
-    <div class="ctl-card">
-        <h2>Intención · {{ period_label }}</h2>
+<div class="grid grid--2 an-grid">
+    <div class="card">
+        <h2 class="card__title">Intención · {{ period_label }}</h2>
         {% for i in intents %}
-        <div class="ctl-hbar"><span>{{ i.label }}</span><span class="ctl-hbar__track"><span class="ctl-hbar__fill" style="width:{{ i.pct }}%"></span></span><span class="num">{{ i.n }}</span></div>
-        {% empty %}<p class="ctl-muted">Sin conversaciones etiquetadas en este periodo (el etiquetado corre cada noche).</p>{% endfor %}
+        <div class="hbar"><span class="hbar__label">{{ i.label }}</span><span class="hbar__track"><span class="hbar__fill" style="width:{{ i.pct }}%"></span></span><span class="hbar__value">{{ i.n }}</span></div>
+        {% empty %}<p class="text-muted">Sin conversaciones etiquetadas en este periodo (el etiquetado corre cada noche).</p>{% endfor %}
     </div>
-    <div class="ctl-card">
-        <h2>Temas más frecuentes · {{ period_label }}</h2>
-        {% if c.clinic_mode %}<p class="ctl-muted">Modo clínica: no se guardan temas en texto libre.</p>{% else %}
+    <div class="card">
+        <h2 class="card__title">Temas más frecuentes · {{ period_label }}</h2>
+        {% if c.clinic_mode %}<p class="text-muted">Modo clínica: no se guardan temas en texto libre.</p>{% else %}
         {% for t in topics %}
-        <div class="ctl-hbar"><span>{{ t.topic }}</span><span class="ctl-hbar__track"><span class="ctl-hbar__fill" style="width:{{ t.pct }}%"></span></span><span class="num">{{ t.n }}</span></div>
-        {% empty %}<p class="ctl-muted">Sin temas todavía.</p>{% endfor %}
+        <div class="hbar"><span class="hbar__label">{{ t.topic }}</span><span class="hbar__track"><span class="hbar__fill" style="width:{{ t.pct }}%"></span></span><span class="hbar__value">{{ t.n }}</span></div>
+        {% empty %}<p class="text-muted">Sin temas todavía.</p>{% endfor %}
         {% endif %}
     </div>
 </div>
 
 {% if not c.clinic_mode %}
-<div class="ctl-card">
-    <h2>Últimas primeras preguntas</h2>
+<div class="card">
+    <h2 class="card__title">Últimas primeras preguntas</h2>
     {% if questions %}
     <ul class="ctl-list">
         {% for q in questions %}<li><a href="{% url 'conversation_detail' q.pk %}">{{ q.first_question }}</a> <span class="ctl-muted">· {{ q.started_at|date:"d M H:i" }}{% if q.intent %} · {{ q.intent }}{% endif %}</span></li>{% endfor %}
     </ul>
-    {% else %}<p class="ctl-muted">Sin preguntas registradas.</p>{% endif %}
+    {% else %}<p class="text-muted">Sin preguntas registradas.</p>{% endif %}
 </div>
 {% endif %}
 
-<div class="ctl-card">
-    <h2>Auditoría reciente</h2>
+<div class="card">
+    <h2 class="card__title">Auditoría reciente</h2>
     {% if audits %}
-    <div class="ctl-scroll" style="border:none;margin:0;">
-    <table class="ctl-table">
+    <div class="table-scroll">
+    <table class="data-table data-table--compact">
         <thead><tr><th scope="col">Fecha</th><th scope="col">Acción</th><th scope="col">Usuario</th><th scope="col">Objeto</th><th scope="col">Resultado</th></tr></thead>
         <tbody>{% for a in audits %}<tr><td class="nowrap">{{ a.created_at|date:"d M Y H:i" }}</td><td>{{ a.action }}</td><td>{{ a.user.username|default:"—" }}</td><td>{{ a.target|truncatechars:60 }}</td><td>{{ a.result|truncatechars:60 }}</td></tr>{% endfor %}</tbody>
     </table>
     </div>
-    {% else %}<p class="ctl-muted">Sin eventos.</p>{% endif %}
+    {% else %}<p class="text-muted">Sin eventos.</p>{% endif %}
 </div>
 {% endblock %}

@@ -1,0 +1,5 @@
+{% comment %}Chip. Params: text; optional: variant (ok|warn|danger|info|neutral|accent), dot (any value),
+href (makes it a filter link), active (any value, pressed state), count.
+Usage: {% include 'landing/_dash_chip.html' with text='Confirmada' variant='ok' dot=1 %}
+       {% include 'landing/_dash_chip.html' with text='WhatsApp' href='?channel=whatsapp' active=cur_channel count=n %}{% endcomment %}
+{% if href %}<a class="chip{% if active %} is-active{% endif %}" href="{{ href }}"{% if active %} aria-current="true"{% endif %}>{{ text }}{% if count is not None and count != '' %} <span class="chip__count">{{ count }}</span>{% endif %}</a>{% else %}<span class="chip{% if variant %} chip--{{ variant }}{% endif %}">{% if dot %}<span class="chip__dot" aria-hidden="true"></span>{% endif %}{{ text }}</span>{% endif %}

@@ -1,0 +1,5 @@
+{% load landing_extras %}{% comment %}One follow-up row of the home. Context: lead (ContactSubmission with follow_up_at, assigned_to).{% endcomment %}
+<li><a class="fu-item" href="{% url 'lead_detail' lead.pk %}">
+    <span class="fu-item__main"><span class="fu-item__name">{{ lead.name }}</span><span class="fu-item__meta">{{ status_labels|dict_get:lead.status }}{% if lead.assigned_to %} · {{ lead.assigned_to.get_full_name|default:lead.assigned_to.username }}{% endif %}</span></span>
+    <span class="fu-item__when">{{ lead.follow_up_at|fecha_es:'diahora' }}</span>
+</a></li>

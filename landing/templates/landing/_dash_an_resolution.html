@@ -1,0 +1,17 @@
+{% comment %}Resolution rate of the conversations the team closed. Context: resolution (analytics.resolution_rate), period_label.{% endcomment %}
+<section class="card" aria-labelledby="an-res-t">
+    <div class="card__head">
+        <div>
+            <h2 class="card__title" id="an-res-t">Tasa de resolución</h2>
+            <p class="card__sub">De las conversaciones que tu equipo cerró · {{ period_label }}</p>
+        </div>
+    </div>
+    {% if resolution.pct is None %}
+    {% url 'conversations' as conversations_url %}
+    {% include 'landing/_dash_empty_state.html' with inline=1 icon='check' title='Todavía no hay conversaciones cerradas' text='Marca cada conversación como resuelta o sin resolver en Conversaciones y aquí verás qué tan bien responde el agente.' action_href=conversations_url action_label='Ir a Conversaciones' %}
+    {% else %}
+    <p class="an-score"><span class="an-score__n">{{ resolution.pct }} %</span><span class="an-score__of">resueltas</span></p>
+    <span class="progress progress--block" role="progressbar" aria-labelledby="an-res-t" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ resolution.pct }}"><span style="width:{{ resolution.pct }}%"></span></span>
+    <p class="card__sub an-note">{{ resolution.resolved }} resuelta{{ resolution.resolved|pluralize }} y {{ resolution.unresolved }} sin resolver, de {{ resolution.closed }} cerrada{{ resolution.closed|pluralize }}.</p>
+    {% endif %}
+</section>

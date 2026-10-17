@@ -433,12 +433,23 @@ def notify_booking(booking, kind, business):
 # Inbound: session, parsing
 # ------------------------------------------------------------------
 
-def resolve_conversation(client, chash, now=None):
+def contact_label(wa_id):
+    """How the inbox names a WhatsApp contact that has no lead yet: the last
+    four digits only ("WhatsApp · termina en 1234"), never the number. '' when
+    the id is too short to be a phone number."""
+    digits = ''.join(ch for ch in str(wa_id or '') if ch.isdigit())
+    if len(digits) < 4:
+        return ''
+    return f'WhatsApp · termina en {digits[-4:]}'
+
+
+def resolve_conversation(client, chash, now=None, wa_id=''):
     """The Conversation this message belongs to: the contact's latest one
     when it is still inside SESSION_WINDOW of inactivity AND started in the
     current Puerto Rico month; otherwise a new row keyed
     'wa:{hash}:{YYYYMMDD}' (today's). So one conversation = one 24 h
-    window, never crossing a month, never one per contact for life."""
+    window, never crossing a month, never one per contact for life.
+    `wa_id` (when given) only feeds contact_label on a NEW row."""
     now = now or timezone.now()
     prefix = f'wa:{chash}:'
     last = (Conversation.objects
@@ -450,7 +461,8 @@ def resolve_conversation(client, chash, now=None):
         return last
     conversation, _created = Conversation.objects.get_or_create(
         client=client, channel='whatsapp', external_id=f'{prefix}{_day(now)}',
-        defaults={'config_version': client.config_version()})
+        defaults={'config_version': client.config_version(),
+                  'contact_label': contact_label(wa_id)})
     return conversation
 
 
@@ -667,7 +679,7 @@ def _process(request, account, client, wa_id, chash, wamid, message):
             send_text(account, wa_id, _t(client, 'busy'))
         return 'global_cap'
 
-    conversation = resolve_conversation(client, chash)
+    conversation = resolve_conversation(client, chash, wa_id=wa_id)
     handlers, profile = views.build_handlers(
         request, client, conversation, actor_key=f'wa:{chash}', channel='whatsapp',
         contact=wa_id)

@@ -112,7 +112,7 @@ ROOT_URLCONF = 'dominio_website.urls'
 
 # Auth redirects for the custom dashboard (not Django admin).
 LOGIN_URL = 'login'
-LOGIN_REDIRECT_URL = 'dashboard'
+LOGIN_REDIRECT_URL = 'home'
 LOGOUT_REDIRECT_URL = 'login'
 
 # ============================================================

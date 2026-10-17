@@ -5,7 +5,7 @@ import re
 import secrets
 from decimal import Decimal, ROUND_HALF_UP
 from functools import wraps
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import anthropic
 from django.conf import settings
@@ -21,7 +21,9 @@ from django.core.mail import EmailMultiAlternatives
 from django.core.validators import URLValidator, validate_email
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
-from django.http import Http404, HttpResponse, HttpResponseForbidden, JsonResponse
+from django.http import (
+    Http404, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse,
+)
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse, reverse_lazy
@@ -36,17 +38,18 @@ from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from . import agent, entitlements, human, notify, payments
+from . import agent, analytics, entitlements, human, notify, payments
 from . import leads as lead_service
 from . import usage as usage_ledger
 from .emailcheck import check_email
 from .forms import ContactForm, LeadNoteForm
 from .models import (
     AuditEvent, Booking, Client, ContactSubmission, Conversation,
-    LeadNote, Membership, ProcessedWebhookEvent, Subscription, Survey,
+    LeadNote, LeadTag, Membership, ProcessedWebhookEvent, Subscription, Survey,
     fold_text, match_location, route_contact, rules_for,
 )
 from .phone import normalize_phone
+from .templatetags.landing_extras import ago
 # Bound of a single visitor message (shared with the channel-agnostic turn
 # core so a message is trimmed the same way whichever channel it enters by).
 from .turns import MAX_MESSAGE_CHARS, run_turn
@@ -648,7 +651,7 @@ def index(request):
 
 
 def _chat_lead_handler(request, client_obj=None, page_url='', conversation=None, *,
-                       actor_key=None):
+                       actor_key=None, channel='web'):
     """Build the callback the agent invokes when it captures a lead in chat.
 
     Saves a ContactSubmission linked to `client_obj` and emails that client's
@@ -664,6 +667,9 @@ def _chat_lead_handler(request, client_obj=None, page_url='', conversation=None,
     notify_to = client_obj.notify_email if client_obj else None
     business_name = client_obj.name if client_obj else 'DOMINIO'
     clinic = bool(client_obj and client_obj.clinic_mode)
+    # CRM: a lead captured over WhatsApp is filed under its own source so the
+    # dashboard can split the pipeline by channel.
+    source = 'whatsapp' if channel == 'whatsapp' else 'chat'
 
     def handle(data):
         name = (data.get('name') or '').strip()[:120]
@@ -723,7 +729,7 @@ def _chat_lead_handler(request, client_obj=None, page_url='', conversation=None,
             company=(data.get('company') or '').strip()[:160],
             service=service,
             message=message,
-            source='chat',
+            source=source,
             ip_address=ip if ip != 'unknown' else None,
             user_agent=request.META.get('HTTP_USER_AGENT', '')[:300],
             page_url=page_url,
@@ -749,7 +755,7 @@ def _chat_lead_handler(request, client_obj=None, page_url='', conversation=None,
 
 
 def _human_handler(request, client_obj=None, conversation=None, page_url='', *,
-                   actor_key=None):
+                   actor_key=None, channel='web'):
     """M-16: the request_human tool. Marks the conversation escalated with the
     reason, saves whatever contact the visitor gave as a lead, and alerts the
     team with the transcript context. Never promises a live chat."""
@@ -793,7 +799,8 @@ def _human_handler(request, client_obj=None, conversation=None, page_url='', *,
         if name and (email or phone):
             lead = ContactSubmission.objects.create(
                 client=client_obj, name=name, email=email, phone=phone,
-                service='ai-automation', source='chat',
+                service='ai-automation',
+                source='whatsapp' if channel == 'whatsapp' else 'chat',
                 message=f'[Escalado a humano por el chat] {reason}'[:5000],
                 ip_address=ip if ip != 'unknown' else None,
                 user_agent=request.META.get('HTTP_USER_AGENT', '')[:300],
@@ -1157,10 +1164,12 @@ def build_handlers(request, client_obj, conversation, page_url='', *, actor_key=
         profile = 'receptionist'
     else:
         handlers = {'capture_lead': _chat_lead_handler(
-            request, client_obj, page_url=page_url, conversation=conversation, **common)}
+            request, client_obj, page_url=page_url, conversation=conversation,
+            channel=channel, **common)}
         if client_obj is not None:
             handlers['request_human'] = _human_handler(
-                request, client_obj, conversation=conversation, page_url=page_url, **common)
+                request, client_obj, conversation=conversation, page_url=page_url,
+                channel=channel, **common)
         profile = 'web'
     if client_obj and client_obj.enable_bookings:
         handlers['create_booking'] = _booking_handler(
@@ -2623,74 +2632,556 @@ def lead_confirm(request, token):
 # DASHBOARD — branded internal backend to view & manage leads
 # ============================================================
 
+# Leads CRM: querystring filters the list and the kanban share, the column
+# size of the board, and the follow-up buckets.
+LEAD_CHANNEL_CHOICES = [('web', 'Web'), ('whatsapp', 'WhatsApp')]
+LEAD_FOLLOW_UP_CHOICES = [('overdue', 'Vencidos'), ('today', 'Hoy'),
+                          ('week', 'Esta semana'), ('none', 'Sin seguimiento')]
+LEAD_BOARD_LIMIT = 20
+LEAD_LIST_LIMIT = 300
+# Spanish labels for ContactSubmission.source in the CRM pages.
+LEAD_SOURCE_LABELS_ES = {
+    'contact_form': 'Formulario web', 'chat': 'Chat AI', 'signup': 'Registro de agente',
+    'message': 'Mensaje del chat', 'whatsapp': 'WhatsApp',
+}
+
+
+def _int_or_none(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _wants_json(request):
+    """JSON for the kanban (drag and drop) and any fetch() caller: explicit
+    ?format=json or an Accept header asking for it. Forms keep redirecting."""
+    if request.GET.get('format') == 'json':
+        return True
+    return 'application/json' in (request.headers.get('Accept') or '')
+
+
+def _back(request, default_name='dashboard', **kwargs):
+    """Redirect to the referring page when it is ours (no open redirect),
+    else to `default_name`."""
+    ref = request.META.get('HTTP_REFERER', '')
+    if not url_has_allowed_host_and_scheme(ref, allowed_hosts={request.get_host()},
+                                           require_https=request.is_secure()):
+        ref = reverse(default_name, kwargs=kwargs or None)
+    return redirect(ref)
+
+
+def _pr_day_bounds(day=None):
+    """[start, end) aware datetimes of one Puerto Rico calendar day."""
+    from datetime import datetime, timedelta
+    tz = analytics.BUSINESS_TZ
+    day = day or timezone.localtime(timezone.now(), tz).date()
+    start = datetime(day.year, day.month, day.day, tzinfo=tz)
+    return start, start + timedelta(days=1)
+
+
+def _lead_filters(request, scoped):
+    """Apply the leads querystring to `scoped` (already tenant-scoped).
+    Returns (qs_without_status, filters) so the board can count every column
+    with the other filters applied and the list adds the status on top."""
+    from datetime import timedelta
+    g = request.GET
+    f = {
+        'client': (g.get('client') or '').strip()[:60],
+        'channel': g.get('channel', ''),
+        'source': g.get('source', ''),
+        'status': g.get('status', ''),
+        'assigned': (g.get('assigned') or '').strip()[:12],
+        'tag': g.get('tag', ''),
+        'follow_up': g.get('follow_up', ''),
+        'unconfirmed': g.get('unconfirmed', '') == '1',
+        'stale': g.get('stale', '') == '1',
+        'q': (g.get('q') or '').strip(),
+    }
+    qs = scoped
+    if f['client']:
+        # Scoped first: a foreign slug filters to nothing, never widens.
+        qs = qs.filter(client__slug=f['client'])
+    if f['channel'] == 'whatsapp':
+        qs = qs.filter(source='whatsapp')
+    elif f['channel'] == 'web':
+        qs = qs.exclude(source='whatsapp')
+    else:
+        f['channel'] = ''
+    if f['source'] in dict(ContactSubmission.SOURCE_CHOICES):
+        qs = qs.filter(source=f['source'])
+    else:
+        f['source'] = ''
+    if f['status'] not in dict(ContactSubmission.STATUS_CHOICES):
+        f['status'] = ''
+    if f['assigned'] == 'me':
+        qs = qs.filter(assigned_to=request.user)
+    elif f['assigned'] == 'none':
+        qs = qs.filter(assigned_to__isnull=True)
+    elif _int_or_none(f['assigned']) is not None:
+        qs = qs.filter(assigned_to_id=int(f['assigned']))
+    else:
+        f['assigned'] = ''
+    tag_id = _int_or_none(f['tag'])
+    if tag_id is not None:
+        qs = qs.filter(tags__id=tag_id)
+    else:
+        f['tag'] = ''
+    day_start, day_end = _pr_day_bounds()
+    open_fu = Q(follow_up_at__isnull=False, follow_up_done_at__isnull=True)
+    if f['follow_up'] == 'overdue':
+        qs = qs.filter(open_fu, follow_up_at__lt=day_start)
+    elif f['follow_up'] == 'today':
+        qs = qs.filter(open_fu, follow_up_at__gte=day_start, follow_up_at__lt=day_end)
+    elif f['follow_up'] == 'week':
+        qs = qs.filter(open_fu, follow_up_at__gte=day_start,
+                       follow_up_at__lt=day_start + timedelta(days=7))
+    elif f['follow_up'] == 'none':
+        qs = qs.filter(Q(follow_up_at__isnull=True) | Q(follow_up_done_at__isnull=False))
+    else:
+        f['follow_up'] = ''
+    if f['unconfirmed']:
+        qs = qs.exclude(email='').filter(email_verified_at__isnull=True)
+    if f['stale']:
+        qs = qs.filter(status='new',
+                       created_at__lt=timezone.now() - timedelta(hours=analytics.STALE_NEW_HOURS))
+    if f['q']:
+        qs = qs.filter(
+            Q(name__icontains=f['q'])
+            | Q(email__icontains=f['q'])
+            | Q(phone__icontains=f['q'])
+            | Q(company__icontains=f['q'])
+            | Q(message__icontains=f['q'])
+        )
+    f['active'] = any(v for k, v in f.items() if k != 'client')
+    return qs, f
+
+
+def _status_counts(qs):
+    """{status: n} over `qs`, every pipeline status present. One query."""
+    rows = dict(qs.order_by().values('status').annotate(n=Count('id')).values_list('status', 'n'))
+    return {key: rows.get(key, 0) for key in ContactSubmission.STATUS_ORDER}
+
+
+def _lead_members(client):
+    """Users a lead of `client` may be assigned to (org_admin/agent, active),
+    by username. [] for a lead with no client. One query."""
+    if client is None:
+        return []
+    return list(get_user_model().objects
+                .filter(is_active=True, memberships__client=client,
+                        memberships__role__in=Membership.DASHBOARD_ROLES)
+                .order_by('username').distinct())
+
+
+def _follow_up_info(lead):
+    """What the card and the form need about the lead's follow-up: {'at',
+    'done_at', 'open', 'overdue', 'today', 'local', 'date', 'time'}."""
+    tz = analytics.BUSINESS_TZ
+    at = lead.follow_up_at
+    local = timezone.localtime(at, tz) if at else None
+    day_start, day_end = _pr_day_bounds()
+    is_open = lead.follow_up_open
+    return {
+        'at': at, 'done_at': lead.follow_up_done_at, 'open': is_open,
+        'overdue': bool(is_open and at < day_start),
+        'today': bool(is_open and day_start <= at < day_end),
+        'local': local,
+        'date': local.strftime('%Y-%m-%d') if local else '',
+        'time': local.strftime('%H:%M') if local else '09:00',
+    }
+
+
+def _stepper(lead):
+    """Pipeline stages in order with done/current flags for the lead card.
+    A lost lead keeps its earlier stages done and 'won' untouched."""
+    order = ContactSubmission.STATUS_ORDER
+    idx = order.index(lead.status) if lead.status in order else 0
+    out = []
+    for i, key in enumerate(order):
+        done = i < idx and not (lead.status == 'lost' and key == 'won')
+        out.append({'key': key, 'label': ContactSubmission.STATUS_LABELS_ES[key],
+                    'index': i + 1, 'done': done, 'current': key == lead.status})
+    return out
+
+
+def _filter_href(request, **changes):
+    """The current querystring with `changes` applied ('' or None removes a
+    key) and the page number dropped: the href of a filter chip or a view
+    toggle. '?' alone (no params) resolves to the same path."""
+    params = request.GET.copy()
+    params.pop('page', None)
+    for key, value in changes.items():
+        if value in (None, ''):
+            params.pop(key, None)
+        else:
+            params[key] = value
+    query = params.urlencode()
+    return '?' + query if query else '?'
+
+
+def _filter_href_only(request, keep):
+    """Only the params in `keep` of the current querystring (the "Limpiar" link)."""
+    params = {k: request.GET[k] for k in keep if request.GET.get(k)}
+    return '?' + urlencode(params) if params else '?'
+
+
+def _lead_filter_groups(request, scoped, filters, show_assign, tags_all):
+    """Chip groups for the leads toolbar, each chip with its count and an
+    href that toggles it. Counts are over the tenant scope (plus the client
+    filter), NOT the other chips, so a chip says how many leads of that kind
+    exist. Two queries (one aggregate, one tag count)."""
+    from datetime import timedelta
+    base = scoped.filter(client__slug=filters['client']) if filters['client'] else scoped
+    day_start, day_end = _pr_day_bounds()
+    open_fu = Q(follow_up_at__isnull=False, follow_up_done_at__isnull=True)
+    agg = {
+        'web': Count('pk', filter=~Q(source='whatsapp')),
+        'whatsapp': Count('pk', filter=Q(source='whatsapp')),
+        'me': Count('pk', filter=Q(assigned_to=request.user)),
+        'none': Count('pk', filter=Q(assigned_to__isnull=True)),
+        'overdue': Count('pk', filter=open_fu & Q(follow_up_at__lt=day_start)),
+        'today': Count('pk', filter=open_fu & Q(follow_up_at__gte=day_start,
+                                                follow_up_at__lt=day_end)),
+        'week': Count('pk', filter=open_fu & Q(follow_up_at__gte=day_start,
+                                               follow_up_at__lt=day_start + timedelta(days=7))),
+        'unconfirmed': Count('pk', filter=~Q(email='') & Q(email_verified_at__isnull=True)),
+        'stale': Count('pk', filter=Q(status='new', created_at__lt=timezone.now()
+                                      - timedelta(hours=analytics.STALE_NEW_HOURS))),
+    }
+    for key, _label in ContactSubmission.SOURCE_CHOICES:
+        agg[f'src_{key}'] = Count('pk', filter=Q(source=key))
+    n = base.order_by().aggregate(**agg)
+
+    def chip(param, value, label, count):
+        current = filters.get(param)
+        active = current is True if value == '1' else current == value
+        return {'label': label, 'count': count, 'active': active,
+                'href': _filter_href(request, **{param: '' if active else value})}
+
+    groups = [{'key': 'channel', 'label': 'Canal', 'chips': [
+        chip('channel', 'web', 'Web', n['web']),
+        chip('channel', 'whatsapp', 'WhatsApp', n['whatsapp'])]}]
+    sources = [chip('source', key, LEAD_SOURCE_LABELS_ES.get(key, label), n[f'src_{key}'])
+               for key, label in ContactSubmission.SOURCE_CHOICES
+               if key != 'whatsapp' and (n[f'src_{key}'] or filters['source'] == key)]
+    if len(sources) > 1 or any(c['active'] for c in sources):
+        groups.append({'key': 'source', 'label': 'Fuente', 'chips': sources})
+    if show_assign:
+        groups.append({'key': 'assigned', 'label': 'Asignado', 'chips': [
+            chip('assigned', 'me', 'Míos', n['me']),
+            chip('assigned', 'none', 'Sin asignar', n['none'])]})
+    groups.append({'key': 'follow_up', 'label': 'Seguimiento', 'chips': [
+        chip('follow_up', 'overdue', 'Vencido', n['overdue']),
+        chip('follow_up', 'today', 'Hoy', n['today']),
+        chip('follow_up', 'week', 'Esta semana', n['week'])]})
+    groups.append({'key': 'other', 'label': 'Otros', 'chips': [
+        chip('unconfirmed', '1', 'Correo sin confirmar', n['unconfirmed']),
+        chip('stale', '1', 'Nuevos sin atender (más de 24 h)', n['stale'])]})
+    if tags_all:
+        tag_counts = dict(base.filter(tags__isnull=False).order_by()
+                          .values_list('tags').annotate(n=Count('pk')))
+        groups.append({'key': 'tag', 'label': 'Etiquetas', 'chips': [
+            chip('tag', str(tag.pk), tag.name, tag_counts.get(tag.pk, 0))
+            for tag in tags_all]})
+    return groups
+
+
 @login_required
 def dashboard(request):
-    """Branded leads dashboard: stats + filterable, searchable table.
+    """Leads CRM: kanban (?view=board, default) or table (?view=list) over
+    the same scoped, filtered queryset. Scoped per tenant: a client sees
+    only their own leads, DOMINIO staff see all. (The temp-password gate for
+    every /dashboard/ page lives in landing.middleware.)
 
-    Scoped per tenant: a client sees only their own leads, DOMINIO staff see all.
-    (The temp-password gate for every /dashboard/ page lives in
-    landing.middleware.TempPasswordGateMiddleware.)
+    Filters: client (slug within scope), channel (web|whatsapp), source,
+    status, assigned (me|none|<user pk>), tag (<pk>), follow_up
+    (overdue|today|week|none), unconfirmed=1, stale=1 (new > 24 h), q.
     """
+    from django.db.models import prefetch_related_objects
+    from .platform_views import clients_for, conversations_for  # late: platform_views imports us
     scoped = leads_for(request.user)
-    qs = scoped
+    base_qs, filters = _lead_filters(request, scoped)
+    qs = base_qs.filter(status=filters['status']) if filters['status'] else base_qs
+    view = 'list' if request.GET.get('view') == 'list' else 'board'
 
-    # Filters (from querystring)
-    source = request.GET.get('source', '')
-    status = request.GET.get('status', '')
-    q = request.GET.get('q', '').strip()
-
-    if source in dict(ContactSubmission.SOURCE_CHOICES):
-        qs = qs.filter(source=source)
-    if status in dict(ContactSubmission.STATUS_CHOICES):
-        qs = qs.filter(status=status)
-    if q:
-        qs = qs.filter(
-            Q(name__icontains=q)
-            | Q(email__icontains=q)
-            | Q(phone__icontains=q)
-            | Q(company__icontains=q)
-            | Q(message__icontains=q)
-        )
-
-    # Stats over the SAME scoped queryset — never the whole table.
+    # Stats over the SAME scoped queryset -- never the whole table.
     month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     stats = {
         'total': scoped.count(),
         'new': scoped.filter(status='new').count(),
         'this_month': scoped.filter(created_at__gte=month_start).count(),
-        'from_chat': scoped.filter(source='chat').count(),
+        'from_chat': scoped.filter(source__in=ContactSubmission.AGENT_SOURCES).count(),
+        'from_whatsapp': scoped.filter(source='whatsapp').count(),
     }
+    counts = _status_counts(base_qs)
+
+    # Members and tags belong to ONE organization: the filtered one, or the
+    # only one in scope. With several in scope and no client filter the
+    # per-lead actions still work from the lead card.
+    options = list(clients_for(request.user).order_by('name').values_list('slug', 'name'))
+    client_obj = None
+    if filters['client']:
+        client_obj = clients_for(request.user).filter(slug=filters['client']).first()
+    elif len(options) == 1:
+        client_obj = clients_for(request.user).first()
+    members = _lead_members(client_obj)
+    tags_all = list(client_obj.lead_tags.all()) if client_obj else []
+
+    related = ('client', 'assigned_to')
+    board = {}
+    if view == 'board':
+        cards = []
+        for key in ContactSubmission.STATUS_ORDER:
+            column = list(base_qs.filter(status=key).select_related(*related)
+                          .order_by('-status_changed_at', '-pk')[:LEAD_BOARD_LIMIT])
+            board[key] = {'key': key, 'label': ContactSubmission.STATUS_LABELS_ES[key],
+                          'leads': column, 'total': counts[key],
+                          'more': max(0, counts[key] - len(column)),
+                          'url': _filter_href(request, view='list', status=key)}
+            cards.extend(column)
+        prefetch_related_objects(cards, 'tags')
+        leads = cards
+    else:
+        leads = list(qs.select_related(*related).prefetch_related('tags')[:LEAD_LIST_LIMIT])
 
     context = {
-        'leads': qs[:300],
+        'active_tab': 'leads',
+        'view': view,
+        'leads': leads,
+        'board': board,
+        'counts': counts,
+        'filtered_total': sum(counts.values()),
         'stats': stats,
+        'filters': filters,
         'status_choices': ContactSubmission.STATUS_CHOICES,
+        'status_order': ContactSubmission.STATUS_ORDER,
+        'status_labels': ContactSubmission.STATUS_LABELS_ES,
         'source_choices': ContactSubmission.SOURCE_CHOICES,
-        'cur_source': source,
-        'cur_status': status,
-        'q': q,
+        'channel_choices': LEAD_CHANNEL_CHOICES,
+        'follow_up_choices': LEAD_FOLLOW_UP_CHOICES,
+        'cur_source': filters['source'],
+        'cur_status': filters['status'],
+        'q': filters['q'],
+        'client_obj': client_obj,
+        'client_options': options,
+        'members': members,
+        'show_assign': len(members) > 1,
+        'tags_all': tags_all,
         'default_from': settings.DEFAULT_FROM_EMAIL,
         'is_staff': request.user.is_staff,
+        # Leads CRM page (fase B2): chips, view toggle, links and card data.
+        'status_options': [(k, ContactSubmission.STATUS_LABELS_ES[k])
+                           for k in ContactSubmission.STATUS_ORDER],
+        'source_labels': LEAD_SOURCE_LABELS_ES,
+        'filter_groups': _lead_filter_groups(request, scoped, filters, len(members) > 1, tags_all),
+        'view_urls': {'board': _filter_href(request, view='board'),
+                      'list': _filter_href(request, view='list')},
+        'clear_url': _filter_href_only(request, ('view', 'client')),
+        'export_url': reverse('export_leads') + '?' + urlencode(
+            {'source': filters['source'], 'status': filters['status'], 'q': filters['q']}),
+        'move_url': reverse('lead_status', args=[0]).replace('/0/', '/__ID__/'),
+        'status_groups': [{'key': 'status', 'label': 'Estado', 'chips': [
+            {'label': ContactSubmission.STATUS_LABELS_ES[k], 'count': counts[k],
+             'active': filters['status'] == k,
+             'href': _filter_href(request, status='' if filters['status'] == k else k)}
+            for k in ContactSubmission.STATUS_ORDER]}],
+        'result_count': counts[filters['status']] if filters['status'] else sum(counts.values()),
+        'list_truncated': view == 'list' and len(leads) >= LEAD_LIST_LIMIT,
     }
+    for lead in leads:
+        lead.fu = _follow_up_info(lead) if lead.follow_up_at else None
+    if not stats['total']:
+        context['has_conversations'] = conversations_for(request.user).exists()
     return render(request, 'landing/dashboard.html', context)
+
+
+def _lead_json(request, lead, ok=True, error='', status=200):
+    payload = {'ok': ok, 'status': lead.status, 'age': ago(lead.status_changed_at),
+               'counts': _status_counts(leads_for(request.user).filter(client_id=lead.client_id))}
+    if error:
+        payload['error'] = error
+    return JsonResponse(payload, status=status)
+
+
+def _lead_reject(request, lead, error, default_name='lead_detail'):
+    """400 for a bad action input: JSON for fetch() callers, a plain 400
+    without a referer, otherwise a flash message back to the page."""
+    if _wants_json(request):
+        return _lead_json(request, lead, ok=False, error=error, status=400)
+    if not request.META.get('HTTP_REFERER'):
+        return HttpResponseBadRequest(error)
+    messages.error(request, error)
+    return _back(request, default_name, pk=lead.pk)
+
+
+def _lead_done(request, lead, message='', default_name='lead_detail'):
+    if _wants_json(request):
+        return _lead_json(request, lead)
+    if message:
+        messages.success(request, message)
+    return _back(request, default_name, pk=lead.pk)
 
 
 @login_required
 @require_POST
 def lead_status(request, pk):
-    """Update a single lead's status, then return to the dashboard."""
+    """Move a lead along the pipeline (form select or kanban drop). With
+    Accept: application/json or ?format=json answers {ok, status, counts}
+    (counts = the client's leads per status, for the column headers);
+    otherwise returns to the referring page. Same CSRF as any form."""
     lead = get_lead_or_404(request.user, pk)
     new_status = request.POST.get('status', '')
     if new_status in dict(ContactSubmission.STATUS_CHOICES):
-        lead.status = new_status
-        lead.save(update_fields=['status'])
+        lead.set_status(new_status, by=request.user)
+        reason = (request.POST.get('lost_reason') or '').strip()[:120]
+        if new_status == 'lost' and reason:
+            lead.lost_reason = reason
+            lead.save(update_fields=['lost_reason'])
         _audit(request, 'lead.status', client=lead.client,
                target=f'lead:{lead.pk}', result=new_status)
+    elif _wants_json(request):
+        return _lead_json(request, lead, ok=False, error='Estado no válido.', status=400)
+    if _wants_json(request):
+        return _lead_json(request, lead)
     # Return to the referring URL, but only if it's local (no open redirect).
-    ref = request.META.get('HTTP_REFERER', '')
-    if not url_has_allowed_host_and_scheme(ref, allowed_hosts={request.get_host()}):
-        ref = reverse('dashboard')
-    return redirect(ref)
+    return _back(request, 'dashboard')
+
+
+@login_required
+@require_POST
+def lead_assign(request, pk):
+    """Assign the lead to a member of ITS client (org_admin/agent), or clear
+    it (assigned_to empty). A user outside the organization is a 400, never
+    saved. Audited with the user pk, not the name."""
+    lead = get_lead_or_404(request.user, pk)
+    raw = (request.POST.get('assigned_to') or '').strip()
+    target = None
+    if raw not in ('', '0', 'none'):
+        uid = _int_or_none(raw)
+        valid = uid is not None and lead.client_id is not None and Membership.objects.filter(
+            user_id=uid, client_id=lead.client_id, role__in=Membership.DASHBOARD_ROLES,
+            user__is_active=True).exists()
+        if not valid:
+            return _lead_reject(request, lead,
+                                'Solo puedes asignar a un miembro de esta organización.')
+        target = uid
+    lead.assigned_to_id = target
+    lead.save(update_fields=['assigned_to'])
+    _audit(request, 'lead.assign', client=lead.client, target=f'lead:{lead.pk}',
+           result=f'user:{target}' if target else 'none')
+    return _lead_done(request, lead, 'Lead asignado.' if target else 'Asignación quitada.')
+
+
+@login_required
+@require_POST
+def lead_follow_up(request, pk):
+    """Schedule the next follow-up (date + time, Puerto Rico), mark it done
+    (done=1) or clear it (clear=1). Scheduling reopens a closed one."""
+    from datetime import datetime
+    lead = get_lead_or_404(request.user, pk)
+    now = timezone.now()
+    if request.POST.get('done') == '1':
+        if not lead.follow_up_open:
+            return _lead_reject(request, lead, 'Este lead no tiene un seguimiento pendiente.')
+        lead.follow_up_done_at = now
+        lead.save(update_fields=['follow_up_done_at'])
+        _audit(request, 'lead.follow_up', client=lead.client, target=f'lead:{lead.pk}',
+               result='done')
+        return _lead_done(request, lead, 'Seguimiento completado.')
+    if request.POST.get('clear') == '1':
+        lead.follow_up_at = None
+        lead.follow_up_done_at = None
+        lead.save(update_fields=['follow_up_at', 'follow_up_done_at'])
+        _audit(request, 'lead.follow_up', client=lead.client, target=f'lead:{lead.pk}',
+               result='cleared')
+        return _lead_done(request, lead, 'Seguimiento quitado.')
+    date_raw = (request.POST.get('date') or '').strip()
+    time_raw = (request.POST.get('time') or '09:00').strip()
+    try:
+        when = datetime.strptime(f'{date_raw} {time_raw}', '%Y-%m-%d %H:%M').replace(
+            tzinfo=analytics.BUSINESS_TZ)
+    except ValueError:
+        return _lead_reject(request, lead, 'Fecha u hora de seguimiento no válida.')
+    # strptime accepts years 1-9999; converting 9999-12-31 to UTC overflows
+    # (500) and year 1 leaves a lead 'overdue' forever. Last year to +5 years.
+    this_year = timezone.localtime(timezone.now(), analytics.BUSINESS_TZ).year
+    if not (this_year - 1 <= when.year <= this_year + 5):
+        return _lead_reject(request, lead, 'Fecha de seguimiento fuera de rango.')
+    lead.follow_up_at = when
+    lead.follow_up_done_at = None
+    lead.save(update_fields=['follow_up_at', 'follow_up_done_at'])
+    _audit(request, 'lead.follow_up', client=lead.client, target=f'lead:{lead.pk}',
+           result=when.isoformat())
+    return _lead_done(request, lead, f'Seguimiento programado para el {when:%d/%m/%Y %H:%M}.')
+
+
+@login_required
+@require_POST
+def lead_tags(request, pk):
+    """Add (action=add, tag=<pk> or name=<new>) or remove (action=remove,
+    tag=<pk>) a tag. Tags belong to the lead's client: a foreign pk is a 404
+    and a new name is created there, up to LeadTag.MAX_PER_CLIENT."""
+    lead = get_lead_or_404(request.user, pk)
+    action = request.POST.get('action', 'add')
+    if lead.client_id is None:
+        return _lead_reject(request, lead, 'Este lead no pertenece a una organización.')
+    tag_id = _int_or_none(request.POST.get('tag'))
+    tag = (LeadTag.objects.filter(pk=tag_id, client_id=lead.client_id).first()
+           if tag_id is not None else None)
+    if action == 'remove':
+        if tag is None:
+            raise Http404
+        lead.tags.remove(tag)
+        _audit(request, 'lead.tags', client=lead.client, target=f'lead:{lead.pk}',
+               result=f'-{tag.name}')
+        return _lead_done(request, lead, f'Etiqueta "{tag.name}" quitada.')
+    if tag is None:
+        if tag_id is not None:
+            raise Http404
+        name = ' '.join((request.POST.get('name') or '').split())[:40]
+        if not name:
+            return _lead_reject(request, lead, 'Escribe el nombre de la etiqueta.')
+        color = (request.POST.get('color') or '').strip()[:7]
+        if not re.fullmatch(r'#[0-9a-fA-F]{6}', color):
+            color = ''
+        # Cap check and create under the client's row lock: two simultaneous
+        # posts cannot reach 21 tags, and a same-name race reuses the winner.
+        with transaction.atomic():
+            Client.objects.select_for_update().filter(pk=lead.client_id).first()
+            tag = LeadTag.objects.filter(client_id=lead.client_id, name__iexact=name).first()
+            if tag is None:
+                if LeadTag.objects.filter(client_id=lead.client_id).count() >= LeadTag.MAX_PER_CLIENT:
+                    return _lead_reject(
+                        request, lead,
+                        f'Máximo {LeadTag.MAX_PER_CLIENT} etiquetas por negocio. Quita alguna primero.')
+                try:
+                    with transaction.atomic():
+                        tag = LeadTag.objects.create(client_id=lead.client_id, name=name, color=color)
+                except IntegrityError:
+                    tag = LeadTag.objects.get(client_id=lead.client_id, name=name)
+    lead.tags.add(tag)
+    _audit(request, 'lead.tags', client=lead.client, target=f'lead:{lead.pk}',
+           result=f'+{tag.name}')
+    return _lead_done(request, lead, f'Etiqueta "{tag.name}" añadida.')
+
+
+@login_required
+@require_POST
+def lead_lost_reason(request, pk):
+    """Record why a lead was lost (and move it to 'lost' if it is not yet)."""
+    lead = get_lead_or_404(request.user, pk)
+    reason = ' '.join((request.POST.get('lost_reason') or '').split())[:120]
+    lead.lost_reason = reason
+    lead.save(update_fields=['lost_reason'])
+    if lead.set_status('lost', by=request.user):
+        _audit(request, 'lead.status', client=lead.client, target=f'lead:{lead.pk}',
+               result='lost')
+    # Like lead.note: the trail records THAT a reason exists, never its text
+    # (free text may hold personal data and must not outlive an anonymization).
+    _audit(request, 'lead.lost', client=lead.client, target=f'lead:{lead.pk}',
+           result='con motivo' if reason else 'sin motivo')
+    return _lead_done(request, lead, 'Motivo de pérdida guardado.')
 
 
 @login_required
@@ -2709,7 +3200,8 @@ def lead_email(request, pk):
     body = (request.POST.get('body') or '').strip()[:10000]
     # Stay where the user was (same safe-referer pattern as lead_status).
     ref = request.META.get('HTTP_REFERER', '')
-    if not url_has_allowed_host_and_scheme(ref, allowed_hosts={request.get_host()}):
+    if not url_has_allowed_host_and_scheme(ref, allowed_hosts={request.get_host()},
+                                           require_https=request.is_secure()):
         ref = reverse('dashboard')
 
     # Phone-only leads have no email to reply to — never send to an empty address.
@@ -2745,8 +3237,7 @@ def lead_email(request, pk):
     if sent:
         cache.set(cap_key, cache.get(cap_key, 0) + 1, 86400)
         if lead.status == 'new':
-            lead.status = 'contacted'
-            lead.save(update_fields=['status'])
+            lead.set_status('contacted', by=request.user)
         messages.success(request, f'Email enviado a {lead.email}.')
     else:
         messages.error(
@@ -2788,12 +3279,22 @@ def lead_detail(request, pk):
         first_view = True
     if first_view:
         _audit(request, 'lead.view', client=lead.client, target=f'lead:{lead.pk}')
+    members = _lead_members(lead.client)
     return render(request, 'landing/dashboard_lead_detail.html', {
         'active_tab': 'leads',
         'lead': lead,
         'clinic': clinic,
         'timeline': lead_service.build_timeline(lead, clinic=clinic),
         'status_choices': ContactSubmission.STATUS_CHOICES,
+        'status_labels': ContactSubmission.STATUS_LABELS_ES,
+        'stepper': _stepper(lead),
+        'source_label': LEAD_SOURCE_LABELS_ES.get(lead.source, lead.get_source_display()),
+        'members': members,
+        'show_assign': len(members) > 1,
+        'tags_all': list(lead.client.lead_tags.all()) if lead.client_id else [],
+        'lead_tags': list(lead.tags.all()),
+        'tag_limit': LeadTag.MAX_PER_CLIENT,
+        'follow_up': _follow_up_info(lead),
         'note_form': LeadNoteForm(),
         'note_max': LeadNote.MAX_CHARS,
         'can_manage': _can_manage_lead(request.user, lead),

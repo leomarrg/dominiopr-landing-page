@@ -10,12 +10,13 @@ tenant dashboard. Two rules keep it safe to run with hundreds of clients:
 
 Only portable ORM constructs are used (SQLite now, Postgres later).
 """
+import math
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from django.core.cache import cache
-from django.db.models import Avg, Count, Q, Sum
+from django.db.models import Avg, Count, Exists, OuterRef, Q, Sum
 from django.db.models.functions import Length, TruncDate, TruncMonth
 from django.utils import timezone
 
@@ -121,6 +122,7 @@ def volume(client_ids, start, end):
     total. Internal-assistant conversations are excluded (see
     _visitor_conversations).
 
+    'chat_leads' = leads the agent itself captured (chat or WhatsApp).
     Returns {client_id: {'conversations', 'escalated', 'leads', 'chat_leads',
     'bookings', 'messages', 'events', 'input', 'output', 'cache_read',
     'cache_write', 'tokens', 'cost', 'csat_avg', 'csat_n'}}. 'messages' and
@@ -145,7 +147,8 @@ def volume(client_ids, start, end):
     leads = (_scoped(ContactSubmission.objects.filter(created_at__gte=start, created_at__lt=end),
                      client_ids)
              .order_by().values('client_id')
-             .annotate(n=Count('id'), chat=Count('id', filter=Q(source='chat'))))
+             .annotate(n=Count('id'),
+                       chat=Count('id', filter=Q(source__in=ContactSubmission.AGENT_SOURCES))))
     for r in leads:
         row = row_for(r['client_id'])
         row['leads'], row['chat_leads'] = r['n'], r['chat']
@@ -554,3 +557,484 @@ def first_user_turns(conversation_ids, turns=3):
         if len(bucket) < turns:
             bucket.append(content)
     return out
+
+
+# ------------------------------------------------------------------
+# CRM dashboard (home / leads / reports): per-channel series, deltas,
+# funnel, peak hours, CSAT, resolution, attention band and SVG geometry.
+# ------------------------------------------------------------------
+# Same two rules as above: a fixed number of grouped queries per call, and
+# nothing here returns a DOMINIO cost figure (safe for tenants). Every date
+# bucket is a Puerto Rico calendar day (BUSINESS_TZ).
+
+CHANNEL_LABELS = {'web': 'Web', 'whatsapp': 'WhatsApp'}
+WEEKDAYS_ES = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+# Below this many conversations the 7x24 grid is too sparse to read: the
+# hours are grouped in 3 h blocks (7x8).
+PEAK_BUCKET_MIN_TOTAL = 50
+STALE_NEW_HOURS = 24
+CLOSED_STATES = ('closed_resolved', 'closed_unresolved')
+
+KPI_DEFS = [
+    ('conversations', 'Conversaciones', ''),
+    ('leads', 'Leads', ''),
+    ('bookings', 'Citas', ''),
+    ('conversion', 'Conversión a lead', '%'),
+    ('escalated', 'Escaladas', ''),
+    ('csat', 'Satisfacción', '/5'),
+]
+
+
+def _cid(client):
+    return getattr(client, 'pk', client)
+
+
+def previous_period(start, end):
+    """The window of the same length right before [start, end)."""
+    span = end - start
+    return start - span, start
+
+
+def _local_window(days):
+    """(first_day, since_aware, today) for the last `days` Puerto Rico days."""
+    today = timezone.localtime(timezone.now(), BUSINESS_TZ).date()
+    first = today - timedelta(days=max(1, days) - 1)
+    since = datetime(first.year, first.month, first.day, tzinfo=BUSINESS_TZ)
+    return first, since, today
+
+
+def _day_bounds_local(day):
+    start = datetime(day.year, day.month, day.day, tzinfo=BUSINESS_TZ)
+    return start, start + timedelta(days=1)
+
+
+def daily_by_channel(client, days=30):
+    """Visitor conversations per Puerto Rico day and channel for one client,
+    oldest first, zero-filled. One grouped query. Items: {'day', 'web',
+    'whatsapp', 'total'} (any other visitor channel is folded into 'web')."""
+    first, since, _today = _local_window(days)
+    rows = (_visitor_conversations(
+                Conversation.objects.filter(client_id=_cid(client), started_at__gte=since))
+            .order_by().annotate(day=TruncDate('started_at', tzinfo=BUSINESS_TZ))
+            .values('day', 'channel').annotate(n=Count('id')))
+    by_day = {}
+    for r in rows:
+        by_day.setdefault(r['day'], {})[r['channel']] = r['n']
+    series = []
+    for i in range(max(1, days)):
+        day = first + timedelta(days=i)
+        d = by_day.get(day, {})
+        wa = d.get('whatsapp', 0)
+        web = sum(n for ch, n in d.items() if ch != 'whatsapp')
+        series.append({'day': day, 'web': web, 'whatsapp': wa, 'total': web + wa})
+    return series
+
+
+def daily_counts(client, days=30, kind='leads'):
+    """[{'day', 'value'}] per Puerto Rico day, oldest first, zero-filled, for
+    one client. kind: 'leads' (ContactSubmission.created_at), 'bookings'
+    (Booking.created_at), 'conversations' or 'escalated' (visitor
+    conversations by started_at). One grouped query."""
+    first, since, _today = _local_window(days)
+    cid = _cid(client)
+    if kind == 'leads':
+        qs = ContactSubmission.objects.filter(client_id=cid, created_at__gte=since)
+        field = 'created_at'
+    elif kind == 'bookings':
+        qs = Booking.objects.filter(client_id=cid, created_at__gte=since)
+        field = 'created_at'
+    elif kind == 'escalated':
+        qs = _visitor_conversations(Conversation.objects.filter(
+            client_id=cid, started_at__gte=since, state='escalated'))
+        field = 'started_at'
+    elif kind == 'conversations':
+        qs = _visitor_conversations(Conversation.objects.filter(client_id=cid, started_at__gte=since))
+        field = 'started_at'
+    else:
+        raise ValueError(f'Unknown daily_counts kind: {kind!r}')
+    rows = dict(qs.order_by().annotate(day=TruncDate(field, tzinfo=BUSINESS_TZ))
+                .values('day').annotate(n=Count('id')).values_list('day', 'n'))
+    return [{'day': first + timedelta(days=i), 'value': rows.get(first + timedelta(days=i), 0)}
+            for i in range(max(1, days))]
+
+
+def delta(cur, prev):
+    """{'value', 'prev', 'pct', 'direction'} comparing a figure with the
+    previous period. pct is None when there is no previous figure to compare
+    against (template shows "nuevo" / "—"), 0 when both are zero."""
+    c = cur or 0
+    p = prev or 0
+    if p:
+        pct = round((c - p) * 100 / p)
+    else:
+        pct = None if c else 0
+    direction = 'up' if c > p else ('down' if c < p else 'flat')
+    return {'value': cur, 'prev': prev, 'pct': pct, 'direction': direction}
+
+
+def kpi_counts(client, start, end):
+    """Tenant-safe activity figures of one client in [start, end): four
+    grouped queries, no usage ledger. Keys: conversations, escalated,
+    with_lead, leads, agent_leads, bookings, csat_avg, csat_n, conversion
+    (agent_leads as % of conversations)."""
+    cid = _cid(client)
+    conv = (_visitor_conversations(Conversation.objects.filter(
+                client_id=cid, started_at__gte=start, started_at__lt=end))
+            .aggregate(n=Count('id'), esc=Count('id', filter=Q(state='escalated')),
+                       with_lead=Count('id', filter=Q(lead__isnull=False))))
+    leads = (ContactSubmission.objects.filter(client_id=cid, created_at__gte=start,
+                                              created_at__lt=end)
+             .aggregate(n=Count('id'),
+                        agent=Count('id', filter=Q(source__in=ContactSubmission.AGENT_SOURCES))))
+    bookings = Booking.objects.filter(client_id=cid, created_at__gte=start,
+                                      created_at__lt=end).aggregate(n=Count('id'))
+    csat = Survey.objects.filter(conversation__client_id=cid, created_at__gte=start,
+                                 created_at__lt=end).aggregate(avg=Avg('score'), n=Count('id'))
+    conversations = conv['n'] or 0
+    agent_leads = leads['agent'] or 0
+    return {
+        'conversations': conversations, 'escalated': conv['esc'] or 0,
+        'with_lead': conv['with_lead'] or 0,
+        'leads': leads['n'] or 0, 'agent_leads': agent_leads,
+        'bookings': bookings['n'] or 0,
+        'csat_avg': round(csat['avg'], 1) if csat['avg'] is not None else None,
+        'csat_n': csat['n'] or 0,
+        'conversion': round(agent_leads * 100 / conversations) if conversations else 0,
+    }
+
+
+def kpis(client, start, end, cur=None, prev=None):
+    """The six headline KPIs with their delta vs the previous period of the
+    same length: [{'key', 'label', 'suffix', 'value', 'prev', 'pct',
+    'direction'}]. Eight queries (two kpi_counts) unless both are passed."""
+    cur = cur or kpi_counts(client, start, end)
+    if prev is None:
+        p_start, p_end = previous_period(start, end)
+        prev = kpi_counts(client, p_start, p_end)
+    out = []
+    for key, label, suffix in KPI_DEFS:
+        field = 'csat_avg' if key == 'csat' else key
+        item = {'key': key, 'label': label, 'suffix': suffix}
+        item.update(delta(cur[field], prev[field]))
+        out.append(item)
+    return out
+
+
+def funnel(client, start, end):
+    """Cohort funnel of the visitor conversations STARTED in [start, end):
+    all -> with a lead (Conversation.lead) -> with a booking (a Booking of
+    the same client linked to that lead, or with the lead's email). One
+    query. Returns {'stages': [{'key', 'label', 'n', 'pct'}],
+    'conversations', 'leads', 'bookings', 'lead_rate', 'booking_rate',
+    'has_bookings_stage'}; pct is relative to the first stage."""
+    cid = _cid(client)
+    booked = (Booking.objects.filter(client_id=OuterRef('client_id'))
+              .filter(Q(lead_id=OuterRef('lead_id'))
+                      | (~Q(email='') & Q(email__iexact=OuterRef('lead__email')))))
+    agg = (_visitor_conversations(Conversation.objects.filter(
+               client_id=cid, started_at__gte=start, started_at__lt=end))
+           .annotate(booked=Exists(booked))
+           .aggregate(total=Count('id'),
+                      with_lead=Count('id', filter=Q(lead__isnull=False)),
+                      with_booking=Count('id', filter=Q(lead__isnull=False, booked=True))))
+    total = agg['total'] or 0
+    with_lead = agg['with_lead'] or 0
+    with_booking = agg['with_booking'] or 0
+
+    def pct(n):
+        return round(n * 100 / total) if total else 0
+
+    stages = [
+        {'key': 'conversations', 'label': 'Conversaciones', 'n': total,
+         'pct': 100 if total else 0},
+        {'key': 'leads', 'label': 'Con lead', 'n': with_lead, 'pct': pct(with_lead)},
+        {'key': 'bookings', 'label': 'Con cita', 'n': with_booking, 'pct': pct(with_booking)},
+    ]
+    return {
+        'stages': stages, 'conversations': total, 'leads': with_lead, 'bookings': with_booking,
+        'lead_rate': pct(with_lead), 'booking_rate': pct(with_booking),
+        'has_bookings_stage': bool(getattr(client, 'enable_bookings', True)),
+    }
+
+
+def peak_hours(client, start, end):
+    """When visitors write: a weekday x hour matrix (Puerto Rico time) of the
+    visitor conversations started in [start, end). One query (started_at
+    values), bucketed in Python so it stays portable. With fewer than
+    PEAK_BUCKET_MIN_TOTAL conversations the hours are grouped in 3 h blocks
+    ('bucket_hours' = 3, 8 columns). Returns {'matrix' (7 rows), 'days',
+    'hours' (column labels), 'bucket_hours', 'total', 'max', 'top'
+    ([{'day', 'hour', 'n'}], busiest 3 cells)}."""
+    rows = (_visitor_conversations(Conversation.objects.filter(
+                client_id=_cid(client), started_at__gte=start, started_at__lt=end))
+            .order_by().values_list('started_at', flat=True))
+    matrix = [[0] * 24 for _ in range(7)]
+    total = 0
+    for started in rows.iterator():
+        local = timezone.localtime(started, BUSINESS_TZ)
+        matrix[local.weekday()][local.hour] += 1
+        total += 1
+    bucket = 1 if total >= PEAK_BUCKET_MIN_TOTAL else 3
+    if bucket == 3:
+        matrix = [[sum(row[h:h + 3]) for h in range(0, 24, 3)] for row in matrix]
+        hours = [f'{h}–{h + 3}' for h in range(0, 24, 3)]
+    else:
+        hours = [f'{h}:00' for h in range(24)]
+    peak = max((n for row in matrix for n in row), default=0)
+    cells = [(n, d, h) for d, row in enumerate(matrix) for h, n in enumerate(row) if n]
+    cells.sort(key=lambda c: (-c[0], c[1], c[2]))
+    top = [{'day': WEEKDAYS_ES[d], 'hour': hours[h], 'n': n} for n, d, h in cells[:3]]
+    return {'matrix': matrix, 'days': list(WEEKDAYS_ES), 'hours': hours,
+            'bucket_hours': bucket, 'total': total, 'max': peak, 'top': top}
+
+
+def csat_distribution(client, start, end, clinic=False):
+    """CSAT 1-5 of one client in [start, end): {'counts': {1..5: n}, 'rows'
+    ([{'score', 'n', 'pct'}], 5 first), 'n', 'avg', 'comments' ([{'score',
+    'comment', 'created_at'}], latest 5)}. Two queries. Comments are never
+    returned for a clinic_mode client (free text may carry health data),
+    whatever the caller passes."""
+    cid = _cid(client)
+    clinic = bool(clinic or getattr(client, 'clinic_mode', False))
+    base = Survey.objects.filter(conversation__client_id=cid, created_at__gte=start,
+                                 created_at__lt=end)
+    got = dict(base.order_by().values('score').annotate(n=Count('id')).values_list('score', 'n'))
+    counts = {score: got.get(score, 0) for score in range(1, 6)}
+    n = sum(counts.values())
+    avg = round(sum(score * c for score, c in counts.items()) / n, 1) if n else None
+    rows = [{'score': score, 'n': counts[score], 'pct': round(counts[score] * 100 / n) if n else 0}
+            for score in (5, 4, 3, 2, 1)]
+    comments = [] if clinic else list(
+        base.exclude(comment='').order_by('-created_at')
+        .values('score', 'comment', 'created_at')[:5])
+    return {'counts': counts, 'rows': rows, 'n': n, 'avg': avg, 'comments': comments}
+
+
+def resolution_rate(client, start, end):
+    """How many of the conversations the team closed were resolved:
+    {'resolved', 'unresolved', 'closed', 'pct'} (pct None without closed
+    conversations). One query, over visitor conversations started in the
+    period."""
+    agg = (_visitor_conversations(Conversation.objects.filter(
+               client_id=_cid(client), started_at__gte=start, started_at__lt=end))
+           .aggregate(resolved=Count('id', filter=Q(state='closed_resolved')),
+                      unresolved=Count('id', filter=Q(state='closed_unresolved'))))
+    resolved, unresolved = agg['resolved'] or 0, agg['unresolved'] or 0
+    closed = resolved + unresolved
+    return {'resolved': resolved, 'unresolved': unresolved, 'closed': closed,
+            'pct': round(resolved * 100 / closed) if closed else None}
+
+
+def attention(client, user=None):
+    """The "Requiere atención" band: {'items': [{'key', 'label', 'count',
+    'mine', 'url', 'tone'}], 'total'}. Three grouped queries. Each URL opens
+    the list already filtered. 'mine' = of those, the ones assigned to
+    `user` (0 without a user)."""
+    from django.urls import reverse  # local: keeps this module import-light
+    cid = _cid(client)
+    slug = getattr(client, 'slug', '')
+    now = timezone.now()
+    today = timezone.localtime(now, BUSINESS_TZ).date()
+    day_start, day_end = _day_bounds_local(today)
+    stale_before = now - timedelta(hours=STALE_NEW_HOURS)
+    user_id = getattr(user, 'pk', None)
+    mine = Q(assigned_to_id=user_id) if user_id else Q(pk__in=[])
+    open_fu = Q(follow_up_done_at__isnull=True)
+    stale = Q(status='new', created_at__lt=stale_before)
+    overdue = open_fu & Q(follow_up_at__lt=day_start)
+    today_q = open_fu & Q(follow_up_at__gte=day_start, follow_up_at__lt=day_end)
+    leads = ContactSubmission.objects.filter(client_id=cid).aggregate(
+        stale=Count('id', filter=stale), stale_mine=Count('id', filter=stale & mine),
+        overdue=Count('id', filter=overdue), overdue_mine=Count('id', filter=overdue & mine),
+        today=Count('id', filter=today_q), today_mine=Count('id', filter=today_q & mine),
+    )
+    escalated = _visitor_conversations(
+        Conversation.objects.filter(client_id=cid, state='escalated')).count()
+    pending = Booking.objects.filter(client_id=cid, status='pending', start__gte=now).count()
+    q = f'client={slug}&' if slug else ''
+    items = [
+        {'key': 'stale_new', 'label': f'Leads nuevos sin atender (más de {STALE_NEW_HOURS} h)',
+         'count': leads['stale'] or 0, 'mine': leads['stale_mine'] or 0, 'tone': 'danger',
+         'url': reverse('dashboard') + f'?{q}stale=1'},
+        {'key': 'escalated', 'label': 'Conversaciones escaladas abiertas',
+         'count': escalated, 'mine': 0, 'tone': 'danger',
+         'url': reverse('conversations') + f'?{q}state=escalated'},
+        {'key': 'follow_up_overdue', 'label': 'Seguimientos vencidos',
+         'count': leads['overdue'] or 0, 'mine': leads['overdue_mine'] or 0, 'tone': 'warn',
+         'url': reverse('dashboard') + f'?{q}follow_up=overdue'},
+        {'key': 'follow_up_today', 'label': 'Seguimientos para hoy',
+         'count': leads['today'] or 0, 'mine': leads['today_mine'] or 0, 'tone': 'info',
+         'url': reverse('dashboard') + f'?{q}follow_up=today'},
+        {'key': 'bookings_pending', 'label': 'Citas por confirmar',
+         'count': pending, 'mine': 0, 'tone': 'warn',
+         'url': reverse('bookings') + f'?{q}status=pending'},
+    ]
+    return {'items': items, 'total': sum(i['count'] for i in items)}
+
+
+def follow_up_lists(client, limit=10):
+    """Open follow-ups of one client in three buckets for the home page:
+    {'overdue': [...], 'today': [...], 'week': [...]} (leads, oldest
+    follow-up first, `limit` each). One query."""
+    cid = _cid(client)
+    today = timezone.localtime(timezone.now(), BUSINESS_TZ).date()
+    day_start, day_end = _day_bounds_local(today)
+    week_end = day_start + timedelta(days=7)
+    rows = list(ContactSubmission.objects
+                .filter(client_id=cid, follow_up_at__isnull=False, follow_up_done_at__isnull=True,
+                        follow_up_at__lt=week_end)
+                .select_related('assigned_to').order_by('follow_up_at', 'pk')[:limit * 3])
+    out = {'overdue': [], 'today': [], 'week': []}
+    for lead in rows:
+        key = ('overdue' if lead.follow_up_at < day_start
+               else 'today' if lead.follow_up_at < day_end else 'week')
+        if len(out[key]) < limit:
+            out[key].append(lead)
+    return out
+
+
+# ---- SVG geometry (server-side charts; CSP is script-src 'self') ----------
+# Every helper returns plain numbers/strings the template drops into
+# attributes, plus 'rows' for the <details> "Ver como tabla" alternative.
+
+def _fmt(v):
+    return f'{v:.1f}'
+
+
+def _nice_scale(peak, divisions=4):
+    """(step, axis_max) so the axis has `divisions` equal, round steps that
+    cover `peak` (5 -> step 2, max 8; 37 -> 10/40; 0 -> 1/4)."""
+    peak = max(0, peak)
+    raw = peak / divisions if peak else 1
+    magnitude = 10 ** math.floor(math.log10(raw)) if raw >= 1 else 1
+    step = magnitude
+    for m in (1, 2, 2.5, 5, 10):
+        step = m * magnitude
+        if step * divisions >= peak:
+            break
+    step = int(step) if float(step).is_integer() else step
+    return step, step * divisions
+
+
+def sparkline(values, width=120, height=32):
+    """A tiny trend line: {'viewBox', 'width', 'height', 'path', 'area',
+    'last', 'max', 'points'}. Flat when every value is 0."""
+    vals = [float(v or 0) for v in values]
+    box = f'0 0 {width} {height}'
+    if not vals:
+        return {'viewBox': box, 'width': width, 'height': height, 'path': '', 'area': '',
+                'last': 0, 'max': 0, 'points': []}
+    peak = max(vals) or 1.0
+    n = len(vals)
+    step = width / (n - 1) if n > 1 else 0
+    pts = [(i * step if n > 1 else width / 2, height - 2 - (v / peak) * (height - 4))
+           for i, v in enumerate(vals)]
+    path = 'M' + ' L'.join(f'{_fmt(x)},{_fmt(y)}' for x, y in pts)
+    area = path + f' L{_fmt(pts[-1][0])},{height} L{_fmt(pts[0][0])},{height} Z'
+    return {'viewBox': box, 'width': width, 'height': height, 'path': path, 'area': area,
+            'last': vals[-1], 'max': peak,
+            'points': [{'x': _fmt(x), 'y': _fmt(y)} for x, y in pts]}
+
+
+def svg_area(series, keys, width=600, height=160, labels=None):
+    """Stacked area chart of `keys` over a daily `series` (daily_by_channel).
+    Returns {'viewBox', 'width', 'height', 'plot' ({'x','y','w','h'}),
+    'layers' ([{'key', 'label', 'area', 'line'}], first key at the bottom),
+    'x_labels' ([{'x', 'text'}], 4), 'y_ticks' ([{'y', 'text'}], 5 = 4
+    divisions), 'y_max', 'columns', 'rows' ([{'day', 'cells', 'total'}]),
+    'total', 'empty'}."""
+    labels = labels or CHANNEL_LABELS
+    pad_l, pad_r, pad_t, pad_b = 34, 8, 8, 20
+    plot_w, plot_h = width - pad_l - pad_r, height - pad_t - pad_b
+    n = len(series)
+    totals = [sum(d.get(k, 0) for k in keys) for d in series]
+    peak = max(totals, default=0)
+    step, y_max = _nice_scale(peak)
+
+    def y_of(v):
+        return pad_t + plot_h - (v / y_max) * plot_h
+
+    xs = [pad_l + (i * plot_w / (n - 1) if n > 1 else plot_w / 2) for i in range(n)]
+    layers = []
+    below = [0] * n
+    for key in keys:
+        top = [below[i] + series[i].get(key, 0) for i in range(n)]
+        if n:
+            line = 'M' + ' L'.join(f'{_fmt(xs[i])},{_fmt(y_of(top[i]))}' for i in range(n))
+            back = ' '.join(f'L{_fmt(xs[i])},{_fmt(y_of(below[i]))}' for i in reversed(range(n)))
+            area = f'{line} {back} Z'
+        else:
+            line = area = ''
+        layers.append({'key': key, 'label': labels.get(key, key), 'area': area, 'line': line})
+        below = top
+    idx = sorted({0, n // 3, (2 * n) // 3, n - 1}) if n else []
+    x_labels = [{'x': _fmt(xs[i]), 'text': series[i]['day'].strftime('%d/%m')} for i in idx]
+    y_ticks = [{'y': _fmt(y_of(step * k)), 'text': step * k} for k in range(5)]
+    rows = [{'day': d['day'], 'cells': [d.get(k, 0) for k in keys], 'total': totals[i]}
+            for i, d in enumerate(series)]
+    return {'viewBox': f'0 0 {width} {height}', 'width': width, 'height': height,
+            'plot': {'x': pad_l, 'y': pad_t, 'w': plot_w, 'h': plot_h},
+            'layers': layers, 'x_labels': x_labels, 'y_ticks': y_ticks, 'y_max': y_max,
+            'columns': [labels.get(k, k) for k in keys], 'rows': rows,
+            'total': sum(totals), 'empty': peak == 0}
+
+
+def svg_funnel(stages, width=600, height=150):
+    """Horizontal funnel bars for funnel()['stages']: {'viewBox', 'width',
+    'height', 'bars' ([{'key', 'label', 'n', 'pct', 'drop', 'x', 'y', 'w',
+    'h', 'text_y'}]), 'rows'}. 'drop' = % lost vs the previous stage (None
+    for the first stage)."""
+    n = len(stages)
+    gap = 10
+    bar_h = (height - gap * (n - 1)) / n if n else height
+    base = stages[0]['n'] if stages and stages[0]['n'] else 0
+    bars, rows, prev = [], [], None
+    for i, st in enumerate(stages):
+        w = (width * st['n'] / base) if base else 0
+        if st['n'] and w < 3:
+            w = 3
+        if prev is None:
+            drop = None
+        elif prev:
+            drop = round((prev - st['n']) * 100 / prev)
+        else:
+            drop = 0
+        y = i * (bar_h + gap)
+        bars.append({'key': st['key'], 'label': st['label'], 'n': st['n'], 'pct': st['pct'],
+                     'drop': drop, 'x': 0, 'y': _fmt(y), 'w': _fmt(w), 'h': _fmt(bar_h),
+                     'text_y': _fmt(y + bar_h / 2 + 4)})
+        rows.append({'label': st['label'], 'n': st['n'], 'pct': st['pct'], 'drop': drop})
+        prev = st['n']
+    return {'viewBox': f'0 0 {width} {height}', 'width': width, 'height': height,
+            'bars': bars, 'rows': rows}
+
+
+def svg_heatmap(peak, width=600, height=170):
+    """Cells for peak_hours(): {'viewBox', 'width', 'height', 'cells'
+    ([{'x', 'y', 'w', 'h', 'level' (0-4), 'n', 'day', 'hour'}]),
+    'row_labels' ([{'y', 'text'}]), 'col_labels' ([{'x', 'text'}]),
+    'columns', 'rows' ([{'day', 'cells'}]), 'max', 'total', 'bucket_hours',
+    'empty'}. level 0 = no conversations, 4 = the busiest cell."""
+    matrix, hours, days = peak['matrix'], peak['hours'], peak['days']
+    n_cols = len(hours)
+    label_w, label_h = 34, 16
+    cell_w = (width - label_w) / n_cols if n_cols else 0
+    cell_h = (height - label_h) / len(days) if days else 0
+    top = peak['max'] or 0
+    cells = []
+    for r, row in enumerate(matrix):
+        for c, n in enumerate(row):
+            level = max(1, math.ceil(n * 4 / top)) if (n and top) else 0
+            cells.append({'x': _fmt(label_w + c * cell_w), 'y': _fmt(label_h + r * cell_h),
+                          'w': _fmt(max(cell_w - 1, 1)), 'h': _fmt(max(cell_h - 1, 1)),
+                          'level': level, 'n': n, 'day': days[r], 'hour': hours[c]})
+    row_labels = [{'y': _fmt(label_h + r * cell_h + cell_h / 2 + 4), 'text': d}
+                  for r, d in enumerate(days)]
+    every = 3 if n_cols > 12 else 1
+    col_labels = [{'x': _fmt(label_w + c * cell_w + cell_w / 2), 'text': h}
+                  for c, h in enumerate(hours) if c % every == 0]
+    rows = [{'day': days[r], 'cells': list(row)} for r, row in enumerate(matrix)]
+    return {'viewBox': f'0 0 {width} {height}', 'width': width, 'height': height,
+            'cells': cells, 'row_labels': row_labels, 'col_labels': col_labels,
+            'columns': list(hours), 'rows': rows, 'max': top, 'total': peak['total'],
+            'bucket_hours': peak['bucket_hours'], 'empty': peak['total'] == 0}

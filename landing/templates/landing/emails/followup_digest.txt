@@ -1,0 +1,19 @@
+Seguimientos de hoy · {{ business }}
+
+Resumen del {{ day|date:"d/m/Y" }}: {{ overdue|length }} vencido{{ overdue|length|pluralize }}, {{ today|length }} para hoy y {{ stale|length }} lead{{ stale|length|pluralize }} nuevo{{ stale|length|pluralize }} sin atender desde hace más de {{ stale_hours }} horas.
+{% if overdue %}
+Seguimientos vencidos
+{% for item in overdue %}- {{ item.name }} · estaba para el {{ item.when|date:"d/m H:i" }}{% if item.assigned %} · {{ item.assigned }}{% endif %}
+  {{ item.url }}
+{% endfor %}{% endif %}{% if today %}
+Para hoy
+{% for item in today %}- {{ item.name }} · {{ item.when|date:"H:i" }}{% if item.assigned %} · {{ item.assigned }}{% endif %}
+  {{ item.url }}
+{% endfor %}{% endif %}{% if stale %}
+Leads nuevos sin atender
+{% for item in stale %}- {{ item.name }} · llegó el {{ item.when|date:"d/m H:i" }}
+  {{ item.url }}
+{% endfor %}{% endif %}
+Abrir el tablero de leads: {{ leads_url }}
+
+Recibes este correo porque eres parte del equipo de {{ business }} en DOMINIO. Si no quieres recibirlo, responde a este correo y lo desactivamos.

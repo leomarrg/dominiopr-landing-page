@@ -1,158 +1,153 @@
+{% extends 'landing/dashboard_base.html' %}
 {% load static landing_extras %}
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DOMINIO — Leads</title>
-    <meta name="robots" content="noindex, nofollow">
-    <link rel="preload" href="{% static 'landing/fonts/space-grotesk-latin-var.woff2' %}" as="font" type="font/woff2" crossorigin>
-    <link rel="stylesheet" href="{% static 'landing/css/fonts.css' %}">
-    <link rel="stylesheet" href="{% static 'landing/css/dashboard.css' %}">
-    <link rel="icon" type="image/png" href="{% static 'landing/images/brand/favicon-32.png' %}">
-</head>
-<body class="dash-body">
-    {% include 'landing/_dash_nav.html' with active='leads' %}
+{% block title %}Leads{% endblock %}
+{% block nav %}{% include 'landing/_dash_nav.html' with active='leads' %}{% endblock %}
+{% block content %}
+{% url 'conversations' as conversations_url %}{% url 'install' as install_url %}
+<header class="page-head">
+    <h1 class="dash-h1">Leads</h1>
+    {% if stats.total %}
+    <div class="page-head__actions">
+        <nav class="seg" aria-label="Vista de leads">
+            <a class="seg__item{% if view == 'board' %} is-active{% endif %}" href="{{ view_urls.board }}"{% if view == 'board' %} aria-current="page"{% endif %}>Tablero</a>
+            <a class="seg__item{% if view == 'list' %} is-active{% endif %}" href="{{ view_urls.list }}"{% if view == 'list' %} aria-current="page"{% endif %}>Lista</a>
+        </nav>
+        <a class="btn btn--sm" href="{{ export_url }}"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>Exportar CSV</a>
+    </div>
+    {% endif %}
+</header>
 
-    <main class="dash-main">
-        <h1 class="dash-h1">Leads</h1>
+{% if not stats.total %}
+    {% if has_conversations %}
+        {% include 'landing/_dash_empty_state.html' with icon='message' title='Todavía no hay leads, pero ya hay conversaciones' text='Los visitantes están hablando con tu agente y aún no dejan sus datos. Revisa las conversaciones para ver qué preguntan y cómo responde.' action_href=conversations_url action_label='Ver conversaciones' %}
+    {% elif IS_ORG_ADMIN and not request.user.is_staff %}
+        {% include 'landing/_dash_empty_state.html' with icon='user-plus' title='Aún no hay leads' text='Van a aparecer aquí cuando el formulario o el chat AI capturen contactos. Instala el agente en tu sitio para empezar.' action_href=install_url action_label='Instalar el agente' %}
+    {% else %}
+        {% include 'landing/_dash_empty_state.html' with icon='user-plus' title='Aún no hay leads' text='Van a aparecer aquí cuando el formulario o el chat AI capturen contactos.' %}
+    {% endif %}
+{% else %}
 
-        <section class="dash-stats">
-            <div class="dash-stat"><div class="dash-stat__num">{{ stats.total }}</div><div class="dash-stat__label">Total de leads</div></div>
-            <div class="dash-stat dash-stat--accent"><div class="dash-stat__num">{{ stats.new }}</div><div class="dash-stat__label">Nuevos</div></div>
-            <div class="dash-stat"><div class="dash-stat__num">{{ stats.this_month }}</div><div class="dash-stat__label">Este mes</div></div>
-            <div class="dash-stat"><div class="dash-stat__num">{{ stats.from_chat }}</div><div class="dash-stat__label">Del chat AI</div></div>
-        </section>
+<dl class="crm-stats">
+    <div class="crm-stat"><dt>Total de leads</dt><dd>{{ stats.total }}</dd></div>
+    <div class="crm-stat crm-stat--accent"><dt>Nuevos</dt><dd>{{ stats.new }}</dd></div>
+    <div class="crm-stat"><dt>Este mes</dt><dd>{{ stats.this_month }}</dd></div>
+    <div class="crm-stat"><dt>Del chat AI</dt><dd>{{ stats.from_chat }}</dd></div>
+    {% if stats.from_whatsapp %}<div class="crm-stat"><dt>Por WhatsApp</dt><dd>{{ stats.from_whatsapp }}</dd></div>{% endif %}
+</dl>
 
-        <form class="dash-filters" method="get">
-            <input type="search" name="q" value="{{ q }}" placeholder="Buscar nombre, correo, compañía, mensaje…">
-            <select name="source">
-                <option value="">Todas las fuentes</option>
-                {% for val, label in source_choices %}
-                <option value="{{ val }}" {% if cur_source == val %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-            </select>
-            <select name="status">
-                <option value="">Todos los estados</option>
-                {% for val, label in status_choices %}
-                <option value="{{ val }}" {% if cur_status == val %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-            </select>
-            <button type="submit">Filtrar</button>
-            {% if q or cur_source or cur_status %}<a class="dash-clear" href="{% url 'dashboard' %}">Limpiar</a>{% endif %}
-            <a class="dash-clear" href="{% url 'export_leads' %}?source={{ cur_source }}&amp;status={{ cur_status }}&amp;q={{ q|urlencode }}">Exportar CSV</a>
-        </form>
+<section class="crm-toolbar" aria-label="Buscar y filtrar leads">
+    <form class="crm-search" method="get" role="search">
+        {% for key, vals in request.GET.lists %}{% if key != 'q' and key != 'page' %}{% for v in vals %}<input type="hidden" name="{{ key }}" value="{{ v }}">{% endfor %}{% endif %}{% endfor %}
+        <label class="sr-only" for="lead-q">Buscar leads</label>
+        <input class="input" type="search" id="lead-q" name="q" value="{{ q }}" placeholder="Buscar nombre, correo, teléfono, compañía, mensaje…" maxlength="120">
+        <button type="submit" class="btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-search"/></svg>Buscar</button>
+    </form>
+    {% include 'landing/_crm_chip_groups.html' with groups=filter_groups %}
+    {% if view == 'list' %}{% include 'landing/_crm_chip_groups.html' with groups=status_groups %}{% endif %}
+    <p class="crm-result" role="status">
+        {% if filters.active %}Mostrando <b>{{ result_count }}</b> de {{ stats.total }} leads. <a href="{{ clear_url }}">Limpiar filtros</a>{% else %}{{ result_count }} lead{{ result_count|pluralize }}.{% endif %}
+    </p>
+</section>
 
-        <div class="dash-table-wrap">
-            <table class="dash-table">
-                <thead>
-                    <tr>
-                        <th>Nombre</th><th>Contacto</th><th>Servicio</th>
-                        <th>Fuente</th><th>Estado</th><th>Fecha</th><th aria-label="Expandir"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for lead in leads %}
-                    <tr class="dash-row" data-target="detail-{{ lead.pk }}" aria-expanded="false" aria-controls="detail-{{ lead.pk }}" tabindex="0" role="button">
-                        <td>
-                            <div class="dash-name"><a href="{% url 'lead_detail' lead.pk %}" onclick="event.stopPropagation();">{{ lead.name }}</a></div>
-                            {% if lead.company %}<div class="dash-sub">{{ lead.company }}</div>{% endif %}
-                            {% if lead.message %}<div class="dash-sub dash-preview">{{ lead.message|truncatechars:64 }}</div>{% endif %}
-                        </td>
-                        <td data-label="Contacto">
-                            {% if lead.email %}<div class="dash-email">{{ lead.email }}</div>
-                            {% if lead.email_verified_at %}<span class="dash-badge dash-badge--verified" title="Confirmó su correo el {{ lead.email_verified_at|date:'d/m/Y' }}">Correo confirmado</span>{% else %}<span class="dash-badge dash-badge--unverified">Sin confirmar</span>{% endif %}{% endif %}
-                            {% if lead.phone %}<div class="dash-sub">{{ lead.phone|format_phone }}</div>{% endif %}
-                            {% if not lead.email and not lead.phone %}<div class="dash-sub">—</div>{% endif %}
-                        </td>
-                        <td data-label="Servicio">{{ lead.get_service_display|default:"—" }}</td>
-                        <td data-label="Fuente"><span class="dash-badge dash-badge--{{ lead.source }}">{{ lead.get_source_display }}</span></td>
-                        <td data-label="Estado" onclick="event.stopPropagation();">
-                            <form method="post" action="{% url 'lead_status' lead.pk %}">
-                                {% csrf_token %}
-                                <span class="dash-dot dash-dot--{{ lead.status }}"></span>
-                                <select name="status" class="dash-status-select" onchange="this.form.submit()" aria-label="Estado del lead">
-                                    {% for val, label in status_choices %}
-                                    <option value="{{ val }}" {% if lead.status == val %}selected{% endif %}>{{ label }}</option>
-                                    {% endfor %}
-                                </select>
-                            </form>
-                        </td>
-                        <td class="dash-sub" data-label="Fecha">{{ lead.created_at|date:"M d, Y · g:i A" }}</td>
-                        <td class="dash-chevron" aria-hidden="true">⌄</td>
-                    </tr>
-                    <tr class="dash-detail" id="detail-{{ lead.pk }}">
-                        <td colspan="7">
-                            <dl class="dash-detail__grid">
-                                <dt>Mensaje</dt><dd>{{ lead.message|default:"—" }}</dd>
-                                {% if lead.email %}<dt>Correo</dt><dd><a href="mailto:{{ lead.email }}">{{ lead.email }}</a></dd>{% endif %}
-                                {% if lead.phone %}<dt>Teléfono</dt><dd><a href="tel:{{ lead.phone }}">{{ lead.phone|format_phone }}</a></dd>{% endif %}
-                                {% if lead.company %}<dt>Compañía</dt><dd>{{ lead.company }}</dd>{% endif %}
-                                {% if lead.get_budget_display %}<dt>Presupuesto</dt><dd>{{ lead.get_budget_display }}</dd>{% endif %}
-                                <dt>Fuente</dt><dd>{{ lead.get_source_display }}</dd>
-                                {% if lead.page_url %}<dt>Página</dt><dd><a href="{{ lead.page_url }}" target="_blank" rel="noopener">{{ lead.page_url|truncatechars:60 }}</a></dd>{% endif %}
-                                <dt>Recibido</dt><dd>{{ lead.created_at|date:"M d, Y · g:i A" }}</dd>
-                            </dl>
-                            <p><a href="{% url 'lead_detail' lead.pk %}">Ver historial, notas y acciones del lead</a></p>
-
-                            <div class="dash-reply">
-                                {% if not lead.email and lead.phone %}
-                                <a href="tel:{{ lead.phone }}" class="dash-reply-toggle">Llamar {{ lead.phone|format_phone }}</a>
-                                {% endif %}
-                                {% if lead.email %}
-                                <button type="button" class="dash-reply-toggle" data-reply="reply-{{ lead.pk }}">Responder por correo</button>
-                                <form class="dash-reply-form" id="reply-{{ lead.pk }}" method="post" action="{% url 'lead_email' lead.pk %}">
-                                    {% csrf_token %}
-                                    <div class="dash-reply-meta">Para: <b>{{ lead.email }}</b></div>
-                                    <input type="text" name="subject" class="dash-reply-input" value="Re: tu mensaje a {{ lead.client.name|default:'DOMINIO' }}" maxlength="200" required>
-                                    <textarea name="body" class="dash-reply-textarea" rows="6" placeholder="Escribe tu respuesta…" maxlength="10000" required></textarea>
-                                    <div class="dash-reply-actions">
-                                        <button type="submit" class="save-btn">Enviar correo</button>
-                                        {% if default_from %}<span class="dash-reply-hint">Enviado desde {{ default_from }}</span>{% endif %}
-                                    </div>
-                                </form>
-                                {% endif %}
-                            </div>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr><td colspan="7"><div class="dash-empty">Todavía no hay leads. Van a aparecer aquí según el formulario y el chat AI los vayan capturando.</div></td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+{% if not result_count %}
+    {% include 'landing/_dash_empty_state.html' with icon='filter' title='Ningún lead coincide con estos filtros' text='Prueba con otra búsqueda o quita algún filtro.' action_href=clear_url action_label='Limpiar filtros' %}
+{% elif view == 'board' %}
+<div class="kanban crm-board" data-kanban data-move-url="{{ move_url }}" data-error="No se pudo mover el lead. Se devolvió a su columna." data-moved="Lead movido a">
+    {% for key, col in board.items %}
+    <section class="kanban-col" data-status="{{ key }}" aria-labelledby="kcol-{{ key }}">
+        <header class="kanban-col__head">
+            <h2 class="kanban-col__title" id="kcol-{{ key }}"><span class="kanban-col__dot" aria-hidden="true"></span>{{ col.label }}</h2>
+            <span><span class="kanban-col__count" data-count>{{ col.total }}</span><span class="sr-only"> leads</span></span>
+        </header>
+        <div class="kanban-col__body">
+            <p class="kanban-col__empty">Sin leads en esta etapa.</p>
+            {% for lead in col.leads %}
+            <article class="lead-card" data-lead-id="{{ lead.pk }}" data-status="{{ lead.status }}" tabindex="-1">
+                <div class="lead-card__top">
+                    <a class="lead-card__title" href="{% url 'lead_detail' lead.pk %}">{{ lead.name }}</a>
+                    <span class="lead-card__grip" data-drag-handle aria-hidden="true"><svg class="icon" focusable="false"><use href="#i-grip"/></svg></span>
+                </div>
+                {% if lead.company %}<p class="lead-card__sub">{{ lead.company }}</p>{% elif lead.message %}<p class="lead-card__sub">{{ lead.message|truncatechars:90 }}</p>{% endif %}
+                <div class="lead-card__meta">
+                    <span class="lead-card__chan"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-{% if lead.source == 'whatsapp' %}whatsapp{% else %}globe{% endif %}"/></svg>{{ source_labels|dict_get:lead.source }}</span>
+                    <span class="lead-card__age" title="Tiempo en esta etapa"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-clock"/></svg><span class="sr-only">Tiempo en la etapa: </span><span data-age>{{ lead.status_changed_at|ago }}</span></span>
+                    {% if lead.assigned_to %}<span class="avatar" title="Asignado a {{ lead.assigned_to.username }}"><span aria-hidden="true">{{ lead.assigned_to|initials }}</span><span class="sr-only">Asignado a {{ lead.assigned_to.username }}</span></span>{% endif %}
+                    {% if lead.email %}{% if lead.email_verified_at %}<span class="chip chip--ok" title="Confirmó su correo el {{ lead.email_verified_at|date:'d/m/Y' }}">Correo confirmado</span>{% else %}<span class="chip chip--warn">Sin confirmar</span>{% endif %}{% endif %}
+                </div>
+                {% if lead.fu and lead.fu.open %}
+                <p class="lead-card__due{% if lead.fu.overdue %} lead-card__due--overdue{% elif lead.fu.today %} lead-card__due--today{% endif %}"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-{% if lead.fu.overdue %}circle-alert{% else %}bell{% endif %}"/></svg>{% if lead.fu.overdue %}Seguimiento vencido: {{ lead.fu.local|fecha_es:"short" }}{% elif lead.fu.today %}Seguimiento hoy, {{ lead.fu.local|date:"g:i A" }}{% else %}Seguimiento: {{ lead.fu.local|fecha_es:"short" }}{% endif %}</p>
+                {% endif %}
+                {% if lead.tags.all %}
+                <div class="chip-row crm-tags">{% for t in lead.tags.all|slice:":3" %}<span class="chip chip--neutral">{{ t.name }}</span>{% endfor %}{% if lead.tags.all|length > 3 %}<span class="chip chip--neutral">+{{ lead.tags.all|length|add:"-3" }}</span>{% endif %}</div>
+                {% endif %}
+                <form class="lead-card__move" method="post" action="{% url 'lead_status' lead.pk %}">
+                    {% csrf_token %}
+                    <label class="sr-only" for="mv-{{ lead.pk }}">Mover {{ lead.name }} a otra etapa</label>
+                    <select class="select" id="mv-{{ lead.pk }}" name="status">
+                        {% for k, label in status_options %}<option value="{{ k }}"{% if k == lead.status %} selected{% endif %}>{% if k == lead.status %}Mover a…{% else %}{{ label }}{% endif %}</option>{% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn--sm">Mover</button>
+                </form>
+            </article>
+            {% endfor %}
         </div>
-    </main>
-
-    <script>
-        function toggleRow(row) {
-            var detail = document.getElementById(row.getAttribute('data-target'));
-            if (!detail) return;
-            var open = detail.classList.toggle('is-open');
-            row.classList.toggle('is-expanded', open);
-            row.setAttribute('aria-expanded', open ? 'true' : 'false');
-        }
-        document.querySelectorAll('.dash-row').forEach(function (row) {
-            row.addEventListener('click', function () { toggleRow(row); });
-            row.addEventListener('keydown', function (e) {
-                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRow(row); }
-            });
-        });
-        // Reveal the reply form; keep clicks inside the detail row from collapsing it.
-        document.querySelectorAll('.dash-detail').forEach(function (d) {
-            d.addEventListener('click', function (e) { e.stopPropagation(); });
-        });
-        document.querySelectorAll('.dash-reply-toggle').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                var form = document.getElementById(btn.getAttribute('data-reply'));
-                if (form) form.classList.toggle('is-open');
-            });
-        });
-        document.querySelectorAll('.dash-reply-form').forEach(function (form) {
-            form.addEventListener('submit', function () {
-                var b = form.querySelector('button[type=submit]');
-                if (b) { b.disabled = true; b.textContent = 'Enviando…'; }
-            });
-        });
-    </script>
-</body>
-</html>
+        {% if col.more %}<footer class="kanban-col__foot"><a href="{{ col.url }}">Ver todos ({{ col.total }})</a></footer>{% endif %}
+    </section>
+    {% endfor %}
+</div>
+{% else %}
+<div class="table-scroll">
+    <table class="data-table data-table--cards">
+        <caption class="sr-only">Leads</caption>
+        <thead>
+            <tr>
+                <th scope="col">Nombre</th><th scope="col">Contacto</th><th scope="col">Fuente</th><th scope="col">Estado</th>
+                {% if show_assign %}<th scope="col">Asignado</th>{% endif %}<th scope="col">Seguimiento</th><th scope="col">En la etapa</th><th scope="col">Recibido</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for lead in leads %}
+            <tr>
+                <td>
+                    <div class="crm-cell">
+                        <a href="{% url 'lead_detail' lead.pk %}"><b>{{ lead.name }}</b></a>
+                        {% if lead.company %}<span class="dash-sub">{{ lead.company }}</span>{% endif %}
+                        {% if lead.message %}<span class="dash-sub crm-preview">{{ lead.message|truncatechars:64 }}</span>{% endif %}
+                        {% if lead.tags.all %}<span class="chip-row crm-tags">{% for t in lead.tags.all %}<span class="chip chip--neutral">{{ t.name }}</span>{% endfor %}</span>{% endif %}
+                    </div>
+                </td>
+                <td data-label="Contacto">
+                    <div class="crm-cell crm-cell--end">
+                        {% if lead.email %}<a href="mailto:{{ lead.email }}">{{ lead.email }}</a>
+                        {% if lead.email_verified_at %}<span class="chip chip--ok" title="Confirmó su correo el {{ lead.email_verified_at|date:'d/m/Y' }}">Correo confirmado</span>{% else %}<span class="chip chip--warn">Sin confirmar</span>{% endif %}{% endif %}
+                        {% if lead.phone %}<a href="tel:{{ lead.phone }}">{{ lead.phone|format_phone }}</a>{% endif %}
+                        {% if not lead.email and not lead.phone %}<span class="dash-sub">—</span>{% endif %}
+                    </div>
+                </td>
+                <td data-label="Fuente"><span class="chip chip--{% if lead.source == 'whatsapp' %}warn{% else %}info{% endif %}">{{ source_labels|dict_get:lead.source }}</span></td>
+                <td data-label="Estado">
+                    <form class="crm-status" method="post" action="{% url 'lead_status' lead.pk %}">
+                        {% csrf_token %}
+                        <span class="dash-dot dash-dot--{{ lead.status }}" aria-hidden="true"></span>
+                        <label class="sr-only" for="st-{{ lead.pk }}">Estado de {{ lead.name }}</label>
+                        <select id="st-{{ lead.pk }}" name="status" class="select" data-autosubmit>
+                            {% for k, label in status_options %}<option value="{{ k }}"{% if k == lead.status %} selected{% endif %}>{{ label }}</option>{% endfor %}
+                        </select>
+                        <noscript><button type="submit" class="btn btn--sm">Guardar</button></noscript>
+                    </form>
+                </td>
+                {% if show_assign %}<td data-label="Asignado">{% if lead.assigned_to %}<span class="avatar" aria-hidden="true">{{ lead.assigned_to|initials }}</span> {{ lead.assigned_to.username }}{% else %}<span class="dash-sub">Sin asignar</span>{% endif %}</td>{% endif %}
+                <td data-label="Seguimiento">
+                    {% if lead.fu and lead.fu.open %}<span class="chip chip--{% if lead.fu.overdue %}danger{% elif lead.fu.today %}warn{% else %}neutral{% endif %}">{% if lead.fu.overdue %}Vencido · {% elif lead.fu.today %}Hoy · {% endif %}{{ lead.fu.local|fecha_es:"short" }}</span>{% else %}<span class="dash-sub">—</span>{% endif %}
+                </td>
+                <td class="dash-sub" data-label="En la etapa">{{ lead.status_changed_at|ago }}</td>
+                <td class="dash-sub" data-label="Recibido">{{ lead.created_at|fecha_es:"hora" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% if list_truncated %}<p class="dash-muted">Se muestran los primeros {{ leads|length }} leads. Afina la búsqueda o los filtros para ver el resto.</p>{% endif %}
+{% endif %}
+{% endif %}
+{% endblock %}

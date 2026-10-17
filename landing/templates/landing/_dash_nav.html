@@ -1,75 +1,120 @@
-{% load static %}
-{# Shared dashboard top bar. Pass `active` = 'leads' | 'agents'. #}
-<header class="dash-topbar">
-    <div class="dash-brand">
-        <a href="{% url 'dashboard' %}" class="dash-brand__home" aria-label="Inicio del dashboard de DOMINIO">
+{% load static %}{% comment %}
+Dashboard shell: skip-link, sidebar (drawer under 1024 px), topbar and bottom-nav (phones).
+Pass `active` = home | leads | conversations | bookings | reports | asistente | knowledge | users | audit | install | billing | control | agents.
+Optional context for the topbar selectors (omit them and nothing renders):
+  client_options  list of (slug, name) tuples (already exposed by the views; shown only when it has more than one)
+  client_current  slug of the selected one (falls back to client_obj.slug / client.slug)
+  period_options  iterable of (key, label); the views pass it as `periods` (also accepted)
+  period_current  key of the selected one; the views pass it as `period` (also accepted)
+  client_select_id  optional id for the business <select> (default dash-ctx-client)
+Hidden `?` filters in the current URL are preserved when the selectors are applied.
+{% endcomment %}{% include 'landing/_icons.html' %}
+<a class="dash-skip" href="#dash-main">Saltar al contenido</a>
+<div class="dash-sidebar" id="dash-sidebar">
+    <div class="dash-sidebar__head">
+        <a href="{% url 'home' %}" class="dash-brand__home" aria-label="Inicio del dashboard de DOMINIO">
             <img src="{% static 'landing/images/brand/logo-wordmark.png' %}" alt="DOMINIO">
         </a>
-        <nav class="dash-nav" aria-label="Secciones">
-            {% if not IS_EMPLOYEE_ONLY %}
-            <a href="{% url 'dashboard' %}"
-               class="dash-nav__link {% if active == 'leads' %}is-active{% endif %}"
-               {% if active == 'leads' %}aria-current="page"{% endif %}>Leads</a>
-            <a href="{% url 'conversations' %}"
-               class="dash-nav__link {% if active == 'conversations' %}is-active{% endif %}"
-               {% if active == 'conversations' %}aria-current="page"{% endif %}>Conversaciones</a>
-            {% if HAS_BOOKINGS %}
-            <a href="{% url 'bookings' %}"
-               class="dash-nav__link {% if active == 'bookings' %}is-active{% endif %}"
-               {% if active == 'bookings' %}aria-current="page"{% endif %}>Citas</a>
-            {% endif %}
-            <a href="{% url 'reports' %}"
-               class="dash-nav__link {% if active == 'reports' %}is-active{% endif %}"
-               {% if active == 'reports' %}aria-current="page"{% endif %}>Reportes</a>
-            {% endif %}
-            {% if HAS_INTERNAL %}
-            <a href="{% url 'asistente' %}"
-               class="dash-nav__link {% if active == 'asistente' %}is-active{% endif %}"
-               {% if active == 'asistente' %}aria-current="page"{% endif %}>Asistente</a>
-            {% endif %}
-            {% if IS_ORG_ADMIN %}
-            {% if request.user.is_staff %}{# Phase I: knowledge is loaded and maintained by DOMINIO #}
-            <a href="{% url 'knowledge' %}"
-               class="dash-nav__link {% if active == 'knowledge' %}is-active{% endif %}"
-               {% if active == 'knowledge' %}aria-current="page"{% endif %}>Conocimiento</a>
-            {% endif %}
-            <a href="{% url 'dash_users' %}"
-               class="dash-nav__link {% if active == 'users' %}is-active{% endif %}"
-               {% if active == 'users' %}aria-current="page"{% endif %}>Usuarios</a>
-            <a href="{% url 'audit' %}"
-               class="dash-nav__link {% if active == 'audit' %}is-active{% endif %}"
-               {% if active == 'audit' %}aria-current="page"{% endif %}>Auditoría</a>
-            {% if not request.user.is_staff %}
-            <a href="{% url 'install' %}"
-               class="dash-nav__link {% if active == 'install' %}is-active{% endif %}"
-               {% if active == 'install' %}aria-current="page"{% endif %}>Instalación</a>
-            <a href="{% url 'billing' %}"
-               class="dash-nav__link {% if active == 'billing' %}is-active{% endif %}"
-               {% if active == 'billing' %}aria-current="page"{% endif %}>Facturación</a>
-            {% endif %}
-            {% endif %}
-            {% if request.user.is_staff %}
-            <a href="{% url 'control' %}"
-               class="dash-nav__link {% if active == 'control' %}is-active{% endif %}"
-               {% if active == 'control' %}aria-current="page"{% endif %}>Control</a>
-            <a href="{% url 'clients_list' %}"
-               class="dash-nav__link {% if active == 'agents' %}is-active{% endif %}"
-               {% if active == 'agents' %}aria-current="page"{% endif %}>Agentes</a>
-            {% endif %}
-        </nav>
+        <a href="#dash-main" class="dash-sidebar__close" data-drawer-close aria-label="Cerrar menú"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-x"/></svg></a>
     </div>
-    <div class="dash-user">
-        <a href="{% url 'password_change' %}" class="dash-user__name" style="text-decoration:none;">{{ request.user.username }}</a>
+    <nav class="dash-nav" aria-label="Secciones">
+        {% if not IS_EMPLOYEE_ONLY %}
+        <div class="dash-nav__section">
+            <p class="dash-nav__heading" id="nav-h-main">Principal</p>
+            <ul class="dash-nav__list" aria-labelledby="nav-h-main">
+                <li><a href="{% url 'home' %}" class="dash-nav__link{% if active == 'home' %} is-active{% endif %}"{% if active == 'home' %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-home"/></svg>Inicio</a></li>
+                <li><a href="{% url 'conversations' %}" class="dash-nav__link{% if active == 'conversations' %} is-active{% endif %}"{% if active == 'conversations' %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-message"/></svg>Conversaciones</a></li>
+                <li><a href="{% url 'dashboard' %}" class="dash-nav__link{% if active == 'leads' %} is-active{% endif %}"{% if active == 'leads' %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-user-plus"/></svg>Leads</a></li>
+                {% if HAS_BOOKINGS %}
+                <li><a href="{% url 'bookings' %}" class="dash-nav__link{% if active == 'bookings' %} is-active{% endif %}"{% if active == 'bookings' %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-calendar"/></svg>Citas</a></li>
+                {% endif %}
+            </ul>
+        </div>
+        <div class="dash-nav__section">
+            <p class="dash-nav__heading" id="nav-h-analytics">Análisis</p>
+            <ul class="dash-nav__list" aria-labelledby="nav-h-analytics">
+                <li><a href="{% url 'reports' %}" class="dash-nav__link{% if active == 'reports' %} is-active{% endif %}"{% if active == 'reports' %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chart"/></svg>Reportes</a></li>
+            </ul>
+        </div>
+        {% endif %}
+        {% if HAS_INTERNAL or IS_ORG_ADMIN %}
+        <div class="dash-nav__section">
+            <p class="dash-nav__heading" id="nav-h-agent">Agente</p>
+            <ul class="dash-nav__list" aria-labelledby="nav-h-agent">
+                {% if HAS_INTERNAL %}
+                <li><a href="{% url 'asistente' %}" class="dash-nav__link{% if active == 'asistente' %} is-active{% endif %}"{% if active == 'asistente' %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-bot"/></svg>Asistente</a></li>
+                {% endif %}
+                {% if IS_ORG_ADMIN %}
+                {% if request.user.is_staff %}{# Phase I: knowledge is loaded and maintained by DOMINIO #}
+                <li><a href="{% url 'knowledge' %}" class="dash-nav__link{% if active == 'knowledge' %} is-active{% endif %}"{% if active == 'knowledge' %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-book"/></svg>Conocimiento</a></li>
+                {% else %}
+                <li><a href="{% url 'install' %}" class="dash-nav__link{% if active == 'install' %} is-active{% endif %}"{% if active == 'install' %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plug"/></svg>Instalación</a></li>
+                {% endif %}
+                {% endif %}
+            </ul>
+        </div>
+        {% endif %}
+        {% if IS_ORG_ADMIN %}
+        <div class="dash-nav__section">
+            <p class="dash-nav__heading" id="nav-h-team">Equipo</p>
+            <ul class="dash-nav__list" aria-labelledby="nav-h-team">
+                <li><a href="{% url 'dash_users' %}" class="dash-nav__link{% if active == 'users' %} is-active{% endif %}"{% if active == 'users' %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-users"/></svg>Usuarios</a></li>
+                <li><a href="{% url 'audit' %}" class="dash-nav__link{% if active == 'audit' %} is-active{% endif %}"{% if active == 'audit' %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-scroll-text"/></svg>Auditoría</a></li>
+                {% if not request.user.is_staff %}
+                <li><a href="{% url 'billing' %}" class="dash-nav__link{% if active == 'billing' %} is-active{% endif %}"{% if active == 'billing' %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-credit-card"/></svg>Facturación</a></li>
+                {% endif %}
+            </ul>
+        </div>
+        {% endif %}
+        {% if request.user.is_staff %}
+        <div class="dash-nav__section">
+            <p class="dash-nav__heading" id="nav-h-staff">Staff</p>
+            <ul class="dash-nav__list" aria-labelledby="nav-h-staff">
+                <li><a href="{% url 'control' %}" class="dash-nav__link{% if active == 'control' %} is-active{% endif %}"{% if active == 'control' %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-gauge"/></svg>Control</a></li>
+                <li><a href="{% url 'clients_list' %}" class="dash-nav__link{% if active == 'agents' %} is-active{% endif %}"{% if active == 'agents' %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-grid"/></svg>Agentes</a></li>
+            </ul>
+        </div>
+        {% endif %}
+    </nav>
+    <div class="dash-sidebar__foot">
+        <a href="{% url 'password_change' %}" class="dash-user__name" title="Cambiar contraseña"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-user-round"/></svg>{{ request.user.username }}</a>
         <form method="post" action="{% url 'logout' %}">
             {% csrf_token %}
-            <button type="submit" class="dash-logout">Cerrar sesión</button>
+            <button type="submit" class="dash-logout"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-log-out"/></svg>Cerrar sesión</button>
         </form>
     </div>
+</div>
+<a class="dash-scrim" href="#dash-main" data-drawer-close tabindex="-1" aria-hidden="true"></a>
+
+<header class="dash-topbar">
+    <a href="#dash-sidebar" class="dash-topbar__menu{% if not IS_EMPLOYEE_ONLY %} dash-topbar__menu--tablet{% endif %}" data-drawer-open aria-controls="dash-sidebar" aria-expanded="false" aria-label="Abrir menú"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-menu"/></svg></a>
+    <p class="dash-topbar__title">{% if active == 'home' %}Inicio{% elif active == 'leads' %}Leads{% elif active == 'conversations' %}Conversaciones{% elif active == 'bookings' %}Citas{% elif active == 'reports' %}Reportes{% elif active == 'asistente' %}Asistente{% elif active == 'knowledge' %}Conocimiento{% elif active == 'users' %}Usuarios{% elif active == 'audit' %}Auditoría{% elif active == 'install' %}Instalación{% elif active == 'billing' %}Facturación{% elif active == 'control' %}Centro de control{% elif active == 'agents' %}Agentes{% else %}Dashboard{% endif %}</p>
+    {% if period_options %}{% include 'landing/_dash_ctx.html' with popts=period_options pcur=period_current %}{% elif periods %}{% include 'landing/_dash_ctx.html' with popts=periods pcur=period %}{% elif client_options|length > 1 %}{% include 'landing/_dash_ctx.html' %}{% endif %}
 </header>
+
+{% if not IS_EMPLOYEE_ONLY %}
+<nav class="dash-bottomnav" aria-label="Navegación rápida">
+    <ul class="dash-bottomnav__list">
+        <li><a href="{% url 'home' %}" class="dash-bottomnav__link{% if active == 'home' %} is-active{% endif %}"{% if active == 'home' %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-home"/></svg><span>Inicio</span></a></li>
+        <li><a href="{% url 'conversations' %}" class="dash-bottomnav__link{% if active == 'conversations' %} is-active{% endif %}"{% if active == 'conversations' %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-inbox"/></svg><span>Inbox</span></a></li>
+        <li><a href="{% url 'dashboard' %}" class="dash-bottomnav__link{% if active == 'leads' %} is-active{% endif %}"{% if active == 'leads' %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-user-plus"/></svg><span>Leads</span></a></li>
+        {% if HAS_BOOKINGS %}
+        <li><a href="{% url 'bookings' %}" class="dash-bottomnav__link{% if active == 'bookings' %} is-active{% endif %}"{% if active == 'bookings' %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-calendar"/></svg><span>Citas</span></a></li>
+        {% else %}
+        <li><a href="{% url 'reports' %}" class="dash-bottomnav__link{% if active == 'reports' %} is-active{% endif %}"{% if active == 'reports' %} aria-current="page"{% endif %}><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chart"/></svg><span>Reportes</span></a></li>
+        {% endif %}
+        <li><a href="#dash-sidebar" class="dash-bottomnav__link{% if active == 'reports' and HAS_BOOKINGS or active == 'asistente' or active == 'knowledge' or active == 'users' or active == 'audit' or active == 'install' or active == 'billing' or active == 'control' or active == 'agents' %} is-active{% endif %}" data-drawer-open aria-controls="dash-sidebar" aria-expanded="false"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-ellipsis"/></svg><span>Más</span></a></li>
+    </ul>
+</nav>
+{% endif %}
+
 {% if messages %}
 <div class="dash-flash-wrap">
     {% for m in messages %}
-    <div class="dash-flash dash-flash--{{ m.tags }}">{{ m }}</div>
+    <div class="alert dash-flash dash-flash--{{ m.tags }}{% if m.tags == 'error' %} alert--danger{% elif m.tags == 'success' %} alert--ok{% elif m.tags == 'warning' %} alert--warn{% endif %}" role="{% if m.tags == 'error' %}alert{% else %}status{% endif %}">
+        <svg class="icon" aria-hidden="true" focusable="false"><use href="#{% if m.tags == 'error' %}i-circle-alert{% elif m.tags == 'success' %}i-check-circle{% elif m.tags == 'warning' %}i-alert-triangle{% else %}i-info{% endif %}"/></svg>
+        <div class="alert__body">{{ m }}</div>
+    </div>
     {% endfor %}
 </div>
 {% endif %}

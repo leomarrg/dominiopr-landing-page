@@ -1,0 +1,27 @@
+{% comment %}Chart card: figure + text legend + "Ver como tabla".
+Params: title, svg (safe SVG markup; give shapes data-tip="texto" for tooltips), label (accessible description of the
+chart), subtitle (optional), legend (list of dicts: label, value, cls = web|wa|leads|appts), table (dict: headers = list,
+rows = list of lists), uid (unique id, needed when the page has several charts).
+Usage: {% include 'landing/_dash_chart_card.html' with title='Conversaciones por día' uid='conv' svg=chart.svg label=chart.label legend=chart.legend table=chart.table %}{% endcomment %}
+<section class="card chart-card" aria-labelledby="chart-{{ uid|default:'x' }}-t">
+    <div class="card__head">
+        <div>
+            <h2 class="card__title" id="chart-{{ uid|default:'x' }}-t">{{ title }}</h2>
+            {% if subtitle %}<p class="card__sub">{{ subtitle }}</p>{% endif %}
+        </div>
+    </div>
+    <figure class="chart">
+        <div class="chart__plot" data-chart role="img" aria-label="{{ label|default:title }}">{{ svg }}</div>
+        {% if legend %}<figcaption><ul class="chart__legend">{% for l in legend %}<li><span class="legend__sw legend--{{ l.cls|default:'web' }}" aria-hidden="true"></span>{{ l.label }}{% if l.value is not None %} <b>{{ l.value }}</b>{% endif %}</li>{% endfor %}</ul></figcaption>{% endif %}
+    </figure>
+    {% if table %}
+    <details class="chart__table">
+        <summary>Ver como tabla</summary>
+        <div class="table-scroll"><table class="data-table data-table--compact">
+            <caption class="sr-only">{{ title }}</caption>
+            <thead><tr>{% for h in table.headers %}<th scope="col">{{ h }}</th>{% endfor %}</tr></thead>
+            <tbody>{% for row in table.rows %}<tr>{% for cell in row %}{% if forloop.first %}<th scope="row">{{ cell }}</th>{% else %}<td class="num">{{ cell }}</td>{% endif %}{% endfor %}</tr>{% endfor %}</tbody>
+        </table></div>
+    </details>
+    {% endif %}
+</section>

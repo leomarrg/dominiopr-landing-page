@@ -1,0 +1,36 @@
+{% comment %}Peak hours heat map (weekday x hour, Puerto Rico time). Context: peak, peak_chart (analytics.svg_heatmap + tip, summary).{% endcomment %}
+<section class="card chart-card" aria-labelledby="an-peak-t">
+    <div class="card__head">
+        <div>
+            <h2 class="card__title" id="an-peak-t">Horas pico</h2>
+            <p class="card__sub">Cuándo escriben tus visitantes (hora de Puerto Rico) · {{ period_label }}</p>
+        </div>
+    </div>
+    {% if peak_chart.empty %}
+    {% include 'landing/_dash_empty_state.html' with inline=1 icon='clock' title='Aún no hay horas pico' text='Con las primeras conversaciones de este periodo verás en qué días y horas escribe más gente.' %}
+    {% else %}
+    <figure class="chart">
+        <div class="chart__plot" data-chart role="img" aria-labelledby="an-peak-t" aria-describedby="an-peak-d">
+            <svg viewBox="{{ peak_chart.viewBox }}" focusable="false">
+                {% for l in peak_chart.col_labels %}<text x="{{ l.x }}" y="11" text-anchor="middle">{{ l.text }}</text>{% endfor %}
+                {% for l in peak_chart.row_labels %}<text x="0" y="{{ l.y }}">{{ l.text }}</text>{% endfor %}
+                {% for c in peak_chart.cells %}<rect class="heat-{{ c.level }}" x="{{ c.x }}" y="{{ c.y }}" width="{{ c.w }}" height="{{ c.h }}" rx="2"{% if c.tip %} data-tip="{{ c.tip }}"{% endif %}/>{% endfor %}
+            </svg>
+        </div>
+        <figcaption>
+            <ul class="chart__legend">
+                <li>Menos conversaciones <span class="heat-scale" aria-hidden="true"><span class="legend__sw legend--heat-1"></span><span class="legend__sw legend--heat-2"></span><span class="legend__sw legend--heat-3"></span><span class="legend__sw legend--heat-4"></span></span> Más conversaciones</li>
+            </ul>
+            <p class="chart__note" id="an-peak-d">{{ peak_chart.summary }}{% if peak.bucket_hours > 1 %} Agrupado en franjas de {{ peak.bucket_hours }} h porque todavía hay pocas conversaciones.{% endif %}</p>
+        </figcaption>
+    </figure>
+    <details class="chart__table">
+        <summary>Ver como tabla</summary>
+        <div class="table-scroll"><table class="data-table data-table--compact">
+            <caption class="sr-only">Conversaciones por día de la semana y hora</caption>
+            <thead><tr><th scope="col">Día</th>{% for c in peak_chart.columns %}<th scope="col">{{ c }}</th>{% endfor %}</tr></thead>
+            <tbody>{% for r in peak_chart.rows %}<tr><th scope="row">{{ r.day }}</th>{% for v in r.cells %}<td class="num">{{ v }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+        </table></div>
+    </details>
+    {% endif %}
+</section>

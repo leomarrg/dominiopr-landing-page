@@ -1,47 +1,46 @@
 {% extends 'landing/dashboard_base.html' %}
+{% load landing_extras %}
 {% block title %}Conversaciones{% endblock %}
 {% block content %}
-<h1 class="dash-h1">Conversaciones</h1>
+{% url 'conversations' as clear_inbox_url %}
+<header class="page-head">
+    <h1 class="dash-h1">Conversaciones</h1>
+</header>
 
-<section class="dash-stats">
-    <div class="dash-stat"><div class="dash-stat__num">{{ stats.total }}</div><div class="dash-stat__label">Total</div></div>
-    <div class="dash-stat dash-stat--accent"><div class="dash-stat__num">{{ stats.escalated }}</div><div class="dash-stat__label">Escaladas</div></div>
-    <div class="dash-stat"><div class="dash-stat__num">{{ stats.with_lead }}</div><div class="dash-stat__label">Con lead</div></div>
+<dl class="crm-stats">
+    <div class="crm-stat"><dt>Total</dt><dd>{{ stats.total }}</dd></div>
+    <div class="crm-stat crm-stat--accent"><dt>Escaladas</dt><dd>{{ stats.escalated }}</dd></div>
+    <div class="crm-stat"><dt>Con lead</dt><dd>{{ stats.with_lead }}</dd></div>
+    {% if stats.whatsapp %}<div class="crm-stat"><dt>Por WhatsApp</dt><dd>{{ stats.whatsapp }}</dd></div>{% endif %}
+</dl>
+
+{% if not stats.total %}
+    {% include 'landing/_dash_empty_state.html' with icon='message' title='Todavía no hay conversaciones' text='Aparecerán aquí según los visitantes usen el chat. Todavía no hay conversaciones guardadas.' %}
+{% else %}
+<section class="crm-toolbar" aria-label="Buscar y filtrar conversaciones">
+    <form class="crm-search" method="get" role="search">
+        {% for key, vals in request.GET.lists %}{% if key != 'q' and key != 'page' %}{% for v in vals %}<input type="hidden" name="{{ key }}" value="{{ v }}">{% endfor %}{% endif %}{% endfor %}
+        <label class="sr-only" for="conv-q">Buscar conversaciones</label>
+        <input class="input" type="search" id="conv-q" name="q" value="{{ q }}" placeholder="Buscar en mensajes o leads…" maxlength="120">
+        <button type="submit" class="btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-search"/></svg>Buscar</button>
+    </form>
+    {% include 'landing/_crm_chip_groups.html' with groups=inbox_groups %}
+    {% if filters_active %}<p class="crm-result"><a href="{% url 'conversations' %}">Limpiar filtros</a></p>{% endif %}
 </section>
 
-<form class="dash-filters" method="get">
-    <input type="search" name="q" value="{{ q }}" placeholder="Buscar en mensajes o leads…">
-    <select name="state">
-        <option value="">Todos los estados</option>
-        {% for val, label in state_choices %}
-        <option value="{{ val }}" {% if cur_state == val %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-    </select>
-    <button type="submit">Filtrar</button>
-    {% if q or cur_state %}<a class="dash-clear" href="{% url 'conversations' %}">Limpiar</a>{% endif %}
-</form>
-
-<div class="dash-table-wrap">
-    <table class="dash-table">
-        <thead><tr><th>Cliente</th><th>Estado</th><th>Mensajes</th><th>Lead</th><th>Página</th><th>Última actividad</th></tr></thead>
-        <tbody>
-            {% for c in conversations %}
-            <tr>
-                <td><a href="{% url 'conversation_detail' c.pk %}"><b>{{ c.client.name }}</b></a>
-                    {% if c.channel == 'internal' %}<span class="dash-pill dash-pill--closed_resolved">Interno</span>
-                    <div class="dash-sub">{% if c.user %}{{ c.user.get_full_name|default:c.user.username }}{% else %}empleado{% endif %}</div>
-                    {% else %}<div class="dash-sub">{{ c.widget_session|truncatechars:12 }}</div>{% endif %}</td>
-                <td><span class="dash-pill dash-pill--{{ c.state }}">{{ c.get_state_display }}</span>
-                    {% if c.escalation_reason %}<div class="dash-sub">{{ c.escalation_reason|truncatechars:60 }}</div>{% endif %}</td>
-                <td>{{ c.n_messages }}</td>
-                <td>{% if c.lead %}{{ c.lead.name }}{% else %}<span class="dash-muted">—</span>{% endif %}</td>
-                <td class="dash-sub">{{ c.page_url|truncatechars:40|default:"—" }}</td>
-                <td class="dash-sub">{{ c.last_message_at|date:"M d, g:i A" }}</td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="6"><div class="dash-empty">Todavía no hay conversaciones guardadas. Aparecerán aquí según los visitantes usen el chat.</div></td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
+<div class="inbox-wrap">
+    <div class="inbox" data-view="list">
+        <section class="inbox__list" aria-label="Lista de conversaciones">
+            {% if conversations %}
+            {% include 'landing/_crm_inbox_list.html' with items=conversations current='' multi=multi_client %}
+            {% else %}
+            {% include 'landing/_dash_empty_state.html' with inline=1 icon='filter' title='Ninguna conversación coincide' text='Prueba con otra búsqueda o quita algún filtro.' action_href=clear_inbox_url action_label='Limpiar filtros' %}
+            {% endif %}
+        </section>
+        <section class="inbox__thread" aria-label="Conversación">
+            {% include 'landing/_dash_empty_state.html' with inline=1 icon='inbox' title='Elige una conversación' text='Verás el historial, el lead y la cita relacionados.' %}
+        </section>
+    </div>
 </div>
+{% endif %}
 {% endblock %}

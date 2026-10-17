@@ -1,0 +1,15 @@
+{% comment %}KPI card. Params: label, value; optional: href, hint (e.g. "vs. 30 días anteriores"),
+delta (text, e.g. "+12 %"), delta_dir (up|down|flat), delta_good (good|bad|neutral), spark (safe SVG <path> markup,
+viewBox 0 0 96 32), accent (any value), attention (any value).
+Usage: {% include 'landing/_dash_kpi_card.html' with label='Leads' value=n delta='+12 %' delta_dir='up' delta_good='good' hint='vs. periodo anterior' %}{% endcomment %}
+{% if href %}<a class="kpi{% if accent %} kpi--accent{% endif %}{% if attention %} kpi--attention{% endif %}" href="{{ href }}">{% else %}<div class="kpi{% if accent %} kpi--accent{% endif %}{% if attention %} kpi--attention{% endif %}">{% endif %}
+    <p class="kpi__label">{{ label }}</p>
+    <p class="kpi__value">{{ value }}</p>
+    <div class="kpi__foot">
+        <span>
+            {% if delta %}<span class="delta{% if delta_good == 'good' %} delta--good{% elif delta_good == 'bad' %} delta--bad{% endif %}"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-{% if delta_dir == 'up' %}trending-up{% elif delta_dir == 'down' %}trending-down{% else %}minus{% endif %}"/></svg>{{ delta }}</span>{% endif %}
+            {% if hint %}<span class="kpi__hint">{{ hint }}</span>{% endif %}
+        </span>
+        {% if spark %}<svg class="kpi__spark" viewBox="0 0 96 32" preserveAspectRatio="none" aria-hidden="true" focusable="false">{{ spark }}</svg>{% endif %}
+    </div>
+{% if href %}</a>{% else %}</div>{% endif %}

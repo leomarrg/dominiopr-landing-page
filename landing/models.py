@@ -279,7 +279,11 @@ class ContactSubmission(models.Model):
         ('signup', 'Agent signup'),
         # Phase D: a message the receptionist took for a person/department.
         ('message', 'Chat message'),
+        # CRM: a lead the agent captured over WhatsApp (Phase G channel).
+        ('whatsapp', 'WhatsApp'),
     ]
+    # Sources the AI agent itself produces (vs a form or a signup).
+    AGENT_SOURCES = ('chat', 'whatsapp')
     STATUS_CHOICES = [
         ('new', 'New'),
         ('contacted', 'Contacted'),
@@ -287,6 +291,12 @@ class ContactSubmission(models.Model):
         ('won', 'Won'),
         ('lost', 'Lost'),
     ]
+    # Pipeline order for the kanban columns and the stepper of the lead card.
+    STATUS_ORDER = ('new', 'contacted', 'qualified', 'won', 'lost')
+    STATUS_LABELS_ES = {
+        'new': 'Nuevo', 'contacted': 'Contactado', 'qualified': 'Calificado',
+        'won': 'Ganado', 'lost': 'Perdido',
+    }
 
     name = models.CharField(max_length=120)
     # A lead needs at least one way to reach them — email OR phone (enforced in
@@ -315,6 +325,24 @@ class ContactSubmission(models.Model):
     # email, or a lead from before the feature).
     email_verified_at = models.DateTimeField(null=True, blank=True)
 
+    # --- CRM (dashboard redesign) ---
+    # When `status` last changed: the kanban shows "3 d en esta etapa".
+    # Backfilled to created_at by migration 0044. Only set_status() moves it.
+    status_changed_at = models.DateTimeField(default=timezone.now, db_index=True)
+    # First time the lead reached 'contacted' (time-to-first-contact metric).
+    contacted_at = models.DateTimeField(null=True, blank=True)
+    # Next follow-up the team scheduled (an instant; shown in Puerto Rico time)
+    # and when it was closed. Open follow-up = follow_up_at set, done null.
+    follow_up_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    follow_up_done_at = models.DateTimeField(null=True, blank=True)
+    # The member working this lead. Must hold an org_admin/agent Membership in
+    # the lead's own client (clean() and the views enforce it).
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='assigned_leads')
+    lost_reason = models.CharField(max_length=120, blank=True)
+    tags = models.ManyToManyField('LeadTag', blank=True, related_name='leads')
+
     # Metadata (captured server-side, not from the user)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.CharField(max_length=300, blank=True)
@@ -327,6 +355,70 @@ class ContactSubmission(models.Model):
 
     def __str__(self):
         return f'{self.name} <{self.email}> - {self.created_at:%Y-%m-%d %H:%M}'
+
+    @property
+    def channel(self):
+        """'whatsapp' for a lead the agent captured over WhatsApp, 'web' for
+        everything else (form, widget chat, signup, receptionist message)."""
+        return 'whatsapp' if self.source == 'whatsapp' else 'web'
+
+    @property
+    def follow_up_open(self):
+        return self.follow_up_at is not None and self.follow_up_done_at is None
+
+    def set_status(self, new_status, by=None, save=True):
+        """The ONE place a lead's status changes (views, email nudge, kanban,
+        JSON endpoint). Stamps status_changed_at and, on the first move to
+        'contacted', contacted_at. Returns True when something changed.
+        ValueError for an unknown status (callers validate first; this is the
+        last line)."""
+        if new_status not in dict(self.STATUS_CHOICES):
+            raise ValueError(f'Unknown lead status: {new_status!r}')
+        if new_status == self.status:
+            return False
+        now = timezone.now()
+        self.status = new_status
+        self.status_changed_at = now
+        fields = ['status', 'status_changed_at']
+        if new_status == 'contacted' and self.contacted_at is None:
+            self.contacted_at = now
+            fields.append('contacted_at')
+        if save:
+            self.save(update_fields=fields)
+        return True
+
+    def clean(self):
+        super().clean()
+        if self.assigned_to_id is None:
+            return
+        if self.client_id is None or not Membership.objects.filter(
+                user_id=self.assigned_to_id, client_id=self.client_id,
+                role__in=Membership.DASHBOARD_ROLES).exists():
+            raise ValidationError(
+                {'assigned_to': 'Solo se puede asignar a un administrador o agente '
+                                'de la misma organización.'})
+
+
+class LeadTag(models.Model):
+    """CRM: a short label a tenant pins on its leads ("VIP", "Bayamón",
+    "Cotización enviada"). Per client, unique by name; at most
+    MAX_PER_CLIENT per client (enforced by the view)."""
+    MAX_PER_CLIENT = 20
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='lead_tags')
+    name = models.CharField(max_length=40)
+    # '#rrggbb' or blank for the default chip color.
+    color = models.CharField(max_length=7, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name', 'pk']
+        constraints = [
+            models.UniqueConstraint(fields=['client', 'name'], name='uniq_lead_tag_per_client'),
+        ]
+
+    def __str__(self):
+        return f'{self.client.slug} · {self.name}'
 
 
 class LeadNote(models.Model):
@@ -553,6 +645,9 @@ class Membership(models.Model):
     # Roles that see the dashboard (leads, conversations, reports...).
     DASHBOARD_ROLES = ('org_admin', 'agent')
     role = models.CharField(max_length=12, choices=ROLE_CHOICES, default='org_admin')
+    # CRM: receive the 8:00 a.m. follow-up digest (send_followup_digest) for
+    # this client. Only org_admin/agent memberships are ever mailed.
+    daily_digest = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -690,6 +785,10 @@ class Conversation(models.Model):
         ContactSubmission, null=True, blank=True, on_delete=models.SET_NULL,
         related_name='conversations')
     page_url = models.CharField(max_length=500, blank=True)
+    # CRM inbox: how the counterpart is shown in the list when there is no
+    # lead yet. WhatsApp writes "WhatsApp · termina en 1234" (never the full
+    # number); web rows stay blank. Cleared by lead anonymization.
+    contact_label = models.CharField(max_length=60, blank=True)
     state = models.CharField(max_length=20, choices=STATE_CHOICES,
                              default='active', db_index=True)
     # Why it was escalated, in the visitor's words (M-16 request_human).

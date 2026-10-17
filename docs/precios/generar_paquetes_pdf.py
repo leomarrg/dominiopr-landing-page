@@ -226,7 +226,7 @@ FEATURES = {
           'Conocimiento cargado por DOMINIO desde el sitio web y 1 documento del cliente',
           'Contesta preguntas frecuentes y capta leads (nombre + email o teléfono verificado)',
           'Aviso de cada lead por email; correos falsos o desechables se rechazan',
-          'Dashboard: leads, conversaciones y uso del plan',
+          'Dashboard tipo CRM: pipeline de leads, seguimientos, inbox y gráficas de uso',
           'Protección anti-bots (verificación humana)'],
     'M': ['Todo lo de Small',
           'Agenda citas según tus horarios, sin doble reserva, con recordatorio por email',
@@ -480,6 +480,8 @@ AVAIL = [
     ('Capacidad mensual por paquete, aviso al 80%, escalones y cobro del exceso el día 1', 'Todos', 'Listo', '—'),
     ('Asistente interno con login, asientos y conocimiento interno separado', 'L', 'Listo', '—'),
     ('Varios locales (agenda y horario por local) y avisos por departamento', 'L', 'Listo', '—'),
+    ('Dashboard tipo CRM: inicio con KPIs y gráficas, pipeline de leads (tablero y lista), seguimientos con '
+     'fecha y correo diario, asignación y etiquetas, inbox web + WhatsApp, calendario de citas', 'Todos', 'Listo', '—'),
     ('WhatsApp Business (Cloud API de Meta, sin intermediario): webhook, respuestas, plantillas, STOP, citas', 'P', 'Listo (falta la cuenta de Meta)', 'Verificación de Meta: 1–3 semanas'),
     ('Sincronizar Google/Outlook Calendar, CRM', 'Enterprise', 'Cotizar', '1–2 semanas por integración'),
     ('Voz / llamadas telefónicas', '—', 'Fuera de alcance', 'Requiere proveedor de voz; no recomendado ahora'),

@@ -1,0 +1,214 @@
+/* ==========================================================================
+   DOMINIO dashboard - shell: sidebar, topbar, drawer, bottom-nav, skip-link
+   >= 1024px  fixed sidebar (232px) + sticky topbar
+   <  1024px  sidebar becomes a drawer (button in the topbar / "Mas" tab)
+   <   720px  bottom-nav with 5 destinations, compact topbar
+   The drawer also works without JS through :target (#dash-sidebar).
+   ========================================================================== */
+
+/* The sidebar is fixed, so any page (extending the base or just including the
+   nav) only needs the left gutter on the body. */
+body.dash-body { min-height: 100vh; }
+
+.dash-skip {
+    position: absolute; left: var(--sp-3); top: -64px; z-index: 100;
+    background: var(--accent); color: var(--accent-ink);
+    padding: var(--sp-2) var(--sp-4); border-radius: var(--r-md);
+    font-weight: 600; text-decoration: none;
+}
+.dash-skip:focus { top: var(--sp-3); }
+
+.dash-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+.icon {
+    width: 1.25em; height: 1.25em; flex: none;
+    fill: none; stroke: currentColor;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.icon--sm { width: 1em; height: 1em; }
+.icon--lg { width: 1.5em; height: 1.5em; }
+
+/* ---------- Sidebar ---------- */
+.dash-sidebar {
+    position: fixed; inset: 0 auto 0 0; z-index: 60;
+    width: var(--sidebar-w);
+    display: flex; flex-direction: column;
+    background: var(--surface);
+    border-right: 1px solid var(--line);
+    overflow-y: auto; overscroll-behavior: contain;
+}
+.dash-sidebar__head {
+    display: flex; align-items: center; justify-content: space-between;
+    height: var(--topbar-h); padding: 0 var(--sp-4); flex: none;
+}
+.dash-brand__home { display: inline-flex; flex: none; border-radius: var(--r-sm); }
+.dash-brand__home img { height: 44px; width: auto; max-width: none; display: block; }
+.dash-sidebar__close {
+    display: none; align-items: center; justify-content: center;
+    width: 44px; height: 44px; margin-right: -10px;
+    border-radius: var(--r-md); color: var(--text-2);
+}
+.dash-sidebar__close:hover { background: var(--accent-soft); color: var(--accent); text-decoration: none; }
+
+.dash-nav { flex: 1 1 auto; padding: var(--sp-2) var(--sp-3) var(--sp-4); }
+.dash-nav__section { margin-top: var(--sp-4); }
+.dash-nav__section:first-child { margin-top: 0; }
+.dash-nav__heading {
+    margin: 0; padding: var(--sp-2) var(--sp-3);
+    font-family: var(--font-body); font-size: var(--fs-xs); font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted);
+}
+.dash-nav__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+
+.dash-nav__link {
+    position: relative;
+    display: flex; align-items: center; gap: var(--sp-3);
+    min-height: 40px; padding: var(--sp-2) var(--sp-3);
+    border-radius: var(--r-md);
+    color: var(--text-2); font-size: var(--fs-base); font-weight: 600;
+    white-space: nowrap;
+    transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.dash-nav__link:hover { background: var(--accent-soft); color: var(--white); text-decoration: none; }
+.dash-nav__link.is-active, .dash-nav__link[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
+.dash-nav__link.is-active::before, .dash-nav__link[aria-current="page"]::before {
+    content: ""; position: absolute; left: -12px; top: 8px; bottom: 8px; width: 3px;
+    border-radius: 0 3px 3px 0; background: var(--accent);
+}
+
+.dash-sidebar__foot {
+    flex: none; padding: var(--sp-3) var(--sp-3) var(--sp-4);
+    border-top: 1px solid var(--line-soft);
+    display: flex; flex-direction: column; gap: var(--sp-2);
+}
+.dash-user__name {
+    display: flex; align-items: center; gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md);
+    color: var(--text-2); font-size: var(--fs-sm);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dash-user__name:hover { color: var(--accent); background: var(--accent-soft); text-decoration: none; }
+.dash-sidebar__foot form { margin: 0; }
+.dash-sidebar__foot .dash-logout { width: 100%; justify-content: flex-start; }
+
+.dash-scrim {
+    position: fixed; inset: 0; z-index: 55;
+    background: rgba(4, 12, 20, 0.62);
+    display: none;
+}
+
+/* ---------- Topbar ---------- */
+.dash-topbar {
+    position: sticky; top: 0; z-index: 40;
+    display: flex; align-items: center; gap: var(--sp-3);
+    min-height: var(--topbar-h);
+    padding: var(--sp-2) var(--sp-6);
+    background: var(--primary);
+    border-bottom: 1px solid var(--line-soft);
+}
+.dash-topbar__menu {
+    display: none; align-items: center; justify-content: center;
+    width: 44px; height: 44px; margin-left: -10px;
+    border: 0; border-radius: var(--r-md);
+    background: transparent; color: var(--text); cursor: pointer;
+}
+.dash-topbar__menu:hover { background: var(--accent-soft); color: var(--accent); }
+.dash-topbar__title {
+    margin: 0; flex: 1 1 auto; min-width: 0;
+    font-family: var(--font-display); font-size: var(--fs-lg); font-weight: 600;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Business + period selectors: plain GET form, "Aplicar" always available. */
+.dash-ctx { display: flex; align-items: center; gap: var(--sp-2); margin: 0; flex-wrap: wrap; }
+.dash-ctx__field { display: flex; align-items: center; gap: var(--sp-2); }
+.dash-ctx__field label { font-size: var(--fs-xs); color: var(--text-muted); font-weight: 600; }
+.dash-ctx select {
+    min-height: 36px; padding: 0 var(--sp-8) 0 var(--sp-3);
+    border-radius: var(--r-md); border: 1px solid var(--line-strong);
+    background: var(--surface-2); color: var(--text);
+    font: inherit; font-size: var(--fs-sm); max-width: 220px; cursor: pointer;
+}
+.dash-ctx select:hover { border-color: var(--accent); }
+
+/* ---------- Content ---------- */
+.dash-main { max-width: var(--content-max); margin: 0 auto; padding: var(--sp-6); }
+.dash-main:focus { outline: none; }
+
+.dash-h1 { font-family: var(--font-display); font-size: var(--fs-2xl); margin: var(--sp-1) 0 var(--sp-5); }
+
+/* Flash messages */
+.dash-flash-wrap { max-width: var(--content-max); margin: var(--sp-4) auto calc(var(--sp-2) * -1); padding: 0 var(--sp-6); }
+
+/* ---------- Bottom navigation (phones) ---------- */
+.dash-bottomnav {
+    display: none;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--surface);
+    border-top: 1px solid var(--line);
+}
+.dash-bottomnav__list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); }
+.dash-bottomnav__link {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    min-height: var(--bottomnav-h); padding: var(--sp-2) 2px;
+    color: var(--text-2); font-size: var(--fs-xs); font-weight: 600; line-height: 1.1;
+    background: transparent; border: 0; font-family: inherit; cursor: pointer; width: 100%;
+}
+.dash-bottomnav__link .icon { width: 22px; height: 22px; }
+.dash-bottomnav__link:hover { text-decoration: none; color: var(--white); }
+.dash-bottomnav__link.is-active, .dash-bottomnav__link[aria-current="page"] { color: var(--accent); }
+.dash-bottomnav__link.is-active .icon, .dash-bottomnav__link[aria-current="page"] .icon { stroke-width: 2.5; }
+
+/* ==========================================================================
+   >= 1024px: persistent sidebar
+   ========================================================================== */
+@media (min-width: 1024px) {
+    body.dash-body { padding-left: var(--sidebar-w); }
+}
+
+/* ==========================================================================
+   < 1024px: drawer
+   ========================================================================== */
+@media (max-width: 1023.98px) {
+    .dash-sidebar {
+        width: min(86vw, 300px);
+        transform: translateX(-102%);
+        visibility: hidden;
+        box-shadow: var(--shadow-3);
+        transition: transform var(--dur-2) var(--ease), visibility 0s linear var(--dur-2);
+    }
+    .dash-sidebar__close { display: inline-flex; }
+    .dash-nav__link { min-height: 44px; }
+    .dash-topbar__menu { display: inline-flex; }
+    .dash-topbar { padding: var(--sp-2) var(--sp-4); }
+    .dash-main { padding: var(--sp-5) var(--sp-4); }
+    .dash-flash-wrap { padding: 0 var(--sp-4); }
+
+    /* Open: JS toggles .is-drawer-open on <html>; without JS the :target works. */
+    html.is-drawer-open .dash-sidebar,
+    .dash-sidebar:target {
+        transform: none; visibility: visible;
+        transition: transform var(--dur-2) var(--ease), visibility 0s;
+    }
+    html.is-drawer-open .dash-scrim,
+    .dash-sidebar:target ~ .dash-scrim { display: block; }
+    html.is-drawer-open { overflow: hidden; }
+}
+
+/* ==========================================================================
+   < 720px: phones
+   ========================================================================== */
+@media (max-width: 719.98px) {
+    .dash-topbar { flex-wrap: wrap; row-gap: var(--sp-2); }
+    .dash-topbar__menu--tablet { display: none; }
+    .dash-ctx { flex: 1 1 100%; }
+    .dash-ctx__field { flex: 1 1 140px; }
+    .dash-ctx__field label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .dash-ctx select { width: 100%; max-width: none; min-height: 44px; font-size: var(--fs-md); }
+
+    .dash-bottomnav { display: block; }
+    body.dash-body.has-bottomnav,
+    .dash-bottomnav ~ .dash-main { padding-bottom: calc(var(--bottomnav-h) + var(--sp-8) + env(safe-area-inset-bottom)); }
+    .dash-h1 { font-size: var(--fs-xl); }
+}

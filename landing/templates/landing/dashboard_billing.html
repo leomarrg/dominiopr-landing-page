@@ -2,19 +2,15 @@
 {% block title %}Facturación{% endblock %}
 {% block content %}
 <style>
-    /* Scoped to this page: dash-card has no default text color in dashboard_base.html
-       (it only sets a white background), so we set legible dark text explicitly here
-       instead of relying on the page's inherited white body color. */
-    .dash-card{color:#33475b}
-    .dash-card h2{color:var(--primary);margin:0 0 10px}
+    /* Scoped to this page; colors come from the dash-tokens.css tokens. */
     .bill-plan{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:6px}
-    .bill-plan__name{color:var(--primary);font-family:'Space Grotesk',sans-serif;font-size:1.3rem;font-weight:700;margin:0 0 2px}
-    .bill-plan__price{color:#33475b;font-size:.92rem}
-    .bill-meta{color:#5c7189;font-size:.84rem;margin:10px 0 0;display:flex;flex-direction:column;gap:4px}
-    .bill-portal{margin-top:18px;padding-top:18px;border-top:1px solid #e3e3ea}
-    .bill-portal p{color:#5c7189;font-size:.84rem;margin:8px 0 0}
-    .bill-manual{color:#5c7189;font-size:.9rem;line-height:1.6}
-    .bill-manual a{color:#1e938a}
+    .bill-plan__name{color:var(--text);font-family:'Space Grotesk',sans-serif;font-size:1.3rem;font-weight:700;margin:0 0 2px}
+    .bill-plan__price{color:var(--text-2);font-size:.92rem}
+    .bill-meta{color:var(--text-muted);font-size:.84rem;margin:10px 0 0;display:flex;flex-direction:column;gap:4px}
+    .bill-portal{margin-top:18px;padding-top:18px;border-top:1px solid var(--line-soft)}
+    .bill-portal p{color:var(--text-muted);font-size:.84rem;margin:8px 0 0}
+    .bill-manual{color:var(--text-muted);font-size:.9rem;line-height:1.6}
+    .bill-manual a{color:var(--accent)}
     @media (max-width:600px){
         .bill-plan{flex-direction:column}
         .dash-card .save-btn{width:100%;min-height:44px}
@@ -64,7 +60,7 @@
     {% endif %}
 
     {% else %}
-    <div class="dash-empty" style="padding:30px 20px;color:#5c7189">Aún no tienes una suscripción activa. Escríbenos a <a href="mailto:hola@dominiopr.com" style="color:#1e938a">hola@dominiopr.com</a> si crees que esto es un error.</div>
+    <div class="dash-empty" style="padding:30px 20px;color:var(--text-muted)">Aún no tienes una suscripción activa. Escríbenos a <a href="mailto:hola@dominiopr.com" style="color:var(--accent)">hola@dominiopr.com</a> si crees que esto es un error.</div>
     {% endif %}
 </div>
 {% endblock %}

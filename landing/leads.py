@@ -28,6 +28,10 @@ AUDIT_LABELS = {
     'lead.email': 'Correo enviado al lead',
     'lead.note': 'Nota añadida',
     'lead.anonymize': 'Lead anonimizado',
+    'lead.assign': 'Asignación cambiada',
+    'lead.follow_up': 'Seguimiento',
+    'lead.tags': 'Etiquetas',
+    'lead.lost': 'Motivo de pérdida',
 }
 
 
@@ -152,6 +156,8 @@ def anonymize_lead(lead):
         # identifiable messages to the anonymized conversation.
         Conversation.objects.filter(pk=conv_id).update(
             first_question='', topic='', escalation_reason='', page_url='',
+            # The "termina en 1234" label is partial phone data: gone too.
+            contact_label='',
             widget_session=f'anon-{secrets.token_hex(12)}')
     Booking.objects.filter(pk__in=booking_ids).update(
         lead=locked, name=ANON_NAME, email='', phone='', notes='',
@@ -168,7 +174,11 @@ def anonymize_lead(lead):
     locked.ip_address = None
     locked.user_agent = ''
     locked.email_verified_at = None
+    # CRM fields the team typed: a loss reason or a tag can carry personal
+    # (even health) data, e.g. "diabetes tipo 2" or "Diabético".
+    locked.lost_reason = ''
+    locked.tags.clear()
     locked.save(update_fields=[
         'name', 'email', 'phone', 'company', 'message', 'page_url',
-        'ip_address', 'user_agent', 'email_verified_at'])
+        'ip_address', 'user_agent', 'email_verified_at', 'lost_reason'])
     return counts

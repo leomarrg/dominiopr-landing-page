@@ -316,6 +316,11 @@ python manage.py preflight   # Stripe, SMTP, IA y Django reales (--stripe|--emai
 ```cron
 # M-05: recordatorios de citas (~24h antes), cada hora
 0 * * * * cd /ruta/app && venv/bin/python manage.py send_booking_reminders
+# CRM: resumen diario de seguimientos (vencidos, de hoy y leads nuevos sin atender >24 h) a cada
+# org_admin/agent con Membership.daily_digest. Debe salir a las 8:00 a. m. de Puerto Rico: con el
+# servidor en UTC es `0 12`; si el servidor corre en hora de PR, `0 8`. Idempotente por dia
+# (AuditEvent 'digest.followup'); --dry-run muestra sin enviar, --force reenvia, --date YYYY-MM-DD repite.
+0 12 * * * cd /ruta/app && venv/bin/python manage.py send_followup_digest >> /home/ubuntu/dominio-cron.log 2>&1
 # Fase 3a: etiquetar intención/tema de conversaciones inactivas (Haiku, máx 300 por noche).
 # Corre ANTES de purge_expired para no gastar en conversaciones que se van a borrar.
 # --dry-run lista las candidatas sin llamar al modelo. Sale con error si la API falla.
