@@ -1,14 +1,36 @@
-anthropic==0.105.2
-# Transitive (anthropic/httpx): floor above PYSEC-2026-4024/4025.
-anyio>=4.14.2
-asgiref==3.11.0
+# DOMINIO: dependencias de Python, todas con version fija.
+# Python 3.12 (la version del servidor de produccion, Ubuntu 24.04).
+# Instalar:  pip install -r requirements.txt
+# Actualizar: Dependabot abre los PRs cada semana; el CI corre pip-audit.
+
+# --- Directas: el codigo las importa ---
 Django==5.2.17
-django-browser-reload==1.21.0
-gunicorn==26.0.0
-pypdf==6.19.0
-whitenoise==6.12.0
-python-dotenv==1.2.2
-sentry-sdk==2.72.0
+anthropic==0.105.2            # agente de IA (Claude)
+httpx==0.28.1                 # landing/agent.py (errores de timeout del SDK)
+certifi==2026.7.22            # certificados TLS para las llamadas salientes
+gunicorn==26.0.0              # servidor de aplicacion en produccion
+whitenoise==6.12.0            # archivos estaticos
+python-dotenv==1.2.2          # carga .env
+pypdf==6.19.0                 # extraccion de texto de PDFs (conocimiento)
+sentry-sdk==2.72.0            # opcional: solo se inicializa con SENTRY_DSN
+django-browser-reload==1.21.0 # solo desarrollo (DEBUG=True)
+tzdata==2025.2                # zonas horarias (necesario en Windows)
+
+# --- Transitivas: fijadas para instalaciones reproducibles ---
+annotated-types==0.8.0
+anyio==4.14.2                 # piso por PYSEC-2026-4024/4025
+asgiref==3.11.0
+distro==1.9.0
+docstring_parser==0.18.0
+h11==0.16.0
+httpcore==1.0.9
+idna==3.20
+jiter==0.17.0
+packaging==26.3
+pydantic==2.13.5
+pydantic_core==2.46.5
+sniffio==1.3.1
 sqlparse==0.6.0
+typing-inspection==0.4.4
 typing_extensions==4.15.0
-tzdata==2025.2
+urllib3==2.8.0
