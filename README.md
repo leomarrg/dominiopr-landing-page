@@ -14,30 +14,89 @@ Sitio y plataforma de DOMINIO, estudio de software y tecnología en Puerto Rico
 
 ## Stack
 
-- Python 3.10 en el servidor (3.12 sirve en local), Django 5.2, SQLite (WAL).
+- Python 3.12 (la versión del servidor, Ubuntu 24.04), Django 5.2, SQLite (WAL).
 - Anthropic (SDK `anthropic`) para el agente, la ingesta de conocimiento y el etiquetado.
 - Stripe (API REST), Meta WhatsApp Cloud API, Twilio (solo SMS), hCaptcha, Google Analytics 4
   (solo con consentimiento).
 - Producción: Lightsail (414 MB RAM + swap), nginx + gunicorn gthread, whitenoise para
   estáticos, despliegue por GitHub Actions al hacer push a `main`.
 
-## Correrlo en local
+## Cómo correrlo localmente
 
-```bash
-python -m venv venv
-venv/Scripts/pip install -r requirements.txt      # Windows (Git Bash); en Linux/macOS: venv/bin/pip
-cp .env.example .env                              # rellena al menos DJANGO_SECRET_KEY y DJANGO_DEBUG=True
-venv/Scripts/python manage.py migrate
-venv/Scripts/python manage.py createsuperuser     # login de staff para /dashboard/ y /dashboard/control/
-venv/Scripts/python manage.py seed_eval_clients   # datos demo: negocios eval-recepcion y eval-interno
-venv/Scripts/python manage.py runserver 127.0.0.1:8765
-```
+Requisitos: **Git** y, según la opción, **Docker Desktop** (opción A) o **Python 3.12** (opción B).
+No hace falta ninguna clave para arrancar: sin `ANTHROPIC_API_KEY` el sitio funciona y el chat
+no contesta; sin Stripe, `/get-started/` usa el flujo de "te escribimos"; los correos salen en la
+consola.
 
-- Puerto **8765**: el 8000 lo usa otro proyecto en esta máquina.
-- Sin `ANTHROPIC_API_KEY` el sitio funciona y el chat no se muestra; sin las llaves de Stripe
-  `/get-started/` cae al flujo de "te escribimos".
-- `.env` es solo local y nunca se commitea; `.env.example` documenta cada variable.
-- Usuarios de prueba de la base local: `docs/dev/usuarios-prueba-local.md`.
+### Opción A: con Docker (recomendada)
+
+1. Clona el repo y entra en la carpeta:
+   ```bash
+   git clone https://github.com/leomarrg/dominiopr-landing-page.git
+   cd dominiopr-landing-page
+   ```
+2. (Opcional) Crea tu configuración: `cp .env.example .env` y deja solo lo que necesites; el
+   bloque de arriba de `.env.example` explica las tres variables de desarrollo. Sin `.env`
+   también arranca.
+3. Levanta todo con un solo comando:
+   ```bash
+   docker compose up
+   ```
+   La primera vez construye la imagen (unos minutos). Aplica las migraciones solo y arranca dos
+   servicios: `web` (la app) y `worker` (procesa los escaneos de conocimiento cada minuto).
+4. Abre **http://localhost:8765**. El estado se ve en http://localhost:8765/healthz/.
+5. Crea tu usuario de staff (en otra terminal) y, si quieres, datos de demostración:
+   ```bash
+   docker compose exec web python manage.py createsuperuser
+   docker compose exec web python manage.py seed_eval_clients
+   ```
+   Entra en http://localhost:8765/dashboard/.
+6. Para detener: `Ctrl+C` o `docker compose down`. Los datos quedan en el volumen
+   `dominio_data`; `docker compose down -v` los borra.
+
+Otro puerto: `APP_PORT=9000 docker compose up` (o `APP_PORT=9000` en `.env`).
+
+### Opción B: sin Docker
+
+1. Clona el repo y entra en la carpeta (paso 1 de la opción A).
+2. Crea el entorno virtual con Python 3.12 e instala las dependencias:
+   ```bash
+   python -m venv venv
+   # Windows (PowerShell):  venv\Scripts\activate
+   # Windows (Git Bash):    source venv/Scripts/activate
+   # Linux / macOS:         source venv/bin/activate
+   pip install -r requirements.txt
+   ```
+3. Crea `.env` con lo mínimo para desarrollo:
+   ```bash
+   cp .env.example .env
+   ```
+   y cambia en `.env`: `DJANGO_DEBUG=True` y `DJANGO_ALLOWED_HOSTS=*` (o borra esas líneas:
+   con `DEBUG=True` el valor por defecto ya es `*`).
+4. Prepara la base de datos (SQLite, se crea sola) y la tabla de caché:
+   ```bash
+   python manage.py migrate
+   python manage.py createcachetable
+   python manage.py createsuperuser
+   python manage.py seed_eval_clients      # opcional: datos de demostración
+   ```
+5. Arranca el servidor:
+   ```bash
+   python manage.py runserver 0.0.0.0:8765
+   ```
+   y abre http://localhost:8765.
+
+### Entrar desde otra máquina de la red
+
+1. Averigua la IP de tu computadora (`ipconfig` en Windows, `ip addr` o `ifconfig` en Linux/macOS),
+   por ejemplo `192.168.1.50`.
+2. Desde el otro equipo abre `http://192.168.1.50:8765`. Las dos opciones escuchan en `0.0.0.0`.
+3. Si no abre: permite el puerto 8765 en el firewall de tu computadora (Windows pregunta la
+   primera vez) y revisa que `DJANGO_ALLOWED_HOSTS` sea `*` o incluya esa IP.
+
+Notas: el puerto por defecto es **8765** porque el 8000 lo usa otro proyecto en la máquina de
+desarrollo. `.env` nunca se sube a git; `.env.example` documenta cada variable. Las cuentas de
+prueba de la base local de Leomar están en `docs/dev/usuarios-prueba-local.md`, que no se sube.
 
 ## Tests
 
