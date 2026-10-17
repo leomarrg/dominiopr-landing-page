@@ -1,6 +1,6 @@
 anthropic==0.105.2
 # Transitive (anthropic/httpx): floor above PYSEC-2026-4024/4025.
-anyio>=4.14.2
+anyio>=4.15.1
 asgiref==3.11.0
 Django==5.2.17
 django-browser-reload==1.21.0
