@@ -43,3 +43,8 @@ graphify-out/
 
 # Credenciales de prueba locales (nunca al repo)
 docs/dev/
+
+# Local / generado (dev-setup)
+node_modules/
+*.sqlite3-wal
+*.sqlite3-shm

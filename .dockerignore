@@ -1,0 +1,22 @@
+# Lo que NO entra en la imagen de Docker (el codigo se monta igual en desarrollo).
+.git
+.github
+.claude
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+node_modules/
+staticfiles/
+media/
+db.sqlite3
+db.sqlite3-*
+*.sqlite3-wal
+*.sqlite3-shm
+.env
+.env.*
+!.env.example
+graphify-out/
+*.log
+Phase *.pdf
